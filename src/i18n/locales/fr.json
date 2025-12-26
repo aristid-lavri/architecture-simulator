@@ -1,0 +1,110 @@
+{
+  "common": {
+    "save": "Sauvegarder",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "close": "Fermer",
+    "open": "Ouvrir",
+    "new": "Nouveau"
+  },
+  "header": {
+    "title": "Architecture Simulator",
+    "edit": "Édition",
+    "simulation": "Simulation",
+    "start": "Démarrer",
+    "pause": "Pause",
+    "stop": "Arrêter",
+    "reset": "Réinitialiser",
+    "speed": "Vitesse",
+    "settings": "Paramètres"
+  },
+  "components": {
+    "title": "Composants",
+    "search": "Rechercher...",
+    "categories": {
+      "simulation": "Simulation",
+      "infrastructure": "Infrastructure",
+      "data": "Données"
+    },
+    "httpClient": {
+      "name": "Client HTTP",
+      "description": "Envoie des requêtes HTTP vers un serveur"
+    },
+    "httpServer": {
+      "name": "Serveur HTTP",
+      "description": "Reçoit et traite les requêtes HTTP"
+    },
+    "clientGroup": {
+      "name": "Groupe de clients",
+      "description": "Simule plusieurs clients virtuels pour stress testing"
+    },
+    "apiGateway": {
+      "name": "API Gateway",
+      "description": "Point d'entrée pour les requêtes API"
+    },
+    "microservice": {
+      "name": "Microservice",
+      "description": "Service applicatif indépendant"
+    },
+    "database": {
+      "name": "Base de données",
+      "description": "Stockage persistant des données"
+    },
+    "cache": {
+      "name": "Cache",
+      "description": "Stockage temporaire pour accès rapide"
+    },
+    "loadBalancer": {
+      "name": "Load Balancer",
+      "description": "Répartiteur de charge"
+    },
+    "messageQueue": {
+      "name": "File de messages",
+      "description": "Communication asynchrone entre services"
+    }
+  },
+  "properties": {
+    "title": "Propriétés",
+    "noSelection": "Sélectionnez un composant pour voir ses propriétés",
+    "name": "Nom",
+    "httpClient": {
+      "method": "Méthode",
+      "path": "Chemin",
+      "body": "Corps de la requête",
+      "headers": "En-têtes",
+      "mode": "Mode",
+      "modeSingle": "Requête unique",
+      "modeLoop": "En boucle",
+      "interval": "Intervalle (ms)",
+      "count": "Nombre de requêtes"
+    },
+    "httpServer": {
+      "port": "Port",
+      "status": "Code de statut",
+      "responseBody": "Corps de la réponse",
+      "delay": "Latence (ms)",
+      "errorRate": "Taux d'erreur (%)"
+    }
+  },
+  "metrics": {
+    "title": "Métriques",
+    "requestsSent": "Requêtes envoyées",
+    "responsesReceived": "Réponses reçues",
+    "successRate": "Taux de succès",
+    "avgLatency": "Latence moyenne",
+    "minLatency": "Latence min",
+    "maxLatency": "Latence max",
+    "requestsPerSecond": "Requêtes/seconde"
+  },
+  "simulation": {
+    "idle": "En attente",
+    "running": "En cours",
+    "paused": "En pause",
+    "noComponents": "Ajoutez des composants pour démarrer la simulation"
+  },
+  "canvas": {
+    "empty": "Glissez-déposez des composants ici",
+    "editMode": "Mode édition",
+    "simulationMode": "Mode simulation"
+  }
+}

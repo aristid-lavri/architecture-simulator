@@ -1,0 +1,110 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "close": "Close",
+    "open": "Open",
+    "new": "New"
+  },
+  "header": {
+    "title": "Architecture Simulator",
+    "edit": "Edit",
+    "simulation": "Simulation",
+    "start": "Start",
+    "pause": "Pause",
+    "stop": "Stop",
+    "reset": "Reset",
+    "speed": "Speed",
+    "settings": "Settings"
+  },
+  "components": {
+    "title": "Components",
+    "search": "Search...",
+    "categories": {
+      "simulation": "Simulation",
+      "infrastructure": "Infrastructure",
+      "data": "Data"
+    },
+    "httpClient": {
+      "name": "HTTP Client",
+      "description": "Sends HTTP requests to a server"
+    },
+    "httpServer": {
+      "name": "HTTP Server",
+      "description": "Receives and processes HTTP requests"
+    },
+    "clientGroup": {
+      "name": "Client Group",
+      "description": "Simulates multiple virtual clients for stress testing"
+    },
+    "apiGateway": {
+      "name": "API Gateway",
+      "description": "Entry point for API requests"
+    },
+    "microservice": {
+      "name": "Microservice",
+      "description": "Independent application service"
+    },
+    "database": {
+      "name": "Database",
+      "description": "Persistent data storage"
+    },
+    "cache": {
+      "name": "Cache",
+      "description": "Temporary storage for fast access"
+    },
+    "loadBalancer": {
+      "name": "Load Balancer",
+      "description": "Distributes load across servers"
+    },
+    "messageQueue": {
+      "name": "Message Queue",
+      "description": "Asynchronous communication between services"
+    }
+  },
+  "properties": {
+    "title": "Properties",
+    "noSelection": "Select a component to view its properties",
+    "name": "Name",
+    "httpClient": {
+      "method": "Method",
+      "path": "Path",
+      "body": "Request body",
+      "headers": "Headers",
+      "mode": "Mode",
+      "modeSingle": "Single request",
+      "modeLoop": "Loop",
+      "interval": "Interval (ms)",
+      "count": "Request count"
+    },
+    "httpServer": {
+      "port": "Port",
+      "status": "Status code",
+      "responseBody": "Response body",
+      "delay": "Latency (ms)",
+      "errorRate": "Error rate (%)"
+    }
+  },
+  "metrics": {
+    "title": "Metrics",
+    "requestsSent": "Requests sent",
+    "responsesReceived": "Responses received",
+    "successRate": "Success rate",
+    "avgLatency": "Avg latency",
+    "minLatency": "Min latency",
+    "maxLatency": "Max latency",
+    "requestsPerSecond": "Requests/second"
+  },
+  "simulation": {
+    "idle": "Idle",
+    "running": "Running",
+    "paused": "Paused",
+    "noComponents": "Add components to start the simulation"
+  },
+  "canvas": {
+    "empty": "Drag and drop components here",
+    "editMode": "Edit mode",
+    "simulationMode": "Simulation mode"
+  }
+}
