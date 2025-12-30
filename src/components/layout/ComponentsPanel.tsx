@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import {
   ChevronRight,
   ChevronLeft,
-  Globe,
+  Shield,
   Server,
   Database,
   HardDrive,
@@ -16,6 +16,8 @@ import {
   MessageSquare,
   Monitor,
   Users,
+  Share2,
+  Zap,
 } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import type { ComponentType } from '@/types';
@@ -60,24 +62,16 @@ const COMPONENTS: ComponentItem[] = [
     type: 'api-gateway',
     nameKey: 'components.apiGateway.name',
     descriptionKey: 'components.apiGateway.description',
-    icon: <Globe className="h-5 w-5" />,
-    color: 'bg-blue-600',
-    category: 'infrastructure',
-  },
-  {
-    type: 'microservice',
-    nameKey: 'components.microservice.name',
-    descriptionKey: 'components.microservice.description',
-    icon: <Server className="h-5 w-5" />,
-    color: 'bg-green-500',
+    icon: <Shield className="h-5 w-5" />,
+    color: 'bg-blue-500',
     category: 'infrastructure',
   },
   {
     type: 'load-balancer',
     nameKey: 'components.loadBalancer.name',
     descriptionKey: 'components.loadBalancer.description',
-    icon: <Network className="h-5 w-5" />,
-    color: 'bg-cyan-500',
+    icon: <Share2 className="h-5 w-5" />,
+    color: 'bg-green-500',
     category: 'infrastructure',
   },
   // Data components
@@ -93,7 +87,7 @@ const COMPONENTS: ComponentItem[] = [
     type: 'cache',
     nameKey: 'components.cache.name',
     descriptionKey: 'components.cache.description',
-    icon: <HardDrive className="h-5 w-5" />,
+    icon: <Zap className="h-5 w-5" />,
     color: 'bg-orange-500',
     category: 'data',
   },
@@ -102,7 +96,7 @@ const COMPONENTS: ComponentItem[] = [
     nameKey: 'components.messageQueue.name',
     descriptionKey: 'components.messageQueue.description',
     icon: <MessageSquare className="h-5 w-5" />,
-    color: 'bg-pink-500',
+    color: 'bg-yellow-500',
     category: 'data',
   },
 ];

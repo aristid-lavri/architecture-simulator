@@ -17,6 +17,10 @@ interface AppState {
   // Selected node
   selectedNodeId: string | null;
   setSelectedNodeId: (id: string | null) => void;
+
+  // Selected edge
+  selectedEdgeId: string | null;
+  setSelectedEdgeId: (id: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -39,6 +43,16 @@ export const useAppStore = create<AppState>((set) => ({
   setSelectedNodeId: (id) =>
     set({
       selectedNodeId: id,
+      selectedEdgeId: null, // Clear edge selection when node is selected
+      isPropertiesPanelOpen: id !== null,
+    }),
+
+  // Selected edge
+  selectedEdgeId: null,
+  setSelectedEdgeId: (id) =>
+    set({
+      selectedEdgeId: id,
+      selectedNodeId: null, // Clear node selection when edge is selected
       isPropertiesPanelOpen: id !== null,
     }),
 }));

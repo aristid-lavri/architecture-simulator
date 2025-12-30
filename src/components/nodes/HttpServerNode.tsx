@@ -89,7 +89,7 @@ function HttpServerNode({ data, selected }: HttpServerNodeProps) {
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-3 !h-3 !bg-purple-500 !border-2 !border-background"
+        className="!bg-purple-500"
       />
 
       {/* Header */}
@@ -166,7 +166,7 @@ function HttpServerNode({ data, selected }: HttpServerNodeProps) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-purple-500 !border-2 !border-background"
+        className="!bg-purple-500"
       />
     </motion.div>
   );

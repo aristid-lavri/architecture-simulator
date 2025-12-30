@@ -14,6 +14,7 @@ interface ArchitectureState {
   removeNode: (nodeId: string) => void;
   addNode: (node: Node) => void;
   addEdge: (edge: Edge) => void;
+  updateEdge: (edgeId: string, data: Partial<Edge['data']>) => void;
   removeEdge: (edgeId: string) => void;
   clear: () => void;
   save: () => void;
@@ -58,6 +59,16 @@ export const useArchitectureStore = create<ArchitectureState>()(
       addEdge: (edge) =>
         set((state) => ({
           edges: [...state.edges, edge],
+          lastSaved: Date.now(),
+        })),
+
+      updateEdge: (edgeId, data) =>
+        set((state) => ({
+          edges: state.edges.map((edge) =>
+            edge.id === edgeId
+              ? { ...edge, data: { ...edge.data, ...data } }
+              : edge
+          ),
           lastSaved: Date.now(),
         })),
 

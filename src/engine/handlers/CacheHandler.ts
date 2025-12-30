@@ -1,0 +1,120 @@
+import type { Node, Edge } from '@xyflow/react';
+import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { CacheNodeData } from '@/types';
+import { CacheManager } from '../CacheManager';
+
+/**
+ * Handler pour les nœuds Cache.
+ * Implémente le pattern cache-aside avec un vrai dictionnaire clé-valeur:
+ * - Cache hit (clé existe) → respond directement avec la valeur
+ * - Cache miss (clé n'existe pas) → forward vers la DB, puis stocker et répondre
+ */
+export class CacheHandler implements NodeRequestHandler {
+  readonly nodeType = 'cache';
+
+  private manager: CacheManager;
+
+  constructor(manager: CacheManager) {
+    this.manager = manager;
+  }
+
+  getProcessingDelay(node: Node, speed: number): number {
+    const data = node.data as CacheNodeData;
+    return data.performance.getLatencyMs / speed;
+  }
+
+  initialize(node: Node): void {
+    const data = node.data as CacheNodeData;
+    this.manager.initializeCache(node.id, data);
+  }
+
+  cleanup(nodeId: string): void {
+    this.manager.cleanup(nodeId);
+  }
+
+  /**
+   * Génère une clé de cache basée sur le contexte de la requête
+   * La clé doit être STABLE entre les requêtes pour permettre les cache hits
+   * On utilise l'origine (client/client-group) comme clé de ressource
+   */
+  private generateCacheKey(context: RequestContext): string {
+    // Utiliser l'origine comme clé - toutes les requêtes du même client
+    // accèdent à la même ressource simulée
+    // Cela simule un cache de type "GET /api/resource"
+    return `resource:${context.originNodeId}`;
+  }
+
+  handleRequestArrival(
+    node: Node,
+    context: RequestContext,
+    outgoingEdges: Edge[],
+    _allNodes: Node[]
+  ): RequestDecision {
+    const cacheKey = this.generateCacheKey(context);
+
+    // Si c'est un retour de la DB après un cache miss
+    if (context.waitingForDb && context.cacheNodeId === node.id) {
+      // Stocker la réponse de la DB dans le cache
+      this.manager.set(node.id, cacheKey, `db_response_${Date.now()}`);
+      return { action: 'respond', isError: false };
+    }
+
+    // Vérifier le cache avec la clé
+    const { hit, latency } = this.manager.get(node.id, cacheKey);
+
+    if (hit) {
+      // Cache HIT - la clé existe, répondre directement
+      return {
+        action: 'respond',
+        isError: false,
+        delay: latency
+      };
+    }
+
+    // Cache MISS - la clé n'existe pas, aller chercher dans la DB
+    if (outgoingEdges.length === 0) {
+      // Pas de DB configurée, répondre en erreur
+      return { action: 'respond', isError: true };
+    }
+
+    const dbEdge = outgoingEdges[0];
+
+    return {
+      action: 'cache-miss',
+      dbTarget: {
+        nodeId: dbEdge.target,
+        edgeId: dbEdge.id,
+      },
+      cacheNodeId: node.id,
+    };
+  }
+
+  /**
+   * Retourne le délai pour l'opération SET (après cache miss)
+   */
+  getSetDelay(node: Node, speed: number): number {
+    const data = node.data as CacheNodeData;
+    return data.performance.setLatencyMs / speed;
+  }
+
+  /**
+   * Permet d'ajouter manuellement une entrée au cache (pour pré-chauffage)
+   */
+  warmUp(nodeId: string, key: string, value: string): void {
+    this.manager.set(nodeId, key, value);
+  }
+
+  /**
+   * Vérifie si une clé existe dans le cache
+   */
+  hasKey(nodeId: string, key: string): boolean {
+    return this.manager.has(nodeId, key);
+  }
+
+  /**
+   * Retourne le nombre d'entrées dans le cache
+   */
+  getCacheSize(nodeId: string): number {
+    return this.manager.size(nodeId);
+  }
+}

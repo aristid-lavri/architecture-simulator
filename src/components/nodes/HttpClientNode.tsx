@@ -139,7 +139,7 @@ function HttpClientNode({ data, selected }: HttpClientNodeProps) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-blue-500 !border-2 !border-background"
+        className="!bg-blue-500"
       />
     </motion.div>
   );

@@ -84,6 +84,106 @@
       "responseBody": "Corps de la réponse",
       "delay": "Latence (ms)",
       "errorRate": "Taux d'erreur (%)"
+    },
+    "database": {
+      "type": "Type de base de données",
+      "connectionPool": "Pool de connexions",
+      "maxConnections": "Connexions max",
+      "minConnections": "Connexions min",
+      "connectionTimeout": "Timeout connexion (ms)",
+      "idleTimeout": "Timeout inactivité (ms)",
+      "performance": "Performance",
+      "readLatency": "Latence lecture (ms)",
+      "writeLatency": "Latence écriture (ms)",
+      "transactionLatency": "Latence transaction (ms)",
+      "capacity": "Capacité",
+      "maxQps": "Max requêtes/sec",
+      "errorRate": "Taux d'erreur (%)"
+    },
+    "cache": {
+      "type": "Type de cache",
+      "memoryConfig": "Configuration mémoire",
+      "maxMemory": "Mémoire max (MB)",
+      "maxKeys": "Max clés",
+      "defaultTTL": "TTL par défaut (s)",
+      "evictionPolicy": "Politique d'éviction",
+      "evictionLru": "LRU (Least Recently Used)",
+      "evictionLfu": "LFU (Least Frequently Used)",
+      "evictionFifo": "FIFO (First In First Out)",
+      "performance": "Latences",
+      "getLatency": "GET (ms)",
+      "setLatency": "SET (ms)",
+      "hitMissSimulation": "Simulation Hit/Miss",
+      "initialHitRatio": "Hit ratio initial (%)",
+      "hitRatioVariance": "Variance (%)",
+      "warmUp": "Période de warm-up",
+      "warmUpEnabled": "Activer le warm-up",
+      "warmUpDuration": "Durée (s)"
+    },
+    "loadBalancer": {
+      "algorithm": "Algorithme de répartition",
+      "roundRobin": "Round Robin",
+      "leastConnections": "Least Connections",
+      "ipHash": "IP Hash",
+      "weighted": "Weighted",
+      "healthCheck": "Health Check",
+      "healthCheckEnabled": "Activer",
+      "healthCheckInterval": "Intervalle (s)",
+      "healthCheckTimeout": "Timeout (s)",
+      "unhealthyThreshold": "Seuil d'échec",
+      "stickySessions": "Sessions persistantes",
+      "stickyEnabled": "Activer",
+      "sessionTTL": "Durée de session (s)"
+    },
+    "messageQueue": {
+      "type": "Type de file",
+      "mode": "Mode",
+      "modeFifo": "FIFO (Premier entré, premier sorti)",
+      "modePriority": "File de priorité",
+      "modePubsub": "Pub/Sub",
+      "configuration": "Configuration",
+      "maxQueueSize": "Taille max de la file",
+      "messageRetention": "Rétention des messages (h)",
+      "deliveryDelay": "Délai de livraison (ms)",
+      "performance": "Performance",
+      "publishLatency": "Latence publication (ms)",
+      "consumeLatency": "Latence consommation (ms)",
+      "messagesPerSecond": "Max messages/sec",
+      "consumers": "Consommateurs",
+      "consumerCount": "Nombre de consommateurs",
+      "prefetchCount": "Prefetch count",
+      "ackMode": "Mode d'acquittement",
+      "ackAuto": "Automatique",
+      "ackManual": "Manuel",
+      "reliability": "Fiabilité",
+      "retryEnabled": "Activer les réessais",
+      "maxRetries": "Max réessais",
+      "deadLetterEnabled": "File des messages morts"
+    },
+    "apiGateway": {
+      "authentication": "Authentification",
+      "authType": "Type d'auth",
+      "authNone": "Aucune",
+      "authApiKey": "Clé API",
+      "authJwt": "JWT",
+      "authOauth2": "OAuth2",
+      "authFailureRate": "Taux d'échec auth (%)",
+      "rateLimiting": "Limitation de débit",
+      "rateLimitEnabled": "Activer",
+      "requestsPerSecond": "Requêtes/sec",
+      "burstSize": "Taille du burst",
+      "windowMs": "Fenêtre (ms)",
+      "routing": "Routage",
+      "pathPrefix": "Préfixe de chemin",
+      "stripPrefix": "Retirer le préfixe",
+      "timeout": "Timeout (s)",
+      "performance": "Performance",
+      "baseLatency": "Latence de base (ms)",
+      "errorRate": "Taux d'erreur (%)",
+      "features": "Fonctionnalités",
+      "corsEnabled": "CORS",
+      "loggingEnabled": "Logging",
+      "compressionEnabled": "Compression"
     }
   },
   "metrics": {
@@ -106,5 +206,25 @@
     "empty": "Glissez-déposez des composants ici",
     "editMode": "Mode édition",
     "simulationMode": "Mode simulation"
+  },
+  "templates": {
+    "title": "Templates",
+    "monolith": {
+      "name": "Monolithe Simple",
+      "description": "Architecture monolithique avec cache"
+    },
+    "loadBalanced": {
+      "name": "Load Balanced",
+      "description": "Architecture avec répartition de charge"
+    },
+    "microservices": {
+      "name": "Microservices",
+      "description": "Architecture microservices avec API Gateway"
+    },
+    "eventDriven": {
+      "name": "Event-Driven",
+      "description": "Architecture event-driven avec Message Queue (Kafka)"
+    },
+    "confirmReplace": "Remplacer l'architecture actuelle?"
   }
 }

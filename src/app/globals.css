@@ -122,4 +122,43 @@
   body {
     @apply bg-background text-foreground;
   }
+  html {
+    font-size: 75%;
+  }
+}
+
+/* React Flow - Rectangular handles (larger for better visibility) */
+.react-flow__handle {
+  width: 18px !important;
+  height: 12px !important;
+  border-radius: 3px !important;
+  border: 2px solid var(--background) !important;
+}
+
+/* Vertical handles (left/right positioned) - taller than wide */
+.react-flow__handle.react-flow__handle-left,
+.react-flow__handle.react-flow__handle-right {
+  width: 12px !important;
+  height: 22px !important;
+}
+
+/* Edge styling - thicker edges */
+.react-flow__edge-path {
+  stroke-width: 3 !important;
+}
+
+/* Selected edge styling */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #3b82f6 !important;
+  stroke-width: 4 !important;
+}
+
+/* Edge interaction area - easier to click */
+.react-flow__edge-interaction {
+  stroke-width: 20 !important;
+}
+
+/* Reconnectable edge handles */
+.react-flow__edge .react-flow__edge-textwrapper {
+  pointer-events: all;
 }

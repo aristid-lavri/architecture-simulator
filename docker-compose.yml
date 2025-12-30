@@ -1,8 +1,10 @@
 services:
-  app:
+  # Development mode
+  dev:
     build:
       context: .
-      target: dev
+      dockerfile: Dockerfile
+      target: builder
     ports:
       - "3005:3000"
     volumes:
@@ -12,3 +14,16 @@ services:
     environment:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
+    command: npm run dev
+
+  # Production mode (for local testing before Dokploy)
+  prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped

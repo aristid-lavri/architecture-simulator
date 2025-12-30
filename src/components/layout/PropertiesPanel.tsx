@@ -18,27 +18,37 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { X, Settings, Trash2, Server, Monitor, Users, Cpu } from 'lucide-react';
-import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings } from '@/types';
-import { defaultServerResources, defaultDegradation, serverPresets, loadPresets } from '@/types';
+import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical } from 'lucide-react';
+import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule } from '@/types';
+import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData } from '@/types';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
-import type { Node } from '@xyflow/react';
+import type { AnimatedEdgeData } from '@/components/edges/AnimatedEdge';
+import type { Node, Edge } from '@xyflow/react';
 
 export function PropertiesPanel() {
-  const { isPropertiesPanelOpen, setPropertiesPanelOpen, selectedNodeId, setSelectedNodeId } =
+  const { isPropertiesPanelOpen, setPropertiesPanelOpen, selectedNodeId, setSelectedNodeId, selectedEdgeId, setSelectedEdgeId } =
     useAppStore();
-  const { nodes, updateNode, removeNode } = useArchitectureStore();
+  const { nodes, edges, updateNode, removeNode, updateEdge, removeEdge } = useArchitectureStore();
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
 
   const updateNodeData = useCallback(
-    (updates: Partial<HttpServerNodeData | HttpClientNodeData | ClientGroupNodeData>) => {
+    (updates: Partial<HttpServerNodeData | HttpClientNodeData | ClientGroupNodeData | DatabaseNodeData | CacheNodeData | LoadBalancerNodeData | MessageQueueNodeData | ApiGatewayNodeData>) => {
       if (!selectedNodeId) return;
       updateNode(selectedNodeId, updates);
     },
     [selectedNodeId, updateNode]
+  );
+
+  const updateEdgeData = useCallback(
+    (updates: Partial<AnimatedEdgeData>) => {
+      if (!selectedEdgeId) return;
+      updateEdge(selectedEdgeId, updates);
+    },
+    [selectedEdgeId, updateEdge]
   );
 
   const deleteNode = useCallback(() => {
@@ -48,6 +58,173 @@ export function PropertiesPanel() {
     setPropertiesPanelOpen(false);
   }, [selectedNodeId, removeNode, setSelectedNodeId, setPropertiesPanelOpen]);
 
+  const deleteEdge = useCallback(() => {
+    if (!selectedEdgeId) return;
+    removeEdge(selectedEdgeId);
+    setSelectedEdgeId(null);
+    setPropertiesPanelOpen(false);
+  }, [selectedEdgeId, removeEdge, setSelectedEdgeId, setPropertiesPanelOpen]);
+
+  // Show edge properties panel
+  if (isPropertiesPanelOpen && selectedEdge) {
+    const sourceNode = nodes.find((n) => n.id === selectedEdge.source);
+    const targetNode = nodes.find((n) => n.id === selectedEdge.target);
+    const edgeData = (selectedEdge.data || {}) as AnimatedEdgeData;
+
+    return (
+      <div className="w-80 border-l bg-background flex flex-col h-full overflow-hidden">
+        {/* Header */}
+        <div className="h-12 border-b flex items-center justify-between px-4 shrink-0">
+          <div className="flex items-center gap-2">
+            <Settings className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium text-sm">Propriétés du lien</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setPropertiesPanelOpen(false)}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Content */}
+        <ScrollArea className="flex-1 overflow-auto">
+          <div className="p-4 space-y-6 pb-6">
+            {/* Edge Info */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Connexion
+                </span>
+                <Badge variant="outline" className="flex items-center gap-1">
+                  <ArrowRight className="h-3 w-3" />
+                  Lien
+                </Badge>
+              </div>
+              <Separator />
+              <div className="text-sm space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">De:</span>
+                  <span className="font-medium">{(sourceNode?.data as { label?: string })?.label || sourceNode?.id}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Vers:</span>
+                  <span className="font-medium">{(targetNode?.data as { label?: string })?.label || targetNode?.id}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Edge Label */}
+            <div className="space-y-3">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                Étiquette
+              </span>
+              <Separator />
+              <div className="space-y-2">
+                <Label htmlFor="edge-label">Texte</Label>
+                <Input
+                  id="edge-label"
+                  value={edgeData.label || ''}
+                  onChange={(e) => updateEdgeData({ label: e.target.value })}
+                  placeholder="Étiquette du lien"
+                />
+              </div>
+            </div>
+
+            {/* Edge Style */}
+            <div className="space-y-3">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                Apparence
+              </span>
+              <Separator />
+              <div className="space-y-4">
+                {/* Color */}
+                <div className="space-y-2">
+                  <Label>Couleur</Label>
+                  <div className="flex gap-2">
+                    {['#888888', '#3b82f6', '#22c55e', '#f97316', '#ef4444', '#8b5cf6'].map((color) => (
+                      <button
+                        key={color}
+                        className={`w-8 h-8 rounded-md border-2 transition-all ${edgeData.color === color ? 'border-primary scale-110' : 'border-transparent'}`}
+                        style={{ backgroundColor: color }}
+                        onClick={() => updateEdgeData({ color })}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stroke Width */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <Label>Épaisseur</Label>
+                    <span className="text-muted-foreground">{edgeData.strokeWidth || 3}px</span>
+                  </div>
+                  <Slider
+                    value={[edgeData.strokeWidth || 3]}
+                    onValueChange={([value]) => updateEdgeData({ strokeWidth: value })}
+                    min={1}
+                    max={8}
+                    step={1}
+                  />
+                </div>
+
+                {/* Stroke Style */}
+                <div className="space-y-2">
+                  <Label>Style de trait</Label>
+                  <Select
+                    value={edgeData.strokeStyle || 'solid'}
+                    onValueChange={(value) => updateEdgeData({ strokeStyle: value as 'solid' | 'dashed' | 'dotted' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="solid">Continu</SelectItem>
+                      <SelectItem value="dashed">Tirets</SelectItem>
+                      <SelectItem value="dotted">Pointillé</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Path Type */}
+                <div className="space-y-2">
+                  <Label>Type de tracé</Label>
+                  <Select
+                    value={edgeData.pathType || 'bezier'}
+                    onValueChange={(value) => updateEdgeData({ pathType: value as 'bezier' | 'smoothstep' | 'straight' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bezier">Courbe (Bézier)</SelectItem>
+                      <SelectItem value="smoothstep">Angles arrondis</SelectItem>
+                      <SelectItem value="straight">Ligne droite</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+
+        {/* Footer Actions */}
+        <div className="p-4 border-t shrink-0">
+          <Button
+            variant="destructive"
+            size="sm"
+            className="w-full gap-2"
+            onClick={deleteEdge}
+          >
+            <Trash2 className="h-4 w-4" />
+            Supprimer le lien
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!isPropertiesPanelOpen || !selectedNode) {
     return null;
   }
@@ -55,6 +232,11 @@ export function PropertiesPanel() {
   const isHttpServer = selectedNode.type === 'http-server';
   const isHttpClient = selectedNode.type === 'http-client';
   const isClientGroup = selectedNode.type === 'client-group';
+  const isDatabase = selectedNode.type === 'database';
+  const isCache = selectedNode.type === 'cache';
+  const isLoadBalancer = selectedNode.type === 'load-balancer';
+  const isMessageQueue = selectedNode.type === 'message-queue';
+  const isApiGateway = selectedNode.type === 'api-gateway';
 
   return (
     <div className="w-80 border-l bg-background flex flex-col h-full overflow-hidden">
@@ -86,7 +268,12 @@ export function PropertiesPanel() {
                 {isHttpServer && <Server className="h-3 w-3" />}
                 {isHttpClient && <Monitor className="h-3 w-3" />}
                 {isClientGroup && <Users className="h-3 w-3" />}
-                {isHttpServer ? 'HTTP Server' : isHttpClient ? 'HTTP Client' : isClientGroup ? 'Client Group' : 'Component'}
+                {isDatabase && <Database className="h-3 w-3" />}
+                {isCache && <Zap className="h-3 w-3" />}
+                {isLoadBalancer && <Share2 className="h-3 w-3" />}
+                {isMessageQueue && <MessageSquare className="h-3 w-3" />}
+                {isApiGateway && <Shield className="h-3 w-3" />}
+                {isHttpServer ? 'HTTP Server' : isHttpClient ? 'HTTP Client' : isClientGroup ? 'Client Group' : isDatabase ? 'Database' : isCache ? 'Cache' : isLoadBalancer ? 'Load Balancer' : isMessageQueue ? 'Message Queue' : isApiGateway ? 'API Gateway' : 'Component'}
               </Badge>
             </div>
             <Separator />
@@ -128,6 +315,57 @@ export function PropertiesPanel() {
             <ClientGroupConfig
               data={selectedNode.data as ClientGroupNodeData}
               onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Database Configuration */}
+          {isDatabase && (
+            <DatabaseConfig
+              data={selectedNode.data as DatabaseNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Cache Configuration */}
+          {isCache && (
+            <CacheConfig
+              data={selectedNode.data as CacheNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Load Balancer Configuration */}
+          {isLoadBalancer && (
+            <LoadBalancerConfig
+              data={selectedNode.data as LoadBalancerNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Message Queue Configuration */}
+          {isMessageQueue && (
+            <MessageQueueConfig
+              data={selectedNode.data as MessageQueueNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* API Gateway Configuration */}
+          {isApiGateway && (
+            <ApiGatewayConfig
+              data={selectedNode.data as ApiGatewayNodeData}
+              onUpdate={updateNodeData}
+              availableServices={nodes
+                .filter((n): n is Node & { data: HttpServerNodeData } =>
+                  n.type === 'http-server' &&
+                  typeof (n.data as HttpServerNodeData).serviceName === 'string' &&
+                  (n.data as HttpServerNodeData).serviceName !== ''
+                )
+                .map((n) => ({
+                  id: n.id,
+                  serviceName: n.data.serviceName as string,
+                  label: n.data.label,
+                }))}
             />
           )}
         </div>
@@ -213,6 +451,41 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
               onChange={(e) => onUpdate({ responseBody: e.target.value })}
               placeholder='{"success": true}'
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Microservice Configuration */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Configuration Microservice
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="service-name">Nom du service</Label>
+            <Input
+              id="service-name"
+              value={(data.serviceName as string) || ''}
+              onChange={(e) => onUpdate({ serviceName: e.target.value })}
+              placeholder="users, orders, products..."
+            />
+            <p className="text-xs text-muted-foreground">
+              Identifiant utilisé par l'API Gateway pour le routage
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="base-path">Route de base</Label>
+            <Input
+              id="base-path"
+              value={(data.basePath as string) || ''}
+              onChange={(e) => onUpdate({ basePath: e.target.value })}
+              placeholder="/api/users"
+            />
+            <p className="text-xs text-muted-foreground">
+              Préfixe des routes gérées par ce service
+            </p>
           </div>
         </div>
       </div>
@@ -664,13 +937,69 @@ function ClientGroupConfig({ data, onUpdate }: ClientGroupConfigProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="path">Chemin</Label>
+            <Label htmlFor="path">Chemin par défaut</Label>
             <Input
               id="path"
               value={data.path || '/api/data'}
               onChange={(e) => onUpdate({ path: e.target.value })}
               placeholder="/api/data"
             />
+          </div>
+
+          {/* Multiple Paths */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Chemins multiples (aléatoire)</Label>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 gap-1"
+                onClick={() => {
+                  const currentPaths = (data.paths as string[] | undefined) || [];
+                  onUpdate({ paths: [...currentPaths, '/api/new-path'] });
+                }}
+              >
+                <Plus className="h-3 w-3" />
+                Ajouter
+              </Button>
+            </div>
+
+            {(!data.paths || (data.paths as string[]).length === 0) ? (
+              <p className="text-xs text-muted-foreground italic">
+                Aucun chemin supplémentaire. Le chemin par défaut sera utilisé.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {(data.paths as string[]).map((pathItem, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <Input
+                      value={pathItem}
+                      onChange={(e) => {
+                        const newPaths = [...((data.paths as string[] | undefined) || [])];
+                        newPaths[index] = e.target.value;
+                        onUpdate({ paths: newPaths });
+                      }}
+                      placeholder="/api/path"
+                      className="h-8 text-sm"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => {
+                        const newPaths = ((data.paths as string[] | undefined) || []).filter((_, i) => i !== index);
+                        onUpdate({ paths: newPaths.length > 0 ? newPaths : undefined });
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Si des chemins sont définis, chaque requête utilisera un chemin aléatoire parmi ceux-ci.
+            </p>
           </div>
         </div>
       </div>
@@ -974,6 +1303,1354 @@ function ServerResourcesConfig({ data, onUpdate }: ServerResourcesConfigProps) {
               </p>
             </div>
           )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// Database Configuration
+// ============================================
+
+interface DatabaseConfigProps {
+  data: DatabaseNodeData;
+  onUpdate: (updates: Partial<DatabaseNodeData>) => void;
+}
+
+function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
+  const config = {
+    ...defaultDatabaseNodeData,
+    ...data,
+    connectionPool: { ...defaultDatabaseNodeData.connectionPool, ...data.connectionPool },
+    performance: { ...defaultDatabaseNodeData.performance, ...data.performance },
+    capacity: { ...defaultDatabaseNodeData.capacity, ...data.capacity },
+  };
+
+  // Local state for sliders
+  const [maxConnections, setMaxConnections] = useState(config.connectionPool.maxConnections);
+  const [minConnections, setMinConnections] = useState(config.connectionPool.minConnections);
+  const [readLatency, setReadLatency] = useState(config.performance.readLatencyMs);
+  const [writeLatency, setWriteLatency] = useState(config.performance.writeLatencyMs);
+  const [transactionLatency, setTransactionLatency] = useState(config.performance.transactionLatencyMs);
+  const [maxQps, setMaxQps] = useState(config.capacity.maxQueriesPerSecond);
+  const [errorRate, setErrorRate] = useState(config.errorRate);
+
+  // Sync local state when data changes
+  useEffect(() => {
+    setMaxConnections(config.connectionPool.maxConnections);
+    setMinConnections(config.connectionPool.minConnections);
+    setReadLatency(config.performance.readLatencyMs);
+    setWriteLatency(config.performance.writeLatencyMs);
+    setTransactionLatency(config.performance.transactionLatencyMs);
+    setMaxQps(config.capacity.maxQueriesPerSecond);
+    setErrorRate(config.errorRate);
+  }, [data]);
+
+  const updateConnectionPool = (updates: Partial<DatabaseNodeData['connectionPool']>) => {
+    onUpdate({
+      connectionPool: { ...config.connectionPool, ...updates },
+    });
+  };
+
+  const updatePerformance = (updates: Partial<DatabaseNodeData['performance']>) => {
+    onUpdate({
+      performance: { ...config.performance, ...updates },
+    });
+  };
+
+  return (
+    <>
+      {/* Database Type */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Type de base de données
+        </span>
+        <Separator />
+        <Select
+          value={config.databaseType}
+          onValueChange={(value) => onUpdate({ databaseType: value as DatabaseType })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="postgresql">PostgreSQL</SelectItem>
+            <SelectItem value="mysql">MySQL</SelectItem>
+            <SelectItem value="mongodb">MongoDB</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Connection Pool */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Pool de connexions
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Connexions max</label>
+              <span className="text-muted-foreground">{maxConnections}</span>
+            </div>
+            <Slider
+              value={[maxConnections]}
+              onValueChange={([value]) => setMaxConnections(value)}
+              onValueCommit={([value]) => updateConnectionPool({ maxConnections: value })}
+              min={1}
+              max={100}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Connexions min</label>
+              <span className="text-muted-foreground">{minConnections}</span>
+            </div>
+            <Slider
+              value={[minConnections]}
+              onValueChange={([value]) => setMinConnections(value)}
+              onValueCommit={([value]) => updateConnectionPool({ minConnections: value })}
+              min={0}
+              max={20}
+              step={1}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Performance */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Latences
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Lecture</label>
+              <span className="text-muted-foreground">{readLatency}ms</span>
+            </div>
+            <Slider
+              value={[readLatency]}
+              onValueChange={([value]) => setReadLatency(value)}
+              onValueCommit={([value]) => updatePerformance({ readLatencyMs: value })}
+              min={1}
+              max={500}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Écriture</label>
+              <span className="text-muted-foreground">{writeLatency}ms</span>
+            </div>
+            <Slider
+              value={[writeLatency]}
+              onValueChange={([value]) => setWriteLatency(value)}
+              onValueCommit={([value]) => updatePerformance({ writeLatencyMs: value })}
+              min={5}
+              max={1000}
+              step={5}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Transaction</label>
+              <span className="text-muted-foreground">{transactionLatency}ms</span>
+            </div>
+            <Slider
+              value={[transactionLatency]}
+              onValueChange={([value]) => setTransactionLatency(value)}
+              onValueCommit={([value]) => updatePerformance({ transactionLatencyMs: value })}
+              min={10}
+              max={2000}
+              step={10}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Capacity */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Capacité
+        </span>
+        <Separator />
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <label>Max requêtes/sec</label>
+            <span className="text-muted-foreground">{maxQps}</span>
+          </div>
+          <Slider
+            value={[maxQps]}
+            onValueChange={([value]) => setMaxQps(value)}
+            onValueCommit={([value]) => onUpdate({ capacity: { maxQueriesPerSecond: value } })}
+            min={10}
+            max={10000}
+            step={10}
+          />
+        </div>
+      </div>
+
+      {/* Error Rate */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Simulation d'erreurs
+        </span>
+        <Separator />
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <label>Taux d'erreur</label>
+            <span className="text-muted-foreground">{errorRate}%</span>
+          </div>
+          <Slider
+            value={[errorRate]}
+            onValueChange={([value]) => setErrorRate(value)}
+            onValueCommit={([value]) => onUpdate({ errorRate: value })}
+            max={100}
+            step={1}
+          />
+          <p className="text-xs text-muted-foreground">
+            Pourcentage de requêtes qui échoueront
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// Cache Configuration
+// ============================================
+
+interface CacheConfigProps {
+  data: CacheNodeData;
+  onUpdate: (updates: Partial<CacheNodeData>) => void;
+}
+
+function CacheConfig({ data, onUpdate }: CacheConfigProps) {
+  const config = {
+    ...defaultCacheNodeData,
+    ...data,
+    configuration: { ...defaultCacheNodeData.configuration, ...data.configuration },
+    performance: { ...defaultCacheNodeData.performance, ...data.performance },
+  };
+
+  // Local state for sliders
+  const [maxMemory, setMaxMemory] = useState(config.configuration.maxMemoryMB);
+  const [maxKeys, setMaxKeys] = useState(config.configuration.maxKeys);
+  const [defaultTTL, setDefaultTTL] = useState(config.configuration.defaultTTLSeconds);
+  const [getLatency, setGetLatency] = useState(config.performance.getLatencyMs);
+  const [setLatency, setSetLatency] = useState(config.performance.setLatencyMs);
+  const [hitRatio, setHitRatio] = useState(config.initialHitRatio);
+  const [hitVariance, setHitVariance] = useState(config.hitRatioVariance);
+  const [warmUpDuration, setWarmUpDuration] = useState(config.warmUpDurationMs / 1000);
+
+  // Sync local state when data changes
+  useEffect(() => {
+    setMaxMemory(config.configuration.maxMemoryMB);
+    setMaxKeys(config.configuration.maxKeys);
+    setDefaultTTL(config.configuration.defaultTTLSeconds);
+    setGetLatency(config.performance.getLatencyMs);
+    setSetLatency(config.performance.setLatencyMs);
+    setHitRatio(config.initialHitRatio);
+    setHitVariance(config.hitRatioVariance);
+    setWarmUpDuration(config.warmUpDurationMs / 1000);
+  }, [data]);
+
+  const updateConfiguration = (updates: Partial<CacheNodeData['configuration']>) => {
+    onUpdate({
+      configuration: { ...config.configuration, ...updates },
+    });
+  };
+
+  const updatePerformance = (updates: Partial<CacheNodeData['performance']>) => {
+    onUpdate({
+      performance: { ...config.performance, ...updates },
+    });
+  };
+
+  return (
+    <>
+      {/* Cache Type */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Type de cache
+        </span>
+        <Separator />
+        <Select
+          value={config.cacheType}
+          onValueChange={(value) => onUpdate({ cacheType: value as CacheType })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="redis">Redis</SelectItem>
+            <SelectItem value="memcached">Memcached</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Memory Configuration */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Configuration mémoire
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Mémoire max</label>
+              <span className="text-muted-foreground">{maxMemory}MB</span>
+            </div>
+            <Slider
+              value={[maxMemory]}
+              onValueChange={([value]) => setMaxMemory(value)}
+              onValueCommit={([value]) => updateConfiguration({ maxMemoryMB: value })}
+              min={64}
+              max={8192}
+              step={64}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Max clés</label>
+              <span className="text-muted-foreground">{maxKeys.toLocaleString()}</span>
+            </div>
+            <Slider
+              value={[maxKeys]}
+              onValueChange={([value]) => setMaxKeys(value)}
+              onValueCommit={([value]) => updateConfiguration({ maxKeys: value })}
+              min={1000}
+              max={1000000}
+              step={1000}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>TTL par défaut</label>
+              <span className="text-muted-foreground">{defaultTTL}s</span>
+            </div>
+            <Slider
+              value={[defaultTTL]}
+              onValueChange={([value]) => setDefaultTTL(value)}
+              onValueCommit={([value]) => updateConfiguration({ defaultTTLSeconds: value })}
+              min={60}
+              max={86400}
+              step={60}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Politique d'éviction</Label>
+            <Select
+              value={config.configuration.evictionPolicy}
+              onValueChange={(value) => updateConfiguration({ evictionPolicy: value as EvictionPolicy })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="lru">LRU (Least Recently Used)</SelectItem>
+                <SelectItem value="lfu">LFU (Least Frequently Used)</SelectItem>
+                <SelectItem value="fifo">FIFO (First In First Out)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Performance */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Latences
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>GET</label>
+              <span className="text-muted-foreground">{getLatency}ms</span>
+            </div>
+            <Slider
+              value={[getLatency]}
+              onValueChange={([value]) => setGetLatency(value)}
+              onValueCommit={([value]) => updatePerformance({ getLatencyMs: value })}
+              min={0.1}
+              max={10}
+              step={0.1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>SET</label>
+              <span className="text-muted-foreground">{setLatency}ms</span>
+            </div>
+            <Slider
+              value={[setLatency]}
+              onValueChange={([value]) => setSetLatency(value)}
+              onValueCommit={([value]) => updatePerformance({ setLatencyMs: value })}
+              min={0.1}
+              max={20}
+              step={0.1}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Hit Ratio Simulation */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Simulation Hit/Miss
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Hit ratio initial</label>
+              <span className="text-muted-foreground">{hitRatio}%</span>
+            </div>
+            <Slider
+              value={[hitRatio]}
+              onValueChange={([value]) => setHitRatio(value)}
+              onValueCommit={([value]) => onUpdate({ initialHitRatio: value })}
+              min={0}
+              max={100}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Variance</label>
+              <span className="text-muted-foreground">±{hitVariance}%</span>
+            </div>
+            <Slider
+              value={[hitVariance]}
+              onValueChange={([value]) => setHitVariance(value)}
+              onValueCommit={([value]) => onUpdate({ hitRatioVariance: value })}
+              min={0}
+              max={30}
+              step={1}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Warm-up Configuration */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Période de warm-up
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="warmup-enabled">Activer le warm-up</Label>
+            <Switch
+              id="warmup-enabled"
+              checked={config.warmUpEnabled}
+              onCheckedChange={(checked) => onUpdate({ warmUpEnabled: checked })}
+            />
+          </div>
+
+          {config.warmUpEnabled && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <label>Durée</label>
+                <span className="text-muted-foreground">{warmUpDuration}s</span>
+              </div>
+              <Slider
+                value={[warmUpDuration]}
+                onValueChange={([value]) => setWarmUpDuration(value)}
+                onValueCommit={([value]) => onUpdate({ warmUpDurationMs: value * 1000 })}
+                min={1}
+                max={300}
+                step={1}
+              />
+              <p className="text-xs text-muted-foreground">
+                Pendant le warm-up, le hit ratio augmente progressivement
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// Load Balancer Configuration
+// ============================================
+
+interface LoadBalancerConfigProps {
+  data: LoadBalancerNodeData;
+  onUpdate: (updates: Partial<LoadBalancerNodeData>) => void;
+}
+
+function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
+  const config = {
+    ...defaultLoadBalancerNodeData,
+    ...data,
+    healthCheck: { ...defaultLoadBalancerNodeData.healthCheck, ...data.healthCheck },
+  };
+
+  // Local state for sliders
+  const [healthCheckInterval, setHealthCheckInterval] = useState(config.healthCheck.intervalMs / 1000);
+  const [healthCheckTimeout, setHealthCheckTimeout] = useState(config.healthCheck.timeoutMs / 1000);
+  const [unhealthyThreshold, setUnhealthyThreshold] = useState(config.healthCheck.unhealthyThreshold);
+  const [sessionTTL, setSessionTTL] = useState(config.sessionTTLSeconds);
+
+  // Sync local state when data changes
+  useEffect(() => {
+    setHealthCheckInterval(config.healthCheck.intervalMs / 1000);
+    setHealthCheckTimeout(config.healthCheck.timeoutMs / 1000);
+    setUnhealthyThreshold(config.healthCheck.unhealthyThreshold);
+    setSessionTTL(config.sessionTTLSeconds);
+  }, [data]);
+
+  const updateHealthCheck = (updates: Partial<LoadBalancerNodeData['healthCheck']>) => {
+    onUpdate({
+      healthCheck: { ...config.healthCheck, ...updates },
+    });
+  };
+
+  return (
+    <>
+      {/* Algorithm */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Algorithme de répartition
+        </span>
+        <Separator />
+        <Select
+          value={config.algorithm}
+          onValueChange={(value) => onUpdate({ algorithm: value as LoadBalancerAlgorithm })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="round-robin">Round Robin</SelectItem>
+            <SelectItem value="least-connections">Least Connections</SelectItem>
+            <SelectItem value="ip-hash">IP Hash</SelectItem>
+            <SelectItem value="weighted">Weighted</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {config.algorithm === 'round-robin' && 'Distribue les requêtes de manière équitable'}
+          {config.algorithm === 'least-connections' && 'Route vers le serveur avec le moins de connexions'}
+          {config.algorithm === 'ip-hash' && 'Routage cohérent basé sur l\'identifiant client'}
+          {config.algorithm === 'weighted' && 'Distribution basée sur les poids des serveurs'}
+        </p>
+      </div>
+
+      {/* Health Check */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Health Check
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="healthcheck-enabled">Activer</Label>
+            <Switch
+              id="healthcheck-enabled"
+              checked={config.healthCheck.enabled}
+              onCheckedChange={(checked) => updateHealthCheck({ enabled: checked })}
+            />
+          </div>
+
+          {config.healthCheck.enabled && (
+            <>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <label>Intervalle</label>
+                  <span className="text-muted-foreground">{healthCheckInterval}s</span>
+                </div>
+                <Slider
+                  value={[healthCheckInterval]}
+                  onValueChange={([value]) => setHealthCheckInterval(value)}
+                  onValueCommit={([value]) => updateHealthCheck({ intervalMs: value * 1000 })}
+                  min={1}
+                  max={60}
+                  step={1}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <label>Timeout</label>
+                  <span className="text-muted-foreground">{healthCheckTimeout}s</span>
+                </div>
+                <Slider
+                  value={[healthCheckTimeout]}
+                  onValueChange={([value]) => setHealthCheckTimeout(value)}
+                  onValueCommit={([value]) => updateHealthCheck({ timeoutMs: value * 1000 })}
+                  min={1}
+                  max={30}
+                  step={1}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <label>Seuil d'échec</label>
+                  <span className="text-muted-foreground">{unhealthyThreshold}</span>
+                </div>
+                <Slider
+                  value={[unhealthyThreshold]}
+                  onValueChange={([value]) => setUnhealthyThreshold(value)}
+                  onValueCommit={([value]) => updateHealthCheck({ unhealthyThreshold: value })}
+                  min={1}
+                  max={10}
+                  step={1}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Échecs consécutifs avant de marquer comme non sain
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Sticky Sessions */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Sessions persistantes
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="sticky-sessions">Activer</Label>
+            <Switch
+              id="sticky-sessions"
+              checked={config.stickySessions}
+              onCheckedChange={(checked) => onUpdate({ stickySessions: checked })}
+            />
+          </div>
+
+          {config.stickySessions && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <label>Durée de session</label>
+                <span className="text-muted-foreground">{sessionTTL}s</span>
+              </div>
+              <Slider
+                value={[sessionTTL]}
+                onValueChange={([value]) => setSessionTTL(value)}
+                onValueCommit={([value]) => onUpdate({ sessionTTLSeconds: value })}
+                min={60}
+                max={86400}
+                step={60}
+              />
+              <p className="text-xs text-muted-foreground">
+                Les requêtes d'un même client sont routées vers le même serveur
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// Message Queue Configuration
+// ============================================
+
+interface MessageQueueConfigProps {
+  data: MessageQueueNodeData;
+  onUpdate: (updates: Partial<MessageQueueNodeData>) => void;
+}
+
+function MessageQueueConfig({ data, onUpdate }: MessageQueueConfigProps) {
+  const config = {
+    ...defaultMessageQueueNodeData,
+    ...data,
+    configuration: { ...defaultMessageQueueNodeData.configuration, ...data.configuration },
+    performance: { ...defaultMessageQueueNodeData.performance, ...data.performance },
+  };
+
+  // Local state for sliders
+  const [maxQueueSize, setMaxQueueSize] = useState(config.configuration.maxQueueSize);
+  const [messageRetention, setMessageRetention] = useState(config.configuration.messageRetentionMs / 3600000); // hours
+  const [deliveryDelay, setDeliveryDelay] = useState(config.configuration.deliveryDelayMs);
+  const [publishLatency, setPublishLatency] = useState(config.performance.publishLatencyMs);
+  const [consumeLatency, setConsumeLatency] = useState(config.performance.consumeLatencyMs);
+  const [messagesPerSecond, setMessagesPerSecond] = useState(config.performance.messagesPerSecond);
+  const [consumerCount, setConsumerCount] = useState(config.consumerCount);
+  const [prefetchCount, setPrefetchCount] = useState(config.prefetchCount);
+  const [maxRetries, setMaxRetries] = useState(config.maxRetries);
+
+  // Sync local state when data changes
+  useEffect(() => {
+    setMaxQueueSize(config.configuration.maxQueueSize);
+    setMessageRetention(config.configuration.messageRetentionMs / 3600000);
+    setDeliveryDelay(config.configuration.deliveryDelayMs);
+    setPublishLatency(config.performance.publishLatencyMs);
+    setConsumeLatency(config.performance.consumeLatencyMs);
+    setMessagesPerSecond(config.performance.messagesPerSecond);
+    setConsumerCount(config.consumerCount);
+    setPrefetchCount(config.prefetchCount);
+    setMaxRetries(config.maxRetries);
+  }, [data]);
+
+  const updateConfiguration = (updates: Partial<MessageQueueNodeData['configuration']>) => {
+    onUpdate({
+      configuration: { ...config.configuration, ...updates },
+    });
+  };
+
+  const updatePerformance = (updates: Partial<MessageQueueNodeData['performance']>) => {
+    onUpdate({
+      performance: { ...config.performance, ...updates },
+    });
+  };
+
+  return (
+    <>
+      {/* Queue Type */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Type de file de messages
+        </span>
+        <Separator />
+        <Select
+          value={config.queueType}
+          onValueChange={(value) => onUpdate({ queueType: value as MessageQueueType })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="rabbitmq">RabbitMQ</SelectItem>
+            <SelectItem value="kafka">Apache Kafka</SelectItem>
+            <SelectItem value="sqs">AWS SQS</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Mode */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Mode de file
+        </span>
+        <Separator />
+        <Select
+          value={config.mode}
+          onValueChange={(value) => onUpdate({ mode: value as MessageQueueMode })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="fifo">FIFO (Premier entré, premier sorti)</SelectItem>
+            <SelectItem value="priority">File de priorité</SelectItem>
+            <SelectItem value="pubsub">Pub/Sub (Publication/Abonnement)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {config.mode === 'fifo' && 'Les messages sont traités dans l\'ordre d\'arrivée'}
+          {config.mode === 'priority' && 'Les messages sont traités par ordre de priorité'}
+          {config.mode === 'pubsub' && 'Les messages sont diffusés à tous les abonnés'}
+        </p>
+      </div>
+
+      {/* Configuration */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Configuration
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Taille max de la file</label>
+              <span className="text-muted-foreground">{maxQueueSize.toLocaleString()}</span>
+            </div>
+            <Slider
+              value={[maxQueueSize]}
+              onValueChange={([value]) => setMaxQueueSize(value)}
+              onValueCommit={([value]) => updateConfiguration({ maxQueueSize: value })}
+              min={100}
+              max={100000}
+              step={100}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Rétention des messages</label>
+              <span className="text-muted-foreground">{messageRetention}h</span>
+            </div>
+            <Slider
+              value={[messageRetention]}
+              onValueChange={([value]) => setMessageRetention(value)}
+              onValueCommit={([value]) => updateConfiguration({ messageRetentionMs: value * 3600000 })}
+              min={1}
+              max={168}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Délai de livraison</label>
+              <span className="text-muted-foreground">{deliveryDelay}ms</span>
+            </div>
+            <Slider
+              value={[deliveryDelay]}
+              onValueChange={([value]) => setDeliveryDelay(value)}
+              onValueCommit={([value]) => updateConfiguration({ deliveryDelayMs: value })}
+              min={0}
+              max={60000}
+              step={100}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Performance */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Performance
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Latence publication</label>
+              <span className="text-muted-foreground">{publishLatency}ms</span>
+            </div>
+            <Slider
+              value={[publishLatency]}
+              onValueChange={([value]) => setPublishLatency(value)}
+              onValueCommit={([value]) => updatePerformance({ publishLatencyMs: value })}
+              min={1}
+              max={100}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Latence consommation</label>
+              <span className="text-muted-foreground">{consumeLatency}ms</span>
+            </div>
+            <Slider
+              value={[consumeLatency]}
+              onValueChange={([value]) => setConsumeLatency(value)}
+              onValueCommit={([value]) => updatePerformance({ consumeLatencyMs: value })}
+              min={1}
+              max={100}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Max messages/sec</label>
+              <span className="text-muted-foreground">{messagesPerSecond}</span>
+            </div>
+            <Slider
+              value={[messagesPerSecond]}
+              onValueChange={([value]) => setMessagesPerSecond(value)}
+              onValueCommit={([value]) => updatePerformance({ messagesPerSecond: value })}
+              min={10}
+              max={10000}
+              step={10}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Consumers */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Consommateurs
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Nombre de consommateurs</label>
+              <span className="text-muted-foreground">{consumerCount}</span>
+            </div>
+            <Slider
+              value={[consumerCount]}
+              onValueChange={([value]) => setConsumerCount(value)}
+              onValueCommit={([value]) => onUpdate({ consumerCount: value })}
+              min={1}
+              max={100}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Prefetch count</label>
+              <span className="text-muted-foreground">{prefetchCount}</span>
+            </div>
+            <Slider
+              value={[prefetchCount]}
+              onValueChange={([value]) => setPrefetchCount(value)}
+              onValueCommit={([value]) => onUpdate({ prefetchCount: value })}
+              min={1}
+              max={100}
+              step={1}
+            />
+            <p className="text-xs text-muted-foreground">
+              Nombre de messages pré-chargés par consommateur
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Mode d'acquittement</Label>
+            <Select
+              value={config.ackMode}
+              onValueChange={(value) => onUpdate({ ackMode: value as 'auto' | 'manual' })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Automatique</SelectItem>
+                <SelectItem value="manual">Manuel</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Reliability */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Fiabilité
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="retry-enabled">Activer les réessais</Label>
+            <Switch
+              id="retry-enabled"
+              checked={config.retryEnabled}
+              onCheckedChange={(checked) => onUpdate({ retryEnabled: checked })}
+            />
+          </div>
+
+          {config.retryEnabled && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <label>Max réessais</label>
+                <span className="text-muted-foreground">{maxRetries}</span>
+              </div>
+              <Slider
+                value={[maxRetries]}
+                onValueChange={([value]) => setMaxRetries(value)}
+                onValueCommit={([value]) => onUpdate({ maxRetries: value })}
+                min={1}
+                max={10}
+                step={1}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <Label htmlFor="dlq-enabled">File des messages morts (DLQ)</Label>
+            <Switch
+              id="dlq-enabled"
+              checked={config.deadLetterEnabled}
+              onCheckedChange={(checked) => onUpdate({ deadLetterEnabled: checked })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Les messages échoués sont envoyés dans une file séparée pour analyse
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================
+// API Gateway Configuration
+// ============================================
+
+interface AvailableService {
+  id: string;
+  serviceName: string;
+  label: string;
+}
+
+interface ApiGatewayConfigProps {
+  data: ApiGatewayNodeData;
+  onUpdate: (updates: Partial<ApiGatewayNodeData>) => void;
+  availableServices: AvailableService[];
+}
+
+function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfigProps) {
+  const config = {
+    ...defaultApiGatewayNodeData,
+    ...data,
+    rateLimiting: { ...defaultApiGatewayNodeData.rateLimiting, ...data.rateLimiting },
+    routing: { ...defaultApiGatewayNodeData.routing, ...data.routing },
+    routeRules: data.routeRules || [],
+  };
+
+  // Local state for sliders
+  const [authFailureRate, setAuthFailureRate] = useState(config.authFailureRate);
+  const [requestsPerSecond, setRequestsPerSecond] = useState(config.rateLimiting.requestsPerSecond);
+  const [burstSize, setBurstSize] = useState(config.rateLimiting.burstSize);
+  const [timeout, setTimeout] = useState(config.routing.timeout / 1000);
+  const [baseLatency, setBaseLatency] = useState(config.baseLatencyMs);
+  const [errorRate, setErrorRate] = useState(config.errorRate);
+
+  // Sync local state when data changes
+  useEffect(() => {
+    setAuthFailureRate(config.authFailureRate);
+    setRequestsPerSecond(config.rateLimiting.requestsPerSecond);
+    setBurstSize(config.rateLimiting.burstSize);
+    setTimeout(config.routing.timeout / 1000);
+    setBaseLatency(config.baseLatencyMs);
+    setErrorRate(config.errorRate);
+  }, [data]);
+
+  const updateRateLimiting = (updates: Partial<ApiGatewayNodeData['rateLimiting']>) => {
+    onUpdate({
+      rateLimiting: { ...config.rateLimiting, ...updates },
+    });
+  };
+
+  const updateRouting = (updates: Partial<ApiGatewayNodeData['routing']>) => {
+    onUpdate({
+      routing: { ...config.routing, ...updates },
+    });
+  };
+
+  const addRouteRule = () => {
+    const newRule: ApiGatewayRouteRule = {
+      id: `rule-${Date.now()}`,
+      pathPattern: '/api/*',
+      targetServiceName: availableServices[0]?.serviceName || '',
+      priority: config.routeRules.length,
+    };
+    onUpdate({ routeRules: [...config.routeRules, newRule] });
+  };
+
+  const updateRouteRule = (ruleId: string, updates: Partial<ApiGatewayRouteRule>) => {
+    onUpdate({
+      routeRules: config.routeRules.map((rule) =>
+        rule.id === ruleId ? { ...rule, ...updates } : rule
+      ),
+    });
+  };
+
+  const removeRouteRule = (ruleId: string) => {
+    onUpdate({
+      routeRules: config.routeRules.filter((rule) => rule.id !== ruleId),
+    });
+  };
+
+  return (
+    <>
+      {/* Authentication */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Authentification
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Type d'authentification</Label>
+            <Select
+              value={config.authType}
+              onValueChange={(value) => onUpdate({ authType: value as ApiGatewayAuthType })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Aucune</SelectItem>
+                <SelectItem value="api-key">Clé API</SelectItem>
+                <SelectItem value="jwt">JWT</SelectItem>
+                <SelectItem value="oauth2">OAuth2</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {config.authType !== 'none' && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <label>Taux d'échec auth</label>
+                <span className="text-muted-foreground">{authFailureRate}%</span>
+              </div>
+              <Slider
+                value={[authFailureRate]}
+                onValueChange={([value]) => setAuthFailureRate(value)}
+                onValueCommit={([value]) => onUpdate({ authFailureRate: value })}
+                min={0}
+                max={50}
+                step={1}
+              />
+              <p className="text-xs text-muted-foreground">
+                Simule des échecs d'authentification
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Rate Limiting */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Limitation de débit
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="ratelimit-enabled">Activer</Label>
+            <Switch
+              id="ratelimit-enabled"
+              checked={config.rateLimiting.enabled}
+              onCheckedChange={(checked) => updateRateLimiting({ enabled: checked })}
+            />
+          </div>
+
+          {config.rateLimiting.enabled && (
+            <>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <label>Requêtes/sec</label>
+                  <span className="text-muted-foreground">{requestsPerSecond}</span>
+                </div>
+                <Slider
+                  value={[requestsPerSecond]}
+                  onValueChange={([value]) => setRequestsPerSecond(value)}
+                  onValueCommit={([value]) => updateRateLimiting({ requestsPerSecond: value })}
+                  min={1}
+                  max={1000}
+                  step={1}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <label>Taille du burst</label>
+                  <span className="text-muted-foreground">{burstSize}</span>
+                </div>
+                <Slider
+                  value={[burstSize]}
+                  onValueChange={([value]) => setBurstSize(value)}
+                  onValueCommit={([value]) => updateRateLimiting({ burstSize: value })}
+                  min={1}
+                  max={100}
+                  step={1}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Nombre de requêtes autorisées en rafale
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Routing */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Routage
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="path-prefix">Préfixe de chemin</Label>
+            <Input
+              id="path-prefix"
+              value={config.routing.pathPrefix}
+              onChange={(e) => updateRouting({ pathPrefix: e.target.value })}
+              placeholder="/api"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="strip-prefix">Retirer le préfixe</Label>
+            <Switch
+              id="strip-prefix"
+              checked={config.routing.stripPrefix}
+              onCheckedChange={(checked) => updateRouting({ stripPrefix: checked })}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Timeout</label>
+              <span className="text-muted-foreground">{timeout}s</span>
+            </div>
+            <Slider
+              value={[timeout]}
+              onValueChange={([value]) => setTimeout(value)}
+              onValueCommit={([value]) => updateRouting({ timeout: value * 1000 })}
+              min={1}
+              max={120}
+              step={1}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Service Routing Rules */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">
+            Règles de routage
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 gap-1"
+            onClick={addRouteRule}
+            disabled={availableServices.length === 0}
+          >
+            <Plus className="h-3 w-3" />
+            Ajouter
+          </Button>
+        </div>
+        <Separator />
+
+        {availableServices.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">
+            Aucun service disponible. Configurez d'abord le "Nom du service" sur vos serveurs HTTP.
+          </p>
+        ) : config.routeRules.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">
+            Aucune règle définie. Les requêtes seront routées vers le premier service connecté.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {config.routeRules.map((rule, index) => (
+              <div
+                key={rule.id}
+                className="p-3 border rounded-lg space-y-3 bg-muted/30"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                    <Badge variant="secondary" className="text-xs">
+                      #{index + 1}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => removeRouteRule(rule.id)}
+                  >
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs">Pattern de route</Label>
+                  <Input
+                    value={rule.pathPattern}
+                    onChange={(e) => updateRouteRule(rule.id, { pathPattern: e.target.value })}
+                    placeholder="/users/*, /api/orders/*"
+                    className="h-8 text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs">Service cible</Label>
+                  <Select
+                    value={rule.targetServiceName}
+                    onValueChange={(value) => updateRouteRule(rule.id, { targetServiceName: value })}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Sélectionner un service" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableServices.map((service) => (
+                        <SelectItem key={service.id} value={service.serviceName}>
+                          <div className="flex items-center gap-2">
+                            <Server className="h-3 w-3" />
+                            <span>{service.serviceName}</span>
+                            <span className="text-muted-foreground text-xs">({service.label})</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          Les règles sont évaluées dans l'ordre. Utilisez * comme joker.
+        </p>
+      </div>
+
+      {/* Performance */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Performance
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Latence de base</label>
+              <span className="text-muted-foreground">{baseLatency}ms</span>
+            </div>
+            <Slider
+              value={[baseLatency]}
+              onValueChange={([value]) => setBaseLatency(value)}
+              onValueCommit={([value]) => onUpdate({ baseLatencyMs: value })}
+              min={0}
+              max={100}
+              step={1}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Taux d'erreur</label>
+              <span className="text-muted-foreground">{errorRate}%</span>
+            </div>
+            <Slider
+              value={[errorRate]}
+              onValueChange={([value]) => setErrorRate(value)}
+              onValueCommit={([value]) => onUpdate({ errorRate: value })}
+              min={0}
+              max={50}
+              step={1}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Features */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Fonctionnalités
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="cors-enabled">CORS</Label>
+            <Switch
+              id="cors-enabled"
+              checked={config.corsEnabled}
+              onCheckedChange={(checked) => onUpdate({ corsEnabled: checked })}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="logging-enabled">Logging</Label>
+            <Switch
+              id="logging-enabled"
+              checked={config.loggingEnabled}
+              onCheckedChange={(checked) => onUpdate({ loggingEnabled: checked })}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="compression-enabled">Compression</Label>
+            <Switch
+              id="compression-enabled"
+              checked={config.compressionEnabled}
+              onCheckedChange={(checked) => onUpdate({ compressionEnabled: checked })}
+            />
+          </div>
         </div>
       </div>
     </>

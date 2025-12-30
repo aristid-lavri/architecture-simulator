@@ -175,7 +175,8 @@ export interface ClientGroupNodeData {
 
   // Configuration HTTP
   method: HttpMethod;
-  path: string;
+  path: string;                       // Path principal (rétrocompatibilité)
+  paths?: string[];                   // Liste de paths pour sélection aléatoire
   requestBody?: string;
 
   // Statistiques runtime
@@ -260,6 +261,10 @@ export interface HttpServerNodeData {
   responseBody?: string;
   responseDelay: number;
   errorRate: number;
+
+  // Configuration microservice
+  serviceName?: string;      // Nom du service pour le routage API Gateway (ex: "users", "orders")
+  basePath?: string;         // Route de base du service (ex: "/api/users")
 
   // Configuration ressources
   resources: ServerResources;
@@ -393,6 +398,188 @@ export const serverPresets = {
   } as ServerResources,
 };
 
+// ============================================
+// Database Node Types
+// ============================================
+export type DatabaseType = 'postgresql' | 'mysql' | 'mongodb';
+
+export interface DatabaseConnectionPool {
+  maxConnections: number;       // 1-100
+  minConnections: number;       // 0-20
+  connectionTimeoutMs: number;
+  idleTimeoutMs: number;
+}
+
+export interface DatabasePerformance {
+  readLatencyMs: number;        // 1-500ms
+  writeLatencyMs: number;       // 5-1000ms
+  transactionLatencyMs: number;
+}
+
+export interface DatabaseCapacity {
+  maxQueriesPerSecond: number;
+}
+
+export interface DatabaseUtilization {
+  activeConnections: number;
+  queriesPerSecond: number;
+  connectionPoolUsage: number;  // 0-100%
+  avgQueryTime: number;
+}
+
+export interface DatabaseNodeData {
+  label: string;
+  status?: NodeStatus;
+  databaseType: DatabaseType;
+
+  connectionPool: DatabaseConnectionPool;
+  performance: DatabasePerformance;
+  capacity: DatabaseCapacity;
+
+  errorRate: number;            // 0-100%
+  utilization?: DatabaseUtilization;
+
+  [key: string]: unknown;
+}
+
+export const defaultDatabaseNodeData: DatabaseNodeData = {
+  label: 'Database',
+  databaseType: 'postgresql',
+  connectionPool: {
+    maxConnections: 20,
+    minConnections: 2,
+    connectionTimeoutMs: 5000,
+    idleTimeoutMs: 30000,
+  },
+  performance: {
+    readLatencyMs: 5,
+    writeLatencyMs: 15,
+    transactionLatencyMs: 30,
+  },
+  capacity: {
+    maxQueriesPerSecond: 1000,
+  },
+  errorRate: 0,
+};
+
+// ============================================
+// Cache Node Types
+// ============================================
+export type CacheType = 'redis' | 'memcached';
+export type EvictionPolicy = 'lru' | 'lfu' | 'fifo';
+
+export interface CacheConfiguration {
+  maxMemoryMB: number;
+  maxKeys: number;
+  defaultTTLSeconds: number;
+  evictionPolicy: EvictionPolicy;
+}
+
+export interface CachePerformance {
+  getLatencyMs: number;        // 0.1-10ms
+  setLatencyMs: number;        // 0.1-20ms
+}
+
+export interface CacheUtilization {
+  memoryUsage: number;         // 0-100%
+  keyCount: number;
+  hitCount: number;
+  missCount: number;
+  hitRatio: number;            // 0-100%
+  evictionCount: number;
+}
+
+export interface CacheNodeData {
+  label: string;
+  status?: NodeStatus;
+  cacheType: CacheType;
+
+  configuration: CacheConfiguration;
+  performance: CachePerformance;
+
+  // Simulation comportement
+  initialHitRatio: number;     // 0-100%
+  hitRatioVariance: number;    // 0-30%
+  warmUpEnabled: boolean;
+  warmUpDurationMs: number;
+
+  utilization?: CacheUtilization;
+
+  [key: string]: unknown;
+}
+
+export const defaultCacheNodeData: CacheNodeData = {
+  label: 'Cache',
+  cacheType: 'redis',
+  configuration: {
+    maxMemoryMB: 512,
+    maxKeys: 100000,
+    defaultTTLSeconds: 3600,
+    evictionPolicy: 'lru',
+  },
+  performance: {
+    getLatencyMs: 1,
+    setLatencyMs: 2,
+  },
+  initialHitRatio: 80,
+  hitRatioVariance: 10,
+  warmUpEnabled: true,
+  warmUpDurationMs: 30000,
+};
+
+// ============================================
+// Load Balancer Node Types
+// ============================================
+export type LoadBalancerAlgorithm = 'round-robin' | 'least-connections' | 'ip-hash' | 'weighted';
+
+export interface LoadBalancerHealthCheck {
+  enabled: boolean;
+  intervalMs: number;
+  timeoutMs: number;
+  unhealthyThreshold: number;
+}
+
+export interface LoadBalancerBackend {
+  nodeId: string;
+  weight: number;
+  healthy: boolean;
+  activeConnections: number;
+}
+
+export interface LoadBalancerUtilization {
+  totalRequests: number;
+  activeConnections: number;
+  backends: LoadBalancerBackend[];
+}
+
+export interface LoadBalancerNodeData {
+  label: string;
+  status?: NodeStatus;
+  algorithm: LoadBalancerAlgorithm;
+
+  healthCheck: LoadBalancerHealthCheck;
+
+  stickySessions: boolean;
+  sessionTTLSeconds: number;
+
+  utilization?: LoadBalancerUtilization;
+
+  [key: string]: unknown;
+}
+
+export const defaultLoadBalancerNodeData: LoadBalancerNodeData = {
+  label: 'Load Balancer',
+  algorithm: 'round-robin',
+  healthCheck: {
+    enabled: true,
+    intervalMs: 5000,
+    timeoutMs: 2000,
+    unhealthyThreshold: 3,
+  },
+  stickySessions: false,
+  sessionTTLSeconds: 3600,
+};
+
 // Load Scenario Presets
 export const loadPresets = {
   light: {
@@ -445,4 +632,166 @@ export const loadPresets = {
     rampUpDuration: 120000,
     rampUpCurve: 'step' as RampUpCurve,
   },
+};
+
+// ============================================
+// Message Queue Node Types
+// ============================================
+export type MessageQueueType = 'rabbitmq' | 'kafka' | 'sqs';
+export type MessageQueueMode = 'fifo' | 'priority' | 'pubsub';
+
+export interface MessageQueueConfiguration {
+  maxQueueSize: number;           // Max messages in queue
+  messageRetentionMs: number;     // Message retention time
+  deliveryDelayMs: number;        // Delivery delay
+}
+
+export interface MessageQueuePerformance {
+  publishLatencyMs: number;       // 1-100ms
+  consumeLatencyMs: number;       // 1-100ms
+  messagesPerSecond: number;      // Throughput limit
+}
+
+export interface MessageQueueUtilization {
+  queueDepth: number;             // Current messages in queue
+  messagesPublished: number;      // Total published
+  messagesConsumed: number;       // Total consumed
+  messagesDeadLettered: number;   // Failed messages
+  avgProcessingTime: number;      // Average processing time
+  throughput: number;             // Current msgs/sec
+}
+
+export interface MessageQueueNodeData {
+  label: string;
+  status?: NodeStatus;
+  queueType: MessageQueueType;
+  mode: MessageQueueMode;
+
+  configuration: MessageQueueConfiguration;
+  performance: MessageQueuePerformance;
+
+  // Consumer configuration
+  consumerCount: number;          // 1-100 consumers
+  prefetchCount: number;          // Messages per consumer batch
+  ackMode: 'auto' | 'manual';
+
+  // Reliability
+  retryEnabled: boolean;
+  maxRetries: number;
+  deadLetterEnabled: boolean;
+
+  utilization?: MessageQueueUtilization;
+
+  [key: string]: unknown;
+}
+
+export const defaultMessageQueueNodeData: MessageQueueNodeData = {
+  label: 'Message Queue',
+  queueType: 'rabbitmq',
+  mode: 'fifo',
+  configuration: {
+    maxQueueSize: 10000,
+    messageRetentionMs: 86400000, // 24h
+    deliveryDelayMs: 0,
+  },
+  performance: {
+    publishLatencyMs: 2,
+    consumeLatencyMs: 5,
+    messagesPerSecond: 1000,
+  },
+  consumerCount: 1,
+  prefetchCount: 10,
+  ackMode: 'auto',
+  retryEnabled: true,
+  maxRetries: 3,
+  deadLetterEnabled: true,
+};
+
+// ============================================
+// API Gateway Node Types
+// ============================================
+export type ApiGatewayAuthType = 'none' | 'api-key' | 'jwt' | 'oauth2';
+
+export interface ApiGatewayRateLimiting {
+  enabled: boolean;
+  requestsPerSecond: number;
+  burstSize: number;
+  windowMs: number;
+}
+
+export interface ApiGatewayRouting {
+  pathPrefix: string;
+  stripPrefix: boolean;
+  timeout: number;
+}
+
+// Règle de routage pour l'API Gateway
+export interface ApiGatewayRouteRule {
+  id: string;                 // Identifiant unique de la règle
+  pathPattern: string;        // Pattern de route (ex: "/users/*", "/orders/*")
+  targetServiceName: string;  // Nom du service cible (doit correspondre au serviceName d'un HTTP Server)
+  priority: number;           // Priorité (plus petit = plus prioritaire)
+}
+
+export interface ApiGatewayUtilization {
+  totalRequests: number;
+  blockedRequests: number;
+  authFailures: number;
+  avgLatency: number;
+  activeConnections: number;
+  rateLimitHits: number;
+}
+
+export interface ApiGatewayNodeData {
+  label: string;
+  status?: NodeStatus;
+
+  // Authentication
+  authType: ApiGatewayAuthType;
+  authFailureRate: number;        // 0-100% (simulated auth failures)
+
+  // Rate limiting
+  rateLimiting: ApiGatewayRateLimiting;
+
+  // Routing
+  routing: ApiGatewayRouting;
+
+  // Règles de routage vers les services (microservices)
+  routeRules: ApiGatewayRouteRule[];
+
+  // Performance
+  baseLatencyMs: number;
+  errorRate: number;              // 0-100%
+
+  // Features
+  corsEnabled: boolean;
+  loggingEnabled: boolean;
+  compressionEnabled: boolean;
+
+  utilization?: ApiGatewayUtilization;
+
+  [key: string]: unknown;
+}
+
+export const defaultApiGatewayNodeData: ApiGatewayNodeData = {
+  label: 'API Gateway',
+  authType: 'none',
+  authFailureRate: 0,
+  rateLimiting: {
+    enabled: true,
+    requestsPerSecond: 100,
+    burstSize: 20,
+    windowMs: 1000,
+  },
+  routing: {
+    pathPrefix: '/api',
+    stripPrefix: true,
+    timeout: 30000,
+  },
+  routeRules: [],
+  baseLatencyMs: 5,
+  errorRate: 0,
+  corsEnabled: true,
+  loggingEnabled: true,
+  compressionEnabled: true,
 };

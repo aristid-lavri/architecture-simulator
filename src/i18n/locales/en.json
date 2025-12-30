@@ -84,6 +84,106 @@
       "responseBody": "Response body",
       "delay": "Latency (ms)",
       "errorRate": "Error rate (%)"
+    },
+    "database": {
+      "type": "Database type",
+      "connectionPool": "Connection pool",
+      "maxConnections": "Max connections",
+      "minConnections": "Min connections",
+      "connectionTimeout": "Connection timeout (ms)",
+      "idleTimeout": "Idle timeout (ms)",
+      "performance": "Performance",
+      "readLatency": "Read latency (ms)",
+      "writeLatency": "Write latency (ms)",
+      "transactionLatency": "Transaction latency (ms)",
+      "capacity": "Capacity",
+      "maxQps": "Max queries/sec",
+      "errorRate": "Error rate (%)"
+    },
+    "cache": {
+      "type": "Cache type",
+      "memoryConfig": "Memory configuration",
+      "maxMemory": "Max memory (MB)",
+      "maxKeys": "Max keys",
+      "defaultTTL": "Default TTL (s)",
+      "evictionPolicy": "Eviction policy",
+      "evictionLru": "LRU (Least Recently Used)",
+      "evictionLfu": "LFU (Least Frequently Used)",
+      "evictionFifo": "FIFO (First In First Out)",
+      "performance": "Latencies",
+      "getLatency": "GET (ms)",
+      "setLatency": "SET (ms)",
+      "hitMissSimulation": "Hit/Miss simulation",
+      "initialHitRatio": "Initial hit ratio (%)",
+      "hitRatioVariance": "Variance (%)",
+      "warmUp": "Warm-up period",
+      "warmUpEnabled": "Enable warm-up",
+      "warmUpDuration": "Duration (s)"
+    },
+    "loadBalancer": {
+      "algorithm": "Distribution algorithm",
+      "roundRobin": "Round Robin",
+      "leastConnections": "Least Connections",
+      "ipHash": "IP Hash",
+      "weighted": "Weighted",
+      "healthCheck": "Health Check",
+      "healthCheckEnabled": "Enable",
+      "healthCheckInterval": "Interval (s)",
+      "healthCheckTimeout": "Timeout (s)",
+      "unhealthyThreshold": "Failure threshold",
+      "stickySessions": "Sticky sessions",
+      "stickyEnabled": "Enable",
+      "sessionTTL": "Session duration (s)"
+    },
+    "messageQueue": {
+      "type": "Queue type",
+      "mode": "Mode",
+      "modeFifo": "FIFO (First In First Out)",
+      "modePriority": "Priority Queue",
+      "modePubsub": "Pub/Sub",
+      "configuration": "Configuration",
+      "maxQueueSize": "Max queue size",
+      "messageRetention": "Message retention (h)",
+      "deliveryDelay": "Delivery delay (ms)",
+      "performance": "Performance",
+      "publishLatency": "Publish latency (ms)",
+      "consumeLatency": "Consume latency (ms)",
+      "messagesPerSecond": "Max messages/sec",
+      "consumers": "Consumers",
+      "consumerCount": "Consumer count",
+      "prefetchCount": "Prefetch count",
+      "ackMode": "Acknowledge mode",
+      "ackAuto": "Automatic",
+      "ackManual": "Manual",
+      "reliability": "Reliability",
+      "retryEnabled": "Enable retries",
+      "maxRetries": "Max retries",
+      "deadLetterEnabled": "Dead letter queue"
+    },
+    "apiGateway": {
+      "authentication": "Authentication",
+      "authType": "Auth type",
+      "authNone": "None",
+      "authApiKey": "API Key",
+      "authJwt": "JWT",
+      "authOauth2": "OAuth2",
+      "authFailureRate": "Auth failure rate (%)",
+      "rateLimiting": "Rate Limiting",
+      "rateLimitEnabled": "Enable",
+      "requestsPerSecond": "Requests/sec",
+      "burstSize": "Burst size",
+      "windowMs": "Window (ms)",
+      "routing": "Routing",
+      "pathPrefix": "Path prefix",
+      "stripPrefix": "Strip prefix",
+      "timeout": "Timeout (s)",
+      "performance": "Performance",
+      "baseLatency": "Base latency (ms)",
+      "errorRate": "Error rate (%)",
+      "features": "Features",
+      "corsEnabled": "CORS",
+      "loggingEnabled": "Logging",
+      "compressionEnabled": "Compression"
     }
   },
   "metrics": {
@@ -106,5 +206,25 @@
     "empty": "Drag and drop components here",
     "editMode": "Edit mode",
     "simulationMode": "Simulation mode"
+  },
+  "templates": {
+    "title": "Templates",
+    "monolith": {
+      "name": "Simple Monolith",
+      "description": "Monolithic architecture with cache"
+    },
+    "loadBalanced": {
+      "name": "Load Balanced",
+      "description": "Load balanced architecture"
+    },
+    "microservices": {
+      "name": "Microservices",
+      "description": "Microservices architecture with API Gateway"
+    },
+    "eventDriven": {
+      "name": "Event-Driven",
+      "description": "Event-driven architecture with Message Queue (Kafka)"
+    },
+    "confirmReplace": "Replace current architecture?"
   }
 }

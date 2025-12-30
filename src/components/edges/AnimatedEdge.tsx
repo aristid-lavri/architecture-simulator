@@ -1,12 +1,15 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef, useEffect, useState } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
+  getSmoothStepPath,
+  getStraightPath,
   Position,
   type EdgeProps,
+  type Edge,
 } from '@xyflow/react';
 import { useSimulationStore } from '@/store/simulation-store';
 import type { ParticleType } from '@/types';
@@ -17,7 +20,18 @@ const particleColors: Record<ParticleType, string> = {
   'response-error': '#ef4444',
 };
 
-function AnimatedEdge({
+export interface AnimatedEdgeData extends Record<string, unknown> {
+  color?: string;
+  strokeWidth?: number;
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
+  pathType?: 'bezier' | 'smoothstep' | 'straight';
+  animated?: boolean;
+  label?: string;
+}
+
+export type AnimatedEdge = Edge<AnimatedEdgeData>;
+
+function AnimatedEdgeComponent({
   id,
   sourceX,
   sourceY,
@@ -27,56 +41,99 @@ function AnimatedEdge({
   targetPosition = Position.Top,
   style = {},
   markerEnd,
-}: EdgeProps) {
+  selected,
+  data,
+}: EdgeProps<AnimatedEdge>) {
   const allParticles = useSimulationStore((state) => state.particles);
   const simulationState = useSimulationStore((state) => state.state);
+  const pathRef = useRef<SVGPathElement>(null);
+  const [pathLength, setPathLength] = useState(0);
+
+  // Edge customization from data
+  const edgeColor = data?.color || (selected ? '#3b82f6' : (simulationState === 'running' ? '#666' : '#888'));
+  const strokeWidth = data?.strokeWidth || (selected ? 4 : 3);
+  const strokeStyle = data?.strokeStyle || 'solid';
+  const pathType = data?.pathType || 'bezier';
 
   const particles = useMemo(
     () => allParticles.filter((p) => p.edgeId === id),
     [allParticles, id]
   );
 
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
+  // Calculate path based on pathType
+  const [edgePath, labelX, labelY] = useMemo(() => {
+    const pathParams = {
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+    };
 
-  // Calculate point on bezier curve at progress t (0-1)
-  const getPointOnPath = (t: number) => {
-    const cx1 = sourceX + (targetX - sourceX) * 0.5;
-    const cy1 = sourceY;
-    const cx2 = sourceX + (targetX - sourceX) * 0.5;
-    const cy2 = targetY;
+    switch (pathType) {
+      case 'smoothstep':
+        return getSmoothStepPath(pathParams);
+      case 'straight':
+        return getStraightPath({ sourceX, sourceY, targetX, targetY });
+      case 'bezier':
+      default:
+        return getBezierPath(pathParams);
+    }
+  }, [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, pathType]);
 
-    const x =
-      Math.pow(1 - t, 3) * sourceX +
-      3 * Math.pow(1 - t, 2) * t * cx1 +
-      3 * (1 - t) * Math.pow(t, 2) * cx2 +
-      Math.pow(t, 3) * targetX;
+  // Get stroke dasharray based on style
+  const strokeDasharray = useMemo(() => {
+    switch (strokeStyle) {
+      case 'dashed':
+        return '8 4';
+      case 'dotted':
+        return '2 4';
+      default:
+        return undefined;
+    }
+  }, [strokeStyle]);
 
-    const y =
-      Math.pow(1 - t, 3) * sourceY +
-      3 * Math.pow(1 - t, 2) * t * cy1 +
-      3 * (1 - t) * Math.pow(t, 2) * cy2 +
-      Math.pow(t, 3) * targetY;
+  // Get path length when path changes
+  useEffect(() => {
+    if (pathRef.current) {
+      setPathLength(pathRef.current.getTotalLength());
+    }
+  }, [edgePath]);
 
-    return { x, y };
+  // Get point on the actual SVG path at progress t (0-1)
+  const getPointOnPath = (t: number): { x: number; y: number } => {
+    if (!pathRef.current || pathLength === 0) {
+      // Fallback to linear interpolation
+      return {
+        x: sourceX + (targetX - sourceX) * t,
+        y: sourceY + (targetY - sourceY) * t,
+      };
+    }
+
+    const point = pathRef.current.getPointAtLength(t * pathLength);
+    return { x: point.x, y: point.y };
   };
 
   return (
     <>
+      {/* Hidden path for measuring */}
+      <path
+        ref={pathRef}
+        d={edgePath}
+        fill="none"
+        style={{ visibility: 'hidden' }}
+      />
+
       <BaseEdge
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
         style={{
           ...style,
-          strokeWidth: 2,
-          stroke: simulationState === 'running' ? '#666' : '#888',
+          strokeWidth,
+          stroke: edgeColor,
+          strokeDasharray,
         }}
       />
 
@@ -98,7 +155,6 @@ function AnimatedEdge({
               r={8}
               fill={color}
               opacity={0.3}
-              filter="blur(3px)"
             />
             {/* Main particle */}
             <circle
@@ -113,8 +169,8 @@ function AnimatedEdge({
         );
       })}
 
-      {/* Particle count label */}
-      {particles.length > 0 && (
+      {/* Edge label or particle count */}
+      {(particles.length > 0 || data?.label) && (
         <EdgeLabelRenderer>
           <div
             style={{
@@ -124,7 +180,7 @@ function AnimatedEdge({
             }}
             className="nodrag nopan px-2 py-0.5 text-xs bg-white/80 rounded-full border shadow-sm"
           >
-            {particles.length}
+            {particles.length > 0 ? particles.length : data?.label}
           </div>
         </EdgeLabelRenderer>
       )}
@@ -132,4 +188,4 @@ function AnimatedEdge({
   );
 }
 
-export default memo(AnimatedEdge);
+export default memo(AnimatedEdgeComponent);

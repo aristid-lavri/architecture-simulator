@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { useSimulationStore } from '@/store/simulation-store';
+import { useArchitectureStore } from '@/store/architecture-store';
+import { useTranslation } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
@@ -14,6 +16,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Play,
   Pause,
   Square,
@@ -24,7 +42,11 @@ import {
   Settings2,
   Clock,
   Timer,
+  LayoutTemplate,
+  ChevronDown,
+  Trash2,
 } from 'lucide-react';
+import { architectureTemplates, type ArchitectureTemplate } from '@/data/architecture-templates';
 import type { AppMode } from '@/types';
 
 function formatTime(seconds: number): string {
@@ -34,6 +56,7 @@ function formatTime(seconds: number): string {
 }
 
 export function Header() {
+  const { t } = useTranslation();
   const { mode, setMode, toggleComponentsPanel, isComponentsPanelOpen } =
     useAppStore();
   const {
@@ -47,9 +70,46 @@ export function Header() {
     updateElapsedTime,
     metrics,
   } = useSimulationStore();
+  const { nodes, setNodes, setEdges, clear } = useArchitectureStore();
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [pendingTemplate, setPendingTemplate] = useState<ArchitectureTemplate | null>(null);
+
+  const handleTemplateSelect = (template: ArchitectureTemplate) => {
+    if (nodes.length > 0) {
+      setPendingTemplate(template);
+      setConfirmDialogOpen(true);
+    } else {
+      applyTemplate(template);
+    }
+  };
+
+  const applyTemplate = (template: ArchitectureTemplate) => {
+    setNodes(template.nodes);
+    setEdges(template.edges);
+    setPendingTemplate(null);
+  };
+
+  const confirmTemplateApply = () => {
+    if (pendingTemplate) {
+      applyTemplate(pendingTemplate);
+    }
+    setConfirmDialogOpen(false);
+  };
+
+  const handleClearCanvas = () => {
+    if (nodes.length > 0) {
+      setClearDialogOpen(true);
+    }
+  };
+
+  const confirmClear = () => {
+    clear();
+    setClearDialogOpen(false);
+  };
 
   // Timer effect
   useEffect(() => {
@@ -198,11 +258,44 @@ export function Header() {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
+        {/* Templates Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="gap-2">
+              <LayoutTemplate className="h-4 w-4" />
+              {t('templates.title')}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {architectureTemplates.map((template) => (
+              <DropdownMenuItem
+                key={template.id}
+                onClick={() => handleTemplateSelect(template)}
+                className="flex flex-col items-start gap-1"
+              >
+                <span className="font-medium">{t(template.nameKey)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t(template.descriptionKey)}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button variant="ghost" size="icon" title="Ouvrir">
           <FolderOpen className="h-4 w-4" />
         </Button>
         <Button variant="ghost" size="icon" title="Sauvegarder">
           <Save className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Vider le canvas"
+          onClick={handleClearCanvas}
+          disabled={nodes.length === 0 || mode === 'simulation'}
+        >
+          <Trash2 className="h-4 w-4" />
         </Button>
         <Separator orientation="vertical" className="h-6" />
         <Button
@@ -214,6 +307,42 @@ export function Header() {
           <PanelRight className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* Template Confirmation Dialog */}
+      <AlertDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('templates.title')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('templates.confirmReplace')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmTemplateApply}>
+              {t('common.open')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clear Canvas Confirmation Dialog */}
+      <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Vider le canvas</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cette action supprimera tous les composants et connexions de l'éditeur. Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmClear} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Vider
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </header>
   );
 }
