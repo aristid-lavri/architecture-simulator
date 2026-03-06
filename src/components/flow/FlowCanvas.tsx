@@ -30,12 +30,22 @@ import CacheNode from '@/components/nodes/CacheNode';
 import LoadBalancerNode from '@/components/nodes/LoadBalancerNode';
 import MessageQueueNode from '@/components/nodes/MessageQueueNode';
 import ApiGatewayNode from '@/components/nodes/ApiGatewayNode';
+import NetworkZoneNode from '@/components/nodes/NetworkZoneNode';
+import CircuitBreakerNode from '@/components/nodes/CircuitBreakerNode';
+import CDNNode from '@/components/nodes/CDNNode';
+import WAFNode from '@/components/nodes/WAFNode';
+import ServerlessNode from '@/components/nodes/ServerlessNode';
+import ContainerNode from '@/components/nodes/ContainerNode';
+import ServiceDiscoveryNode from '@/components/nodes/ServiceDiscoveryNode';
+import DNSNode from '@/components/nodes/DNSNode';
+import CloudStorageNode from '@/components/nodes/CloudStorageNode';
+import FirewallNode from '@/components/nodes/FirewallNode';
 import AnimatedEdge from '@/components/edges/AnimatedEdge';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { cn } from '@/lib/utils';
 import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock } from 'lucide-react';
 import type { ComponentType } from '@/types';
-import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData } from '@/types';
+import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultNetworkZoneData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultServerlessData, defaultServiceDiscoveryData, defaultCloudStorageData, defaultCloudFunctionData, defaultFirewallData, defaultContainerData, defaultDNSNodeData } from '@/types';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
@@ -55,6 +65,17 @@ const nodeTypes = {
   'load-balancer': LoadBalancerNode,
   'message-queue': MessageQueueNode,
   'api-gateway': ApiGatewayNode,
+  'network-zone': NetworkZoneNode,
+  'circuit-breaker': CircuitBreakerNode,
+  'cdn': CDNNode,
+  'waf': WAFNode,
+  'serverless': ServerlessNode,
+  'cloud-function': ServerlessNode,
+  'container': ContainerNode,
+  'service-discovery': ServiceDiscoveryNode,
+  'dns': DNSNode,
+  'cloud-storage': CloudStorageNode,
+  'firewall': FirewallNode,
 };
 
 // Custom edge types
@@ -116,6 +137,28 @@ function getDefaultNodeData(type: ComponentType): HttpClientNodeData | HttpServe
         ...defaultApiGatewayNodeData,
         status: 'idle',
       } satisfies ApiGatewayNodeData;
+    case 'network-zone':
+      return { ...defaultNetworkZoneData };
+    case 'circuit-breaker':
+      return { ...defaultCircuitBreakerData, status: 'idle' };
+    case 'cdn':
+      return { ...defaultCDNNodeData, status: 'idle' };
+    case 'waf':
+      return { ...defaultWAFNodeData, status: 'idle' };
+    case 'firewall':
+      return { ...defaultFirewallData, status: 'idle' };
+    case 'serverless':
+      return { ...defaultServerlessData, status: 'idle' };
+    case 'cloud-function':
+      return { ...defaultCloudFunctionData, status: 'idle' };
+    case 'container':
+      return { ...defaultContainerData, status: 'idle' };
+    case 'service-discovery':
+      return { ...defaultServiceDiscoveryData, status: 'idle' };
+    case 'dns':
+      return { ...defaultDNSNodeData, status: 'idle' };
+    case 'cloud-storage':
+      return { ...defaultCloudStorageData, status: 'idle' };
     default:
       return { label: type.replace('-', ' ').toUpperCase() };
   }
@@ -258,13 +301,13 @@ export function FlowCanvas() {
       updatedNodes = updatedNodes.map((node) => {
         const storedNode = storedNodes.find((n) => n.id === node.id);
         if (storedNode) {
-          // Compare data (excluding status which is managed by simulation)
-          const currentData = { ...node.data };
-          const storedData = { ...storedNode.data };
-          delete currentData.status;
-          delete storedData.status;
+          // Shallow compare data keys (excluding status which is managed by simulation)
+          const dataChanged = Object.keys(storedNode.data).some((key) => {
+            if (key === 'status') return false;
+            return node.data[key] !== storedNode.data[key];
+          });
 
-          if (JSON.stringify(currentData) !== JSON.stringify(storedData)) {
+          if (dataChanged) {
             hasChanges = true;
             return {
               ...node,
@@ -333,15 +376,10 @@ export function FlowCanvas() {
   useEffect(() => {
     if (initializedRef.current && !syncingFromStoreRef.current) {
       saveNodes(nodes);
-    }
-    syncingFromStoreRef.current = false;
-  }, [nodes, saveNodes]);
-
-  useEffect(() => {
-    if (initializedRef.current) {
       saveEdges(edges);
     }
-  }, [edges, saveEdges]);
+    syncingFromStoreRef.current = false;
+  }, [nodes, edges, saveNodes, saveEdges]);
 
   // Sync node statuses from simulation store to node data
   useEffect(() => {
@@ -548,14 +586,15 @@ export function FlowCanvas() {
         y: event.clientY - 100,
       };
 
-      // Determine node type for React Flow
-      const nodeType = type === 'http-client' || type === 'http-server' || type === 'client-group' || type === 'database' || type === 'cache' || type === 'load-balancer' || type === 'message-queue' || type === 'api-gateway' ? type : 'default';
+      // Use the component type directly as node type (all types are registered in nodeTypes)
+      const nodeType = type in nodeTypes ? type : 'default';
 
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type: nodeType,
         position,
         data: getDefaultNodeData(type),
+        ...(type === 'network-zone' ? { style: { width: 400, height: 250 } } : {}),
       };
 
       setNodes((nds) => nds.concat(newNode));
@@ -611,6 +650,7 @@ export function FlowCanvas() {
         nodesConnectable={isEditable}
         elementsSelectable={true}
         fitView={false}
+        onlyRenderVisibleElements
         defaultViewport={{ x: 100, y: 50, zoom: 0.75 }}
         className="bg-background"
         defaultEdgeOptions={{

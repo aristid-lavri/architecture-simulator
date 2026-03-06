@@ -11,7 +11,18 @@ export type ComponentType =
   | 'message-queue'
   | 'http-client'
   | 'http-server'
-  | 'client-group';
+  | 'client-group'
+  | 'network-zone'
+  | 'circuit-breaker'
+  | 'cdn'
+  | 'waf'
+  | 'firewall'
+  | 'serverless'
+  | 'container'
+  | 'service-discovery'
+  | 'dns'
+  | 'cloud-storage'
+  | 'cloud-function';
 
 /** Configuration d'un composant dans le catalogue (panneau lateral). */
 export interface ComponentConfig {
@@ -127,6 +138,14 @@ export interface Particle {
   duration: number; // ms
   startTime: number;
   data?: Record<string, unknown>;
+}
+
+/** Extract chainId from particle data safely. */
+export function getParticleChainId(particle: Particle): string | undefined {
+  if (particle.data && typeof particle.data.chainId === 'string') {
+    return particle.data.chainId;
+  }
+  return undefined;
 }
 
 // ============================================
@@ -899,6 +918,324 @@ export interface ApiGatewayNodeData {
 }
 
 /** Valeurs par defaut pour un noeud API Gateway (sans auth, rate limit 100 req/s). */
+
+// ============================================
+// Network Zone Configuration
+// ============================================
+
+export type NetworkZoneType = 'public' | 'dmz' | 'backend' | 'data' | 'custom';
+
+export interface NetworkZoneNodeData {
+  label: string;
+  zoneType: NetworkZoneType;
+  domain?: string;
+  subdomains?: string[];
+  color: string;
+  interZoneLatency: number;
+  [key: string]: unknown;
+}
+
+export const zoneColors: Record<NetworkZoneType, string> = {
+  public: 'oklch(0.70 0.15 220)',
+  dmz: 'oklch(0.75 0.18 75)',
+  backend: 'oklch(0.72 0.19 155)',
+  data: 'oklch(0.68 0.18 290)',
+  custom: 'oklch(0.65 0.10 0)',
+};
+
+export const defaultNetworkZoneData: NetworkZoneNodeData = {
+  label: 'Zone',
+  zoneType: 'backend',
+  color: zoneColors.backend,
+  interZoneLatency: 2,
+};
+
+// ============================================
+// Circuit Breaker Configuration
+// ============================================
+
+export type CircuitBreakerState = 'closed' | 'open' | 'half-open';
+
+export interface CircuitBreakerNodeData {
+  label: string;
+  status?: NodeStatus;
+  failureThreshold: number;
+  successThreshold: number;
+  timeout: number;
+  halfOpenMaxRequests: number;
+  monitoringWindow: number;
+  circuitState?: CircuitBreakerState;
+  failureCount?: number;
+  successCount?: number;
+  [key: string]: unknown;
+}
+
+export const defaultCircuitBreakerData: CircuitBreakerNodeData = {
+  label: 'Circuit Breaker',
+  failureThreshold: 5,
+  successThreshold: 3,
+  timeout: 30000,
+  halfOpenMaxRequests: 3,
+  monitoringWindow: 60000,
+  circuitState: 'closed',
+  failureCount: 0,
+  successCount: 0,
+};
+
+// ============================================
+// CDN Configuration
+// ============================================
+
+export interface CDNNodeData {
+  label: string;
+  status?: NodeStatus;
+  provider: 'cloudflare' | 'cloudfront' | 'akamai' | 'generic';
+  cacheHitRatio: number;
+  edgeLatencyMs: number;
+  originLatencyMs: number;
+  bandwidthMbps: number;
+  cacheTTLSeconds: number;
+  [key: string]: unknown;
+}
+
+export const defaultCDNNodeData: CDNNodeData = {
+  label: 'CDN',
+  provider: 'generic',
+  cacheHitRatio: 85,
+  edgeLatencyMs: 5,
+  originLatencyMs: 50,
+  bandwidthMbps: 1000,
+  cacheTTLSeconds: 3600,
+};
+
+// ============================================
+// WAF Configuration
+// ============================================
+
+export interface WAFNodeData {
+  label: string;
+  status?: NodeStatus;
+  provider: 'aws-waf' | 'cloudflare' | 'azure-waf' | 'generic';
+  inspectionLatencyMs: number;
+  blockRate: number;
+  rules: {
+    sqlInjection: boolean;
+    xss: boolean;
+    rateLimiting: boolean;
+    ipBlocking: boolean;
+    geoBlocking: boolean;
+  };
+  requestsPerSecond: number;
+  [key: string]: unknown;
+}
+
+export const defaultWAFNodeData: WAFNodeData = {
+  label: 'WAF',
+  provider: 'generic',
+  inspectionLatencyMs: 2,
+  blockRate: 5,
+  rules: {
+    sqlInjection: true,
+    xss: true,
+    rateLimiting: true,
+    ipBlocking: false,
+    geoBlocking: false,
+  },
+  requestsPerSecond: 10000,
+};
+
+// ============================================
+// Firewall Configuration
+// ============================================
+
+export interface FirewallNodeData {
+  label: string;
+  status?: NodeStatus;
+  inspectionLatencyMs: number;
+  defaultAction: 'allow' | 'deny';
+  allowedPorts: number[];
+  blockedIPs: string[];
+  [key: string]: unknown;
+}
+
+export const defaultFirewallData: FirewallNodeData = {
+  label: 'Firewall',
+  inspectionLatencyMs: 1,
+  defaultAction: 'allow',
+  allowedPorts: [80, 443, 8080],
+  blockedIPs: [],
+};
+
+// ============================================
+// Serverless / Cloud Function Configuration
+// ============================================
+
+export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'generic';
+
+export interface ServerlessNodeData {
+  label: string;
+  status?: NodeStatus;
+  provider: CloudProvider;
+  runtime: string;
+  memoryMB: number;
+  timeoutMs: number;
+  coldStartMs: number;
+  warmStartMs: number;
+  concurrencyLimit: number;
+  minInstances: number;
+  maxInstances: number;
+  currentInstances?: number;
+  costPerInvocation?: number;
+  [key: string]: unknown;
+}
+
+export const defaultServerlessData: ServerlessNodeData = {
+  label: 'Lambda',
+  provider: 'aws',
+  runtime: 'nodejs20.x',
+  memoryMB: 256,
+  timeoutMs: 30000,
+  coldStartMs: 500,
+  warmStartMs: 5,
+  concurrencyLimit: 100,
+  minInstances: 0,
+  maxInstances: 100,
+  currentInstances: 0,
+};
+
+// ============================================
+// Container Configuration
+// ============================================
+
+export interface ContainerNodeData {
+  label: string;
+  status?: NodeStatus;
+  image: string;
+  replicas: number;
+  cpuLimit: string;
+  memoryLimit: string;
+  autoScaling: {
+    enabled: boolean;
+    minReplicas: number;
+    maxReplicas: number;
+    targetCPU: number;
+  };
+  healthCheck: {
+    path: string;
+    intervalMs: number;
+    timeoutMs: number;
+  };
+  responseDelayMs: number;
+  [key: string]: unknown;
+}
+
+export const defaultContainerData: ContainerNodeData = {
+  label: 'Container',
+  image: 'app:latest',
+  replicas: 2,
+  cpuLimit: '500m',
+  memoryLimit: '512Mi',
+  autoScaling: {
+    enabled: true,
+    minReplicas: 1,
+    maxReplicas: 10,
+    targetCPU: 70,
+  },
+  healthCheck: {
+    path: '/health',
+    intervalMs: 10000,
+    timeoutMs: 3000,
+  },
+  responseDelayMs: 20,
+};
+
+// ============================================
+// Service Discovery Configuration
+// ============================================
+
+export interface ServiceDiscoveryNodeData {
+  label: string;
+  status?: NodeStatus;
+  provider: 'consul' | 'eureka' | 'kubernetes' | 'generic';
+  registrationLatencyMs: number;
+  lookupLatencyMs: number;
+  healthCheckIntervalMs: number;
+  cacheTTLMs: number;
+  [key: string]: unknown;
+}
+
+export const defaultServiceDiscoveryData: ServiceDiscoveryNodeData = {
+  label: 'Service Discovery',
+  provider: 'consul',
+  registrationLatencyMs: 10,
+  lookupLatencyMs: 2,
+  healthCheckIntervalMs: 10000,
+  cacheTTLMs: 5000,
+};
+
+// ============================================
+// DNS Configuration
+// ============================================
+
+export interface DNSNodeData {
+  label: string;
+  status?: NodeStatus;
+  resolutionLatencyMs: number;
+  ttlSeconds: number;
+  records: { type: 'A' | 'CNAME' | 'AAAA'; name: string; value: string }[];
+  failoverEnabled: boolean;
+  [key: string]: unknown;
+}
+
+export const defaultDNSNodeData: DNSNodeData = {
+  label: 'DNS',
+  resolutionLatencyMs: 5,
+  ttlSeconds: 300,
+  records: [],
+  failoverEnabled: false,
+};
+
+// ============================================
+// Cloud Storage (S3 / Blob / GCS)
+// ============================================
+
+export interface CloudStorageNodeData {
+  label: string;
+  status?: NodeStatus;
+  provider: CloudProvider;
+  storageClass: 'standard' | 'infrequent' | 'archive';
+  readLatencyMs: number;
+  writeLatencyMs: number;
+  bandwidthMbps: number;
+  maxRequestsPerSecond: number;
+  [key: string]: unknown;
+}
+
+export const defaultCloudStorageData: CloudStorageNodeData = {
+  label: 'S3 Bucket',
+  provider: 'aws',
+  storageClass: 'standard',
+  readLatencyMs: 20,
+  writeLatencyMs: 50,
+  bandwidthMbps: 500,
+  maxRequestsPerSecond: 5500,
+};
+
+// ============================================
+// Cloud Function (wraps Serverless with cloud presets)
+// ============================================
+
+export interface CloudFunctionNodeData extends ServerlessNodeData {
+  serviceType: 'aws-lambda' | 'azure-function' | 'gcp-cloud-function';
+}
+
+export const defaultCloudFunctionData: CloudFunctionNodeData = {
+  ...defaultServerlessData,
+  label: 'AWS Lambda',
+  serviceType: 'aws-lambda',
+  provider: 'aws',
+};
+
 export const defaultApiGatewayNodeData: ApiGatewayNodeData = {
   label: 'API Gateway',
   authType: 'none',

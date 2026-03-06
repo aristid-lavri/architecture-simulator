@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowRight, BookOpen } from 'lucide-react';
+import { ArrowRight, BookOpen, Monitor, Sun, Moon } from 'lucide-react';
+import { useAppStore } from '@/store/app-store';
 
 // ═══════════════════════════════════════
 // SIGNAL Landing Page
@@ -510,6 +511,7 @@ function AnimatedStat({ value, label, color }: { value: string; label: string; c
 // ── Main Page ──
 export default function LandingPage() {
   const [heroLoaded, setHeroLoaded] = useState(false);
+  const { theme, toggleTheme } = useAppStore();
 
   useEffect(() => {
     const t = setTimeout(() => setHeroLoaded(true), 100);
@@ -536,6 +538,14 @@ export default function LandingPage() {
           <span className="text-muted-foreground/50 hidden sm:inline">Accès anticipé</span>
           <span className="text-border hidden sm:inline">|</span>
           <span className="hover:text-foreground transition-colors">v0.1</span>
+          <span className="text-border">|</span>
+          <button
+            onClick={toggleTheme}
+            className="hover:text-foreground transition-colors"
+            aria-label={theme === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre'}
+          >
+            {theme === 'dark' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+          </button>
         </div>
       </div>
 
@@ -597,14 +607,19 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <p className={`font-mono text-[10px] text-muted-foreground/40 mt-5 transition-all duration-700 delay-900 ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}>
+          <p className={`font-mono text-[10px] text-muted-foreground/70 mt-5 transition-all duration-700 delay-900 ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}>
             Gratuit &bull; Aucune inscription &bull; Première simulation en 2 min
           </p>
+
+          <div className={`flex items-center gap-1.5 mt-3 font-mono text-[11px] font-semibold text-muted-foreground/50 transition-all duration-700 delay-1000 ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}>
+            <Monitor className="w-3.5 h-3.5" />
+            <span>Expérience optimisée pour desktop</span>
+          </div>
         </div>
 
         {/* Scroll indicator */}
         <div className={`absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 transition-all duration-700 delay-1100 ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}>
-          <span className="font-mono text-[9px] text-muted-foreground/40">SCROLL</span>
+          <span className="font-mono text-[9px] text-muted-foreground/50">SCROLL</span>
           <div className="scroll-indicator w-px h-8 bg-gradient-to-b from-muted-foreground/30 to-transparent" />
         </div>
       </section>
@@ -682,7 +697,7 @@ export default function LandingPage() {
                 label="MODÉLISATION"
                 step="01"
                 title="Dessinez. Connectez. Configurez."
-                description="9 types de composants : clients, serveurs, load balancers, caches, bases de données. Chacun avec ses paramètres réalistes."
+                description="9 types de composants : clients, serveurs, load balancers, caches, bases de données. Chacun avec ses paramètres réalistes. Ou tout définir en YAML."
                 delay={0}
               />
               <InstrumentBlock
@@ -716,6 +731,92 @@ export default function LandingPage() {
                 ESSAYER MAINTENANT
                 <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform duration-300" />
               </Link>
+            </div>
+          </RevealBlock>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════
+          SECTION 4b: YAML — Infrastructure as Code
+          Objectif: Mettre en avant le workflow YAML
+         ══════════════════════════════════════════ */}
+      <section className="py-24 px-6 border-t border-border">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+          <RevealBlock direction="left">
+            <span className="text-instrument text-[10px] text-signal-infra block mb-3">YAML-FIRST</span>
+            <h2 className="font-display font-bold text-2xl leading-tight mb-4">
+              Votre architecture,{' '}
+              <span className="text-signal-infra">en quelques lignes.</span>
+            </h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Pas besoin de drag &amp; drop. Décrivez vos composants, zones et connexions en YAML.
+              Importez, exportez, versionnez. Votre infrastructure devient du code.
+            </p>
+            <ul className="space-y-2 font-mono text-[11px] text-muted-foreground">
+              <li className="flex items-center gap-2">
+                <span className="w-1 h-1 rounded-full bg-signal-infra shrink-0" />
+                Import / export en un clic
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1 h-1 rounded-full bg-signal-infra shrink-0" />
+                Compatible Git — diff, review, historique
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1 h-1 rounded-full bg-signal-infra shrink-0" />
+                Zones réseau, 17 types de composants
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1 h-1 rounded-full bg-signal-infra shrink-0" />
+                Éditeur intégré avec validation instantanée
+              </li>
+            </ul>
+          </RevealBlock>
+
+          <RevealBlock direction="right" delay={200}>
+            <div className="border border-border overflow-hidden" style={{ borderRadius: '3px' }}>
+              {/* Mini header */}
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-card/80">
+                <div className="flex items-center gap-2">
+                  <div className="yaml-signal-bar-static h-0.5 w-4 rounded-full bg-signal-infra" />
+                  <span className="text-instrument text-[8px] text-signal-infra">YAML</span>
+                  <span className="text-border text-[8px]">|</span>
+                  <span className="font-mono text-[8px] text-muted-foreground">architecture.yaml</span>
+                </div>
+                <span className="font-mono text-[7px] text-muted-foreground/40">UTF-8</span>
+              </div>
+              {/* Code block */}
+              <div className="bg-muted/20 p-4 font-mono text-[10px] leading-relaxed">
+                <div className="flex">
+                  <div className="select-none pr-3 text-right text-muted-foreground/25 shrink-0">
+                    {Array.from({ length: 18 }, (_, i) => (
+                      <div key={i}>{i + 1}</div>
+                    ))}
+                  </div>
+                  <pre className="text-foreground overflow-x-auto"><code>{`version: 1
+name: "E-commerce API"
+
+zones:
+  backend:
+    type: backend
+    domain: "api.shop.com"
+
+components:
+  clients:
+    type: client-group
+    config:
+      virtualClients: 200
+
+  api:
+    type: http-server
+    zone: backend
+    config: { port: 8080 }`}</code></pre>
+                </div>
+              </div>
+              {/* Status bar */}
+              <div className="flex items-center justify-between px-3 py-1 border-t border-border bg-card/80 font-mono text-[7px] text-muted-foreground/40">
+                <span>LN:18 CH:284 KEYS:4</span>
+                <span>YAML</span>
+              </div>
             </div>
           </RevealBlock>
         </div>

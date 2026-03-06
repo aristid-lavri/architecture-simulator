@@ -93,7 +93,7 @@
   --secondary: oklch(0.94 0.008 250);
   --secondary-foreground: oklch(0.20 0.04 250);
   --muted: oklch(0.94 0.008 250);
-  --muted-foreground: oklch(0.45 0.03 250);
+  --muted-foreground: oklch(0.38 0.03 250);
   --accent: oklch(0.94 0.008 250);
   --accent-foreground: oklch(0.20 0.04 250);
   --destructive: oklch(0.55 0.22 25);
@@ -524,4 +524,98 @@
 
 .particle-glow-error {
   filter: drop-shadow(0 0 4px oklch(0.65 0.22 25 / 60%));
+}
+
+/* ═══════════════════════════════════════
+   YAML EDITOR — Mission Control Terminal
+   ═══════════════════════════════════════ */
+
+/* Signal bar pulse on open */
+.yaml-signal-bar {
+  background: linear-gradient(90deg, var(--signal-infra), oklch(0.75 0.18 75 / 60%), var(--signal-infra));
+  background-size: 200% 100%;
+  animation: yaml-signal-sweep 3s ease-in-out infinite;
+}
+
+@keyframes yaml-signal-sweep {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Toolbar buttons — instrument feel */
+.yaml-toolbar-btn {
+  position: relative;
+}
+
+.yaml-toolbar-btn::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  transition: all 0.2s ease;
+  transform: translateX(-50%);
+}
+
+.yaml-toolbar-btn:hover::after {
+  width: 80%;
+}
+
+/* Gutter scroll sync */
+.yaml-gutter-scroll {
+  overflow: hidden;
+}
+
+/* Textarea — code editor feel */
+.yaml-textarea {
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+
+.yaml-textarea::placeholder {
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════
+   DOCS SCROLLER — Signal Track
+   Thin, glowing track with amber active indicator
+   ═══════════════════════════════════════ */
+.docs-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--signal-active) transparent;
+}
+
+.docs-scroller::-webkit-scrollbar {
+  width: 5px;
+}
+
+.docs-scroller::-webkit-scrollbar-track {
+  background: transparent;
+  border-left: 1px solid var(--border);
+}
+
+.docs-scroller::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    oklch(0.75 0.18 75 / 20%),
+    oklch(0.75 0.18 75 / 50%),
+    oklch(0.75 0.18 75 / 20%)
+  );
+  border-radius: 0;
+}
+
+.docs-scroller::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    oklch(0.75 0.18 75 / 40%),
+    oklch(0.75 0.18 75 / 80%),
+    oklch(0.75 0.18 75 / 40%)
+  );
+}
+
+.docs-scroller::-webkit-scrollbar-thumb:active {
+  background: oklch(0.75 0.18 75 / 90%);
+  box-shadow: 0 0 6px oklch(0.75 0.18 75 / 40%);
 }

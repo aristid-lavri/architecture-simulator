@@ -36,11 +36,14 @@ import {
   Sun,
   Moon,
   BookOpen,
+  Code,
 } from 'lucide-react';
 import Link from 'next/link';
 import { architectureTemplates, type ArchitectureTemplate } from '@/data/architecture-templates';
+import { exportToYaml } from '@/lib/yaml-exporter';
 import type { AppMode } from '@/types';
 import { cn } from '@/lib/utils';
+import { YamlEditor } from '@/components/YamlEditor';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -73,6 +76,14 @@ export function Header() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const [pendingTemplate, setPendingTemplate] = useState<ArchitectureTemplate | null>(null);
+  const [yamlOpen, setYamlOpen] = useState(false);
+  const [yamlInitialContent, setYamlInitialContent] = useState<string | undefined>(undefined);
+
+  const handleViewTemplateYaml = (template: ArchitectureTemplate) => {
+    const yaml = exportToYaml(template.nodes, template.edges);
+    setYamlInitialContent(yaml);
+    setYamlOpen(true);
+  };
 
   const handleTemplateSelect = (template: ArchitectureTemplate) => {
     if (nodes.length > 0) {
@@ -186,7 +197,7 @@ export function Header() {
                 setMode('edit' as AppMode);
               }}
               className={cn(
-                'px-1.5 py-0.5 transition-colors',
+                'px-1.5 py-0.5 transition-colors cursor-pointer',
                 mode === 'edit' ? 'text-foreground' : 'hover:text-foreground/70'
               )}
             >
@@ -200,7 +211,7 @@ export function Header() {
             <button
               onClick={() => setMode('simulation' as AppMode)}
               className={cn(
-                'px-1.5 py-0.5 transition-colors',
+                'px-1.5 py-0.5 transition-colors cursor-pointer',
                 mode === 'simulation' ? 'text-signal-active' : 'hover:text-foreground/70'
               )}
             >
@@ -232,7 +243,7 @@ export function Header() {
           <>
             {/* Duration selector */}
             <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-1 hover:text-foreground transition-colors">
+              <DropdownMenuTrigger className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer">
                 <span>DUR:{durationOptions.find(d => d.value === (duration?.toString() ?? 'unlimited'))?.label || 'INF'}</span>
                 <ChevronDown className="w-3 h-3" />
               </DropdownMenuTrigger>
@@ -276,7 +287,7 @@ export function Header() {
                 <TooltipTrigger asChild>
                   <button
                     onClick={pause}
-                    className="flex items-center gap-1 text-signal-active hover:text-signal-active/80 transition-colors"
+                    className="flex items-center gap-1 text-signal-active hover:text-signal-active/80 transition-colors cursor-pointer"
                     aria-label="Mettre en pause la simulation"
                   >
                     <Pause className="w-3 h-3" />
@@ -295,7 +306,7 @@ export function Header() {
                       "flex items-center gap-1 px-2 py-0.5 transition-opacity",
                       simulationState === 'idle' && edges.length === 0
                         ? 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed'
-                        : 'bg-signal-active text-background hover:opacity-80'
+                        : 'bg-signal-active text-background hover:opacity-80 cursor-pointer'
                     )}
                     style={{ borderRadius: '2px' }}
                     aria-label={simulationState === 'paused' ? 'Reprendre la simulation' : 'Demarrer la simulation'}
@@ -317,7 +328,7 @@ export function Header() {
                 <button
                   onClick={() => stop('manual')}
                   disabled={simulationState === 'idle'}
-                  className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30"
+                  className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                   aria-label="Arreter la simulation"
                 >
                   <Square className="w-3 h-3" />
@@ -331,7 +342,7 @@ export function Header() {
                 <button
                   onClick={reset}
                   disabled={simulationState === 'idle'}
-                  className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30"
+                  className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                   aria-label="Reinitialiser la simulation"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -350,7 +361,7 @@ export function Header() {
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger asChild>
-              <DropdownMenuTrigger className="flex items-center gap-1 hover:text-foreground transition-colors">
+              <DropdownMenuTrigger className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer">
                 TPL
                 <ChevronDown className="w-3 h-3" />
               </DropdownMenuTrigger>
@@ -362,16 +373,40 @@ export function Header() {
               <DropdownMenuItem
                 key={template.id}
                 onClick={() => handleTemplateSelect(template)}
-                className="flex flex-col items-start gap-0.5"
+                className="flex items-center gap-2"
               >
-                <span className="font-medium text-xs">{t(template.nameKey)}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {t(template.descriptionKey)}
-                </span>
+                <div className="flex-1 flex flex-col items-start gap-0.5">
+                  <span className="font-medium text-xs">{t(template.nameKey)}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {t(template.descriptionKey)}
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleViewTemplateYaml(template); }}
+                  className="p-1 text-muted-foreground hover:text-signal-infra transition-colors shrink-0"
+                  aria-label={`Voir le YAML de ${t(template.nameKey)}`}
+                  title="Voir YAML"
+                >
+                  <Code className="w-3 h-3" />
+                </button>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => { setYamlInitialContent(undefined); setYamlOpen(true); }}
+              disabled={mode === 'simulation'}
+              className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+              aria-label="Editeur YAML"
+            >
+              YAML
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Definir l&apos;architecture en YAML</TooltipContent>
+        </Tooltip>
 
         <span className="text-border">|</span>
 
@@ -380,7 +415,7 @@ export function Header() {
             <button
               onClick={handleClearCanvas}
               disabled={nodes.length === 0 || mode === 'simulation'}
-              className="text-red-500 hover:text-red-400 drop-shadow-[0_0_6px_rgba(255,0,0,0.8)] transition-colors disabled:opacity-30"
+              className="text-red-500 hover:text-red-400 drop-shadow-[0_0_6px_rgba(255,0,0,0.8)] transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
               aria-label="Vider le canvas"
             >
               <Trash2 className="w-3 h-3" />
@@ -409,7 +444,7 @@ export function Header() {
             <TooltipTrigger asChild>
               <button
                 onClick={toggleTheme}
-                className="hover:text-foreground transition-colors"
+                className="hover:text-foreground transition-colors cursor-pointer"
                 aria-label={theme === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre'}
               >
                 {theme === 'dark' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
@@ -425,7 +460,7 @@ export function Header() {
           <TooltipTrigger asChild>
             <button
               onClick={toggleComponentsPanel}
-              className="hover:text-foreground transition-colors"
+              className="hover:text-foreground transition-colors cursor-pointer"
               aria-label="Afficher/masquer le panneau de composants"
             >
               RACK
@@ -470,6 +505,7 @@ export function Header() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <YamlEditor open={yamlOpen} onOpenChange={setYamlOpen} initialContent={yamlInitialContent} />
     </header>
   );
 }

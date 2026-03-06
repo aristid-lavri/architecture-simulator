@@ -1,0 +1,55 @@
+import type { Node, Edge } from '@xyflow/react';
+import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { CloudStorageNodeData } from '@/types';
+
+export class CloudStorageHandler implements NodeRequestHandler {
+  readonly nodeType = 'cloud-storage';
+
+  private requestCounts: Map<string, number> = new Map();
+
+  getProcessingDelay(node: Node, speed: number): number {
+    const data = node.data as CloudStorageNodeData;
+    // Average of read/write latency
+    return data.readLatencyMs / speed;
+  }
+
+  initialize(_node: Node): void {
+    // no-op
+  }
+
+  cleanup(nodeId: string): void {
+    this.requestCounts.delete(nodeId);
+  }
+
+  handleRequestArrival(
+    node: Node,
+    _context: RequestContext,
+    outgoingEdges: Edge[],
+    _allNodes: Node[]
+  ): RequestDecision {
+    const data = node.data as CloudStorageNodeData;
+
+    // Rate limiting
+    const count = this.requestCounts.get(node.id) || 0;
+    if (count >= data.maxRequestsPerSecond) {
+      return { action: 'reject', reason: 'rate-limit' };
+    }
+    this.requestCounts.set(node.id, count + 1);
+
+    // Reset counter every second
+    if (count === 0) {
+      setTimeout(() => this.requestCounts.set(node.id, 0), 1000);
+    }
+
+    // Storage is typically a terminal node (no outgoing)
+    if (outgoingEdges.length === 0) {
+      return { action: 'respond', isError: false };
+    }
+
+    const edge = outgoingEdges[0];
+    return {
+      action: 'forward',
+      targets: [{ nodeId: edge.target, edgeId: edge.id }],
+    };
+  }
+}

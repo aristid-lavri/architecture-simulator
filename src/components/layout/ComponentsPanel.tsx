@@ -1,10 +1,12 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Server,
   Database,
   Monitor,
@@ -13,6 +15,14 @@ import {
   Zap,
   MessageSquare,
   Shield,
+  Globe,
+  ShieldCheck,
+  ShieldOff,
+  Cloud,
+  Compass,
+  HardDrive,
+  Box,
+  Layers,
 } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -24,7 +34,7 @@ interface ComponentItem {
   descriptionKey: string;
   icon: React.ReactNode;
   signalColor: string;
-  category: 'simulation' | 'infrastructure' | 'data';
+  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone';
 }
 
 const COMPONENTS: ComponentItem[] = [
@@ -92,9 +102,94 @@ const COMPONENTS: ComponentItem[] = [
     signalColor: 'oklch(0.75 0.18 75)',
     category: 'data',
   },
+  // Zone
+  {
+    type: 'network-zone',
+    nameKey: 'components.networkZone.name',
+    descriptionKey: 'components.networkZone.description',
+    icon: <Layers className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.65 0.10 0)',
+    category: 'zone',
+  },
+  // Resilience
+  {
+    type: 'circuit-breaker',
+    nameKey: 'components.circuitBreaker.name',
+    descriptionKey: 'components.circuitBreaker.description',
+    icon: <ShieldOff className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.70 0.18 330)',
+    category: 'resilience',
+  },
+  // Edge / Security
+  {
+    type: 'cdn',
+    nameKey: 'components.cdn.name',
+    descriptionKey: 'components.cdn.description',
+    icon: <Globe className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.70 0.15 200)',
+    category: 'infrastructure',
+  },
+  {
+    type: 'waf',
+    nameKey: 'components.waf.name',
+    descriptionKey: 'components.waf.description',
+    icon: <ShieldCheck className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.65 0.20 25)',
+    category: 'infrastructure',
+  },
+  // Compute
+  {
+    type: 'serverless',
+    nameKey: 'components.serverless.name',
+    descriptionKey: 'components.serverless.description',
+    icon: <Cloud className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.68 0.18 50)',
+    category: 'compute',
+  },
+  {
+    type: 'container',
+    nameKey: 'components.container.name',
+    descriptionKey: 'components.container.description',
+    icon: <Box className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.68 0.18 50)',
+    category: 'compute',
+  },
+  // Discovery
+  {
+    type: 'service-discovery',
+    nameKey: 'components.serviceDiscovery.name',
+    descriptionKey: 'components.serviceDiscovery.description',
+    icon: <Compass className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.68 0.15 180)',
+    category: 'infrastructure',
+  },
+  // Cloud
+  {
+    type: 'cloud-storage',
+    nameKey: 'components.cloudStorage.name',
+    descriptionKey: 'components.cloudStorage.description',
+    icon: <HardDrive className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.70 0.18 260)',
+    category: 'cloud',
+  },
+  {
+    type: 'cloud-function',
+    nameKey: 'components.cloudFunction.name',
+    descriptionKey: 'components.cloudFunction.description',
+    icon: <Cloud className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.70 0.18 260)',
+    category: 'cloud',
+  },
 ];
 
-function DraggableComponent({ component, t, disabled }: { component: ComponentItem; t: (key: string) => string; disabled?: boolean }) {
+interface CategoryConfig {
+  key: string;
+  label: string;
+  signalColor: string;
+  items: ComponentItem[];
+}
+
+function DraggableComponent({ component, t, disabled, categoryColor }: { component: ComponentItem; t: (key: string) => string; disabled?: boolean; categoryColor: string }) {
   const onDragStart = (event: React.DragEvent) => {
     if (disabled) { event.preventDefault(); return; }
     event.dataTransfer.setData('application/reactflow', component.type);
@@ -119,9 +214,9 @@ function DraggableComponent({ component, t, disabled }: { component: ComponentIt
       {/* Signal accent */}
       <div
         className="w-0.5 h-6 rounded-full shrink-0"
-        style={{ backgroundColor: component.signalColor }}
+        style={{ backgroundColor: categoryColor }}
       />
-      <div style={{ color: component.signalColor }} className="shrink-0">
+      <div style={{ color: categoryColor }} className="shrink-0">
         {component.icon}
       </div>
       <div className="flex-1 min-w-0">
@@ -133,14 +228,106 @@ function DraggableComponent({ component, t, disabled }: { component: ComponentIt
   );
 }
 
+function CategoryAccordion({
+  category,
+  isOpen,
+  onToggle,
+  isSimMode,
+  t,
+}: {
+  category: CategoryConfig;
+  isOpen: boolean;
+  onToggle: () => void;
+  isSimMode: boolean;
+  t: (key: string) => string;
+}) {
+  return (
+    <div className="border-t border-border first:border-t-0">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 transition-colors"
+        aria-expanded={isOpen}
+      >
+        <div
+          className="w-0.5 h-3 rounded-full shrink-0"
+          style={{ backgroundColor: category.signalColor }}
+        />
+        <ChevronDown
+          className={cn(
+            "h-2.5 w-2.5 text-muted-foreground shrink-0 transition-transform duration-200",
+            !isOpen && "-rotate-90"
+          )}
+        />
+        <span className="text-instrument text-[9px] text-muted-foreground flex-1 text-left">
+          {category.label}
+        </span>
+        <span className="text-instrument text-[9px] text-muted-foreground/50">
+          {category.items.length}
+        </span>
+      </button>
+      <div
+        className="grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
+        style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-0.5 px-1 pb-1">
+            {category.items.map((component) => (
+              <DraggableComponent key={component.type} component={component} t={t} disabled={isSimMode} categoryColor={category.signalColor} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CATEGORY_SIGNAL_COLORS: Record<string, string> = {
+  simulation: 'oklch(0.70 0.15 220)',
+  infrastructure: 'oklch(0.75 0.18 75)',
+  data: 'oklch(0.72 0.19 155)',
+  resilience: 'oklch(0.70 0.18 330)',
+  compute: 'oklch(0.68 0.18 50)',
+  cloud: 'oklch(0.70 0.18 260)',
+  zone: 'oklch(0.65 0.10 0)',
+};
+
+const CATEGORY_ORDER: { key: ComponentItem['category']; label: string }[] = [
+  { key: 'simulation', label: 'SIMULATION' },
+  { key: 'infrastructure', label: 'INFRASTRUCTURE' },
+  { key: 'data', label: 'DATA' },
+  { key: 'resilience', label: 'RESILIENCE' },
+  { key: 'compute', label: 'COMPUTE' },
+  { key: 'cloud', label: 'CLOUD' },
+  { key: 'zone', label: 'ZONES' },
+];
+
 export function ComponentsPanel() {
   const { isComponentsPanelOpen, toggleComponentsPanel, mode } = useAppStore();
   const { t } = useTranslation();
   const isSimMode = mode === 'simulation';
 
-  const simulationComponents = COMPONENTS.filter((c) => c.category === 'simulation');
-  const infrastructureComponents = COMPONENTS.filter((c) => c.category === 'infrastructure');
-  const dataComponents = COMPONENTS.filter((c) => c.category === 'data');
+  const [openCategories, setOpenCategories] = useState<Set<string>>(
+    () => new Set(CATEGORY_ORDER.slice(0, 2).map((c) => c.key))
+  );
+
+  const toggleCategory = useCallback((key: string) => {
+    setOpenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const categories: CategoryConfig[] = CATEGORY_ORDER.map(({ key, label }) => ({
+    key,
+    label,
+    signalColor: CATEGORY_SIGNAL_COLORS[key],
+    items: COMPONENTS.filter((c) => c.category === key),
+  }));
 
   return (
     <div
@@ -169,48 +356,17 @@ export function ComponentsPanel() {
       {/* Components List */}
       {isComponentsPanelOpen && (
         <ScrollArea className="flex-1 overflow-auto">
-          <div className="py-2 space-y-3">
-            {/* Simulation */}
-            <div>
-              <div className="px-3 mb-1">
-                <span className="text-instrument text-[9px] text-muted-foreground">
-                  SIMULATION
-                </span>
-              </div>
-              <div className="space-y-0.5 px-1">
-                {simulationComponents.map((component) => (
-                  <DraggableComponent key={component.type} component={component} t={t} disabled={isSimMode} />
-                ))}
-              </div>
-            </div>
-
-            {/* Infrastructure */}
-            <div>
-              <div className="px-3 mb-1 pt-1 border-t border-border">
-                <span className="text-instrument text-[9px] text-muted-foreground">
-                  INFRASTRUCTURE
-                </span>
-              </div>
-              <div className="space-y-0.5 px-1">
-                {infrastructureComponents.map((component) => (
-                  <DraggableComponent key={component.type} component={component} t={t} disabled={isSimMode} />
-                ))}
-              </div>
-            </div>
-
-            {/* Data */}
-            <div>
-              <div className="px-3 mb-1 pt-1 border-t border-border">
-                <span className="text-instrument text-[9px] text-muted-foreground">
-                  DATA
-                </span>
-              </div>
-              <div className="space-y-0.5 px-1">
-                {dataComponents.map((component) => (
-                  <DraggableComponent key={component.type} component={component} t={t} disabled={isSimMode} />
-                ))}
-              </div>
-            </div>
+          <div className="py-1">
+            {categories.map((category) => (
+              <CategoryAccordion
+                key={category.key}
+                category={category}
+                isOpen={openCategories.has(category.key)}
+                onToggle={() => toggleCategory(category.key)}
+                isSimMode={isSimMode}
+                t={t}
+              />
+            ))}
           </div>
         </ScrollArea>
       )}

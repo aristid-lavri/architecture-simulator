@@ -33,7 +33,7 @@ import { LoadBalancerManager } from './LoadBalancerManager';
 import { CacheManager } from './CacheManager';
 import { DatabaseManager } from './DatabaseManager';
 import { ParticleManager } from './ParticleManager';
-import { defaultServerResources, defaultDegradation } from '@/types';
+import { defaultServerResources, defaultDegradation, getParticleChainId } from '@/types';
 import {
   HandlerRegistry,
   DefaultHandler,
@@ -43,6 +43,16 @@ import {
   ApiGatewayHandler,
   DatabaseHandler,
   MessageQueueHandler,
+  CircuitBreakerHandler,
+  CDNHandler,
+  WAFHandler,
+  FirewallHandler,
+  ServerlessHandler,
+  ContainerHandler,
+  ServiceDiscoveryHandler,
+  DNSHandler,
+  CloudStorageHandler,
+  CloudFunctionHandler,
   type RequestContext,
   type RequestDecision,
 } from './handlers';
@@ -178,6 +188,16 @@ export class SimulationEngine {
       new ApiGatewayHandler(),
       new DatabaseHandler(this.databaseManager),
       this.messageQueueHandler,
+      new CircuitBreakerHandler(),
+      new CDNHandler(),
+      new WAFHandler(),
+      new FirewallHandler(),
+      new ServerlessHandler(),
+      new ContainerHandler(),
+      new ServiceDiscoveryHandler(),
+      new DNSHandler(),
+      new CloudStorageHandler(),
+      new CloudFunctionHandler(),
     ]);
   }
 
@@ -293,6 +313,9 @@ export class SimulationEngine {
       this.callbacks.onNodeStatusChange(node.id, 'idle');
     });
 
+    // Clear event handlers to prevent accumulation between simulation runs
+    simulationEvents.clear();
+
     // Reset metrics
     this.metrics.reset();
     this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
@@ -389,7 +412,7 @@ export class SimulationEngine {
     this.particleManager.remove(requestParticle.id);
 
     // Get or create request chain
-    const chainId = requestParticle.data?.chainId as string || generateParticleId();
+    const chainId = getParticleChainId(requestParticle) || generateParticleId();
     let chain = this.activeChains.get(chainId);
 
     if (!chain) {
@@ -465,6 +488,24 @@ export class SimulationEngine {
     const nodeType = node.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
     return handler.getProcessingDelay(node, this.speed);
+  }
+
+  /**
+   * Calcule la latence inter-zone entre deux noeuds.
+   * Si les noeuds sont dans des zones differentes, ajoute la latence de la zone source.
+   */
+  private getInterZoneLatency(sourceNode: Node, targetNode: Node): number {
+    const sourceParentId = (sourceNode as Node & { parentId?: string }).parentId;
+    const targetParentId = (targetNode as Node & { parentId?: string }).parentId;
+
+    // Same zone or no zone → no extra latency
+    if (!sourceParentId || sourceParentId === targetParentId) return 0;
+
+    const sourceZone = this.nodes.find((n) => n.id === sourceParentId);
+    if (!sourceZone || sourceZone.type !== 'network-zone') return 0;
+
+    const zoneData = sourceZone.data as { interZoneLatency?: number };
+    return (zoneData.interZoneLatency || 0) / this.speed;
   }
 
   /**
@@ -553,7 +594,8 @@ export class SimulationEngine {
             effectiveChainId = forkedChainId;
           }
 
-          const requestDuration = (target.delay ?? 1500) / this.speed;
+          const zoneLatency = this.getInterZoneLatency(sourceNode, targetNode);
+          const requestDuration = (target.delay ?? 1500) / this.speed + zoneLatency;
           const particle: Particle = {
             id: generateParticleId(),
             edgeId: target.edgeId,
@@ -1265,6 +1307,14 @@ export class SimulationEngine {
           };
 
           this.callbacks.onMessageQueueUpdate(node.id, utilization);
+        }
+      });
+      // Cleanup orphaned chains (TTL: 30s)
+      const chainTTL = 30000;
+      const now = Date.now();
+      this.activeChains.forEach((chain, chainId) => {
+        if (now - chain.startTime > chainTTL) {
+          this.activeChains.delete(chainId);
         }
       });
     }, 100); // Sample every 100ms

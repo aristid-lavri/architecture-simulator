@@ -61,6 +61,42 @@
     "messageQueue": {
       "name": "Message Queue",
       "description": "Asynchronous communication between services"
+    },
+    "networkZone": {
+      "name": "Network Zone",
+      "description": "Groups components by network domain"
+    },
+    "circuitBreaker": {
+      "name": "Circuit Breaker",
+      "description": "Protects against cascading failures"
+    },
+    "cdn": {
+      "name": "CDN",
+      "description": "Edge cache for static and dynamic content"
+    },
+    "waf": {
+      "name": "WAF",
+      "description": "Web Application Firewall"
+    },
+    "serverless": {
+      "name": "Serverless",
+      "description": "Cloud function with auto-scaling"
+    },
+    "container": {
+      "name": "Container",
+      "description": "Containerized service with replicas"
+    },
+    "serviceDiscovery": {
+      "name": "Service Discovery",
+      "description": "Service registry for dynamic routing"
+    },
+    "cloudStorage": {
+      "name": "Cloud Storage",
+      "description": "Object storage (S3, Blob, GCS)"
+    },
+    "cloudFunction": {
+      "name": "Cloud Function",
+      "description": "Managed cloud function (Lambda, Azure Function)"
     }
   },
   "properties": {

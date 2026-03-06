@@ -14,8 +14,8 @@ export interface SimulationReport {
   duration: number; // actual duration in ms
   configuredDuration: number | null; // configured duration in ms (null = unlimited)
   metrics: SimulationMetrics;
-  resourceUtilizations: Map<string, ResourceUtilization>;
-  clientGroupStats: Map<string, ClientGroupMetrics>;
+  resourceUtilizations: Record<string, ResourceUtilization>;
+  clientGroupStats: Record<string, ClientGroupMetrics>;
   endReason: 'manual' | 'timeout' | 'error';
   timestamp: number;
 }
@@ -145,8 +145,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
       duration: actualDuration,
       configuredDuration: state.duration ? state.duration * 1000 : null,
       metrics: { ...state.metrics },
-      resourceUtilizations: new Map(state.resourceUtilizations),
-      clientGroupStats: new Map(state.clientGroupStats),
+      resourceUtilizations: Object.fromEntries(state.resourceUtilizations),
+      clientGroupStats: Object.fromEntries(state.clientGroupStats),
       endReason: reason,
       timestamp: Date.now(),
     };

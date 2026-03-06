@@ -98,11 +98,39 @@ export const useArchitectureStore = create<ArchitectureState>()(
     }),
     {
       name: 'architecture-simulator-storage',
+      version: 1,
+      migrate: (persistedState, version) => {
+        // v0 → v1: no schema changes, just adding versioning
+        return persistedState as ArchitectureState;
+      },
       partialize: (state) => ({
         nodes: state.nodes,
         edges: state.edges,
         lastSaved: state.lastSaved,
       }),
+      storage: {
+        getItem: (name) => {
+          const str = localStorage.getItem(name);
+          return str ? JSON.parse(str) : null;
+        },
+        setItem: (name, value) => {
+          try {
+            localStorage.setItem(name, JSON.stringify(value));
+          } catch (e) {
+            // Quota exceeded — clear old data and retry once
+            if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+              console.warn('[architecture-store] localStorage quota exceeded, clearing old data');
+              localStorage.removeItem(name);
+              try {
+                localStorage.setItem(name, JSON.stringify(value));
+              } catch {
+                console.error('[architecture-store] Failed to save after clearing');
+              }
+            }
+          }
+        },
+        removeItem: (name) => localStorage.removeItem(name),
+      },
     }
   )
 );

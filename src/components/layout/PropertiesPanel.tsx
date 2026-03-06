@@ -19,8 +19,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical } from 'lucide-react';
-import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule } from '@/types';
-import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData } from '@/types';
+import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData } from '@/types';
+import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData } from '@/types';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
@@ -237,6 +237,17 @@ export function PropertiesPanel() {
   const isLoadBalancer = selectedNode.type === 'load-balancer';
   const isMessageQueue = selectedNode.type === 'message-queue';
   const isApiGateway = selectedNode.type === 'api-gateway';
+  const isCircuitBreaker = selectedNode.type === 'circuit-breaker';
+  const isCDN = selectedNode.type === 'cdn';
+  const isWAF = selectedNode.type === 'waf';
+  const isFirewall = selectedNode.type === 'firewall';
+  const isServerless = selectedNode.type === 'serverless';
+  const isContainer = selectedNode.type === 'container';
+  const isServiceDiscovery = selectedNode.type === 'service-discovery';
+  const isDNS = selectedNode.type === 'dns';
+  const isCloudStorage = selectedNode.type === 'cloud-storage';
+  const isCloudFunction = selectedNode.type === 'cloud-function';
+  const isNetworkZone = selectedNode.type === 'network-zone';
 
   return (
     <div className="w-80 border-l bg-background flex flex-col h-full overflow-hidden">
@@ -366,6 +377,86 @@ export function PropertiesPanel() {
                   serviceName: n.data.serviceName as string,
                   label: n.data.label,
                 }))}
+            />
+          )}
+
+          {/* Circuit Breaker Configuration */}
+          {isCircuitBreaker && (
+            <CircuitBreakerConfig
+              data={selectedNode.data as CircuitBreakerNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* CDN Configuration */}
+          {isCDN && (
+            <CDNConfig
+              data={selectedNode.data as CDNNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* WAF Configuration */}
+          {isWAF && (
+            <WAFConfig
+              data={selectedNode.data as WAFNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Firewall Configuration */}
+          {isFirewall && (
+            <FirewallConfig
+              data={selectedNode.data as FirewallNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Serverless Configuration */}
+          {(isServerless || isCloudFunction) && (
+            <ServerlessConfig
+              data={selectedNode.data as ServerlessNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Container Configuration */}
+          {isContainer && (
+            <ContainerConfig
+              data={selectedNode.data as ContainerNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Service Discovery Configuration */}
+          {isServiceDiscovery && (
+            <ServiceDiscoveryConfig
+              data={selectedNode.data as ServiceDiscoveryNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* DNS Configuration */}
+          {isDNS && (
+            <DNSConfig
+              data={selectedNode.data as DNSNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Cloud Storage Configuration */}
+          {isCloudStorage && (
+            <CloudStorageConfig
+              data={selectedNode.data as CloudStorageNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Network Zone Configuration */}
+          {isNetworkZone && (
+            <NetworkZoneConfig
+              data={selectedNode.data as NetworkZoneNodeData}
+              onUpdate={updateNodeData}
             />
           )}
         </div>
@@ -2654,5 +2745,464 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
         </div>
       </div>
     </>
+  );
+}
+
+// ============================================
+// Circuit Breaker Configuration
+// ============================================
+
+function CircuitBreakerConfig({ data, onUpdate }: { data: CircuitBreakerNodeData; onUpdate: (u: Partial<CircuitBreakerNodeData>) => void }) {
+  const config = { ...defaultCircuitBreakerData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Circuit Breaker</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Seuil d'erreurs (ouverture)</Label>
+          <Input type="number" value={config.failureThreshold} onChange={(e) => onUpdate({ failureThreshold: parseInt(e.target.value) || 5 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Seuil de succes (fermeture)</Label>
+          <Input type="number" value={config.successThreshold} onChange={(e) => onUpdate({ successThreshold: parseInt(e.target.value) || 3 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Timeout (ms)</Label>
+          <Input type="number" value={config.timeout} onChange={(e) => onUpdate({ timeout: parseInt(e.target.value) || 30000 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Requetes en half-open</Label>
+          <Input type="number" value={config.halfOpenMaxRequests} onChange={(e) => onUpdate({ halfOpenMaxRequests: parseInt(e.target.value) || 3 })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// CDN Configuration
+// ============================================
+
+function CDNConfig({ data, onUpdate }: { data: CDNNodeData; onUpdate: (u: Partial<CDNNodeData>) => void }) {
+  const config = { ...defaultCDNNodeData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">CDN</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Provider</Label>
+          <Select value={config.provider} onValueChange={(v) => onUpdate({ provider: v as CDNNodeData['provider'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cloudflare">Cloudflare</SelectItem>
+              <SelectItem value="cloudfront">CloudFront</SelectItem>
+              <SelectItem value="akamai">Akamai</SelectItem>
+              <SelectItem value="generic">Generic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <Label>Cache Hit Ratio</Label>
+            <span className="text-muted-foreground">{config.cacheHitRatio}%</span>
+          </div>
+          <Slider value={[config.cacheHitRatio]} onValueChange={([v]) => onUpdate({ cacheHitRatio: v })} max={100} step={1} />
+        </div>
+        <div className="space-y-2">
+          <Label>Latence edge (ms)</Label>
+          <Input type="number" value={config.edgeLatencyMs} onChange={(e) => onUpdate({ edgeLatencyMs: parseInt(e.target.value) || 5 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Latence origin (ms)</Label>
+          <Input type="number" value={config.originLatencyMs} onChange={(e) => onUpdate({ originLatencyMs: parseInt(e.target.value) || 50 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>TTL cache (s)</Label>
+          <Input type="number" value={config.cacheTTLSeconds} onChange={(e) => onUpdate({ cacheTTLSeconds: parseInt(e.target.value) || 3600 })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// WAF Configuration
+// ============================================
+
+function WAFConfig({ data, onUpdate }: { data: WAFNodeData; onUpdate: (u: Partial<WAFNodeData>) => void }) {
+  const config = { ...defaultWAFNodeData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">WAF</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Provider</Label>
+          <Select value={config.provider} onValueChange={(v) => onUpdate({ provider: v as WAFNodeData['provider'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="aws-waf">AWS WAF</SelectItem>
+              <SelectItem value="cloudflare">Cloudflare</SelectItem>
+              <SelectItem value="azure-waf">Azure WAF</SelectItem>
+              <SelectItem value="generic">Generic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <Label>Taux de blocage</Label>
+            <span className="text-muted-foreground">{config.blockRate}%</span>
+          </div>
+          <Slider value={[config.blockRate]} onValueChange={([v]) => onUpdate({ blockRate: v })} max={100} step={1} />
+        </div>
+        <div className="space-y-2">
+          <Label>Latence inspection (ms)</Label>
+          <Input type="number" value={config.inspectionLatencyMs} onChange={(e) => onUpdate({ inspectionLatencyMs: parseInt(e.target.value) || 2 })} />
+        </div>
+        <div className="space-y-3 pt-2">
+          <span className="text-xs text-muted-foreground">Regles</span>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="waf-sql">SQL Injection</Label>
+              <Switch id="waf-sql" checked={config.rules.sqlInjection} onCheckedChange={(c) => onUpdate({ rules: { ...config.rules, sqlInjection: c } })} />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="waf-xss">XSS</Label>
+              <Switch id="waf-xss" checked={config.rules.xss} onCheckedChange={(c) => onUpdate({ rules: { ...config.rules, xss: c } })} />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="waf-rate">Rate Limiting</Label>
+              <Switch id="waf-rate" checked={config.rules.rateLimiting} onCheckedChange={(c) => onUpdate({ rules: { ...config.rules, rateLimiting: c } })} />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="waf-ip">IP Blocking</Label>
+              <Switch id="waf-ip" checked={config.rules.ipBlocking} onCheckedChange={(c) => onUpdate({ rules: { ...config.rules, ipBlocking: c } })} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Firewall Configuration
+// ============================================
+
+function FirewallConfig({ data, onUpdate }: { data: FirewallNodeData; onUpdate: (u: Partial<FirewallNodeData>) => void }) {
+  const config = { ...defaultFirewallData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Firewall</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Action par defaut</Label>
+          <Select value={config.defaultAction} onValueChange={(v) => onUpdate({ defaultAction: v as 'allow' | 'deny' })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="allow">Allow</SelectItem>
+              <SelectItem value="deny">Deny</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Latence inspection (ms)</Label>
+          <Input type="number" value={config.inspectionLatencyMs} onChange={(e) => onUpdate({ inspectionLatencyMs: parseInt(e.target.value) || 1 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Ports autorises</Label>
+          <Input value={config.allowedPorts.join(', ')} onChange={(e) => onUpdate({ allowedPorts: e.target.value.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p)) })} placeholder="80, 443, 8080" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Serverless Configuration
+// ============================================
+
+function ServerlessConfig({ data, onUpdate }: { data: ServerlessNodeData; onUpdate: (u: Partial<ServerlessNodeData>) => void }) {
+  const config = { ...defaultServerlessData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Serverless</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Provider</Label>
+          <Select value={config.provider} onValueChange={(v) => onUpdate({ provider: v as ServerlessNodeData['provider'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="aws">AWS</SelectItem>
+              <SelectItem value="azure">Azure</SelectItem>
+              <SelectItem value="gcp">GCP</SelectItem>
+              <SelectItem value="generic">Generic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Runtime</Label>
+          <Input value={config.runtime} onChange={(e) => onUpdate({ runtime: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Memoire (MB)</Label>
+          <Select value={String(config.memoryMB)} onValueChange={(v) => onUpdate({ memoryMB: parseInt(v) })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="128">128 MB</SelectItem>
+              <SelectItem value="256">256 MB</SelectItem>
+              <SelectItem value="512">512 MB</SelectItem>
+              <SelectItem value="1024">1024 MB</SelectItem>
+              <SelectItem value="2048">2048 MB</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Cold Start (ms)</Label>
+          <Input type="number" value={config.coldStartMs} onChange={(e) => onUpdate({ coldStartMs: parseInt(e.target.value) || 500 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Warm Start (ms)</Label>
+          <Input type="number" value={config.warmStartMs} onChange={(e) => onUpdate({ warmStartMs: parseInt(e.target.value) || 5 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Concurrence max</Label>
+          <Input type="number" value={config.concurrencyLimit} onChange={(e) => onUpdate({ concurrencyLimit: parseInt(e.target.value) || 100 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Instances min / max</Label>
+          <div className="flex gap-2">
+            <Input type="number" value={config.minInstances} onChange={(e) => onUpdate({ minInstances: parseInt(e.target.value) || 0 })} placeholder="Min" />
+            <Input type="number" value={config.maxInstances} onChange={(e) => onUpdate({ maxInstances: parseInt(e.target.value) || 100 })} placeholder="Max" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Container Configuration
+// ============================================
+
+function ContainerConfig({ data, onUpdate }: { data: ContainerNodeData; onUpdate: (u: Partial<ContainerNodeData>) => void }) {
+  const config = { ...defaultContainerData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Container</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Image</Label>
+          <Input value={config.image} onChange={(e) => onUpdate({ image: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Replicas</Label>
+          <Input type="number" value={config.replicas} onChange={(e) => onUpdate({ replicas: parseInt(e.target.value) || 1 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>CPU Limit</Label>
+          <Input value={config.cpuLimit} onChange={(e) => onUpdate({ cpuLimit: e.target.value })} placeholder="500m" />
+        </div>
+        <div className="space-y-2">
+          <Label>Memory Limit</Label>
+          <Input value={config.memoryLimit} onChange={(e) => onUpdate({ memoryLimit: e.target.value })} placeholder="512Mi" />
+        </div>
+        <div className="space-y-2">
+          <Label>Delai de reponse (ms)</Label>
+          <Input type="number" value={config.responseDelayMs} onChange={(e) => onUpdate({ responseDelayMs: parseInt(e.target.value) || 20 })} />
+        </div>
+        <div className="flex items-center justify-between pt-2">
+          <Label htmlFor="container-autoscale">Auto-scaling</Label>
+          <Switch id="container-autoscale" checked={config.autoScaling.enabled} onCheckedChange={(c) => onUpdate({ autoScaling: { ...config.autoScaling, enabled: c } })} />
+        </div>
+        {config.autoScaling.enabled && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="space-y-1 flex-1">
+                <Label className="text-xs">Min</Label>
+                <Input type="number" value={config.autoScaling.minReplicas} onChange={(e) => onUpdate({ autoScaling: { ...config.autoScaling, minReplicas: parseInt(e.target.value) || 1 } })} />
+              </div>
+              <div className="space-y-1 flex-1">
+                <Label className="text-xs">Max</Label>
+                <Input type="number" value={config.autoScaling.maxReplicas} onChange={(e) => onUpdate({ autoScaling: { ...config.autoScaling, maxReplicas: parseInt(e.target.value) || 10 } })} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <Label>Target CPU</Label>
+                <span className="text-muted-foreground">{config.autoScaling.targetCPU}%</span>
+              </div>
+              <Slider value={[config.autoScaling.targetCPU]} onValueChange={([v]) => onUpdate({ autoScaling: { ...config.autoScaling, targetCPU: v } })} max={100} step={5} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Service Discovery Configuration
+// ============================================
+
+function ServiceDiscoveryConfig({ data, onUpdate }: { data: ServiceDiscoveryNodeData; onUpdate: (u: Partial<ServiceDiscoveryNodeData>) => void }) {
+  const config = { ...defaultServiceDiscoveryData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Service Discovery</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Provider</Label>
+          <Select value={config.provider} onValueChange={(v) => onUpdate({ provider: v as ServiceDiscoveryNodeData['provider'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="consul">Consul</SelectItem>
+              <SelectItem value="eureka">Eureka</SelectItem>
+              <SelectItem value="kubernetes">Kubernetes</SelectItem>
+              <SelectItem value="generic">Generic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Latence lookup (ms)</Label>
+          <Input type="number" value={config.lookupLatencyMs} onChange={(e) => onUpdate({ lookupLatencyMs: parseInt(e.target.value) || 2 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Health check interval (ms)</Label>
+          <Input type="number" value={config.healthCheckIntervalMs} onChange={(e) => onUpdate({ healthCheckIntervalMs: parseInt(e.target.value) || 10000 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Cache TTL (ms)</Label>
+          <Input type="number" value={config.cacheTTLMs} onChange={(e) => onUpdate({ cacheTTLMs: parseInt(e.target.value) || 5000 })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// DNS Configuration
+// ============================================
+
+function DNSConfig({ data, onUpdate }: { data: DNSNodeData; onUpdate: (u: Partial<DNSNodeData>) => void }) {
+  const config = { ...defaultDNSNodeData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">DNS</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Latence resolution (ms)</Label>
+          <Input type="number" value={config.resolutionLatencyMs} onChange={(e) => onUpdate({ resolutionLatencyMs: parseInt(e.target.value) || 5 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>TTL (secondes)</Label>
+          <Input type="number" value={config.ttlSeconds} onChange={(e) => onUpdate({ ttlSeconds: parseInt(e.target.value) || 300 })} />
+        </div>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="dns-failover">Failover</Label>
+          <Switch id="dns-failover" checked={config.failoverEnabled} onCheckedChange={(c) => onUpdate({ failoverEnabled: c })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Cloud Storage Configuration
+// ============================================
+
+function CloudStorageConfig({ data, onUpdate }: { data: CloudStorageNodeData; onUpdate: (u: Partial<CloudStorageNodeData>) => void }) {
+  const config = { ...defaultCloudStorageData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Cloud Storage</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Provider</Label>
+          <Select value={config.provider} onValueChange={(v) => onUpdate({ provider: v as CloudStorageNodeData['provider'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="aws">AWS S3</SelectItem>
+              <SelectItem value="azure">Azure Blob</SelectItem>
+              <SelectItem value="gcp">GCS</SelectItem>
+              <SelectItem value="generic">Generic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Storage Class</Label>
+          <Select value={config.storageClass} onValueChange={(v) => onUpdate({ storageClass: v as CloudStorageNodeData['storageClass'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard">Standard</SelectItem>
+              <SelectItem value="infrequent">Infrequent Access</SelectItem>
+              <SelectItem value="archive">Archive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Latence lecture (ms)</Label>
+          <Input type="number" value={config.readLatencyMs} onChange={(e) => onUpdate({ readLatencyMs: parseInt(e.target.value) || 20 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Latence ecriture (ms)</Label>
+          <Input type="number" value={config.writeLatencyMs} onChange={(e) => onUpdate({ writeLatencyMs: parseInt(e.target.value) || 50 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Max requetes/s</Label>
+          <Input type="number" value={config.maxRequestsPerSecond} onChange={(e) => onUpdate({ maxRequestsPerSecond: parseInt(e.target.value) || 5500 })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Network Zone Configuration
+// ============================================
+
+function NetworkZoneConfig({ data, onUpdate }: { data: NetworkZoneNodeData; onUpdate: (u: Partial<NetworkZoneNodeData>) => void }) {
+  const config = { ...defaultNetworkZoneData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Zone Reseau</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Type de zone</Label>
+          <Select value={config.zoneType} onValueChange={(v) => onUpdate({ zoneType: v as NetworkZoneNodeData['zoneType'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="public">Public</SelectItem>
+              <SelectItem value="dmz">DMZ</SelectItem>
+              <SelectItem value="backend">Backend</SelectItem>
+              <SelectItem value="data">Data</SelectItem>
+              <SelectItem value="custom">Custom</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Domaine</Label>
+          <Input value={config.domain || ''} onChange={(e) => onUpdate({ domain: e.target.value })} placeholder="api.example.com" />
+        </div>
+        <div className="space-y-2">
+          <Label>Latence inter-zone (ms)</Label>
+          <Input type="number" value={config.interZoneLatency} onChange={(e) => onUpdate({ interZoneLatency: parseInt(e.target.value) || 0 })} />
+          <p className="text-xs text-muted-foreground">Latence ajoutee pour les requetes sortant de cette zone</p>
+        </div>
+        <div className="space-y-2">
+          <Label>Couleur</Label>
+          <Input type="color" value={config.color} onChange={(e) => onUpdate({ color: e.target.value })} />
+        </div>
+      </div>
+    </div>
   );
 }

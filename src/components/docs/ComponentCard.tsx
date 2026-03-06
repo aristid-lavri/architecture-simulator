@@ -16,14 +16,18 @@ interface ComponentCardProps {
   icon: ReactNode;
   name: string;
   description: string;
-  category: 'simulation' | 'infrastructure' | 'data';
+  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone';
   properties: PropertyInfo[];
 }
 
-const categoryColors = {
+const categoryColors: Record<string, { border: string; accent: string; text: string; hover: string }> = {
   simulation: { border: 'border-blue-500/20', accent: 'bg-blue-500', text: 'text-blue-400', hover: 'hover:border-blue-500/40' },
   infrastructure: { border: 'border-purple-500/20', accent: 'bg-purple-500', text: 'text-purple-400', hover: 'hover:border-purple-500/40' },
   data: { border: 'border-emerald-500/20', accent: 'bg-emerald-500', text: 'text-emerald-400', hover: 'hover:border-emerald-500/40' },
+  resilience: { border: 'border-rose-500/20', accent: 'bg-rose-500', text: 'text-rose-400', hover: 'hover:border-rose-500/40' },
+  compute: { border: 'border-amber-500/20', accent: 'bg-amber-500', text: 'text-amber-400', hover: 'hover:border-amber-500/40' },
+  cloud: { border: 'border-sky-500/20', accent: 'bg-sky-500', text: 'text-sky-400', hover: 'hover:border-sky-500/40' },
+  zone: { border: 'border-slate-500/20', accent: 'bg-slate-500', text: 'text-slate-400', hover: 'hover:border-slate-500/40' },
 };
 
 const typeColors: Record<string, string> = {

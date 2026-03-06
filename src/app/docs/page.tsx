@@ -16,7 +16,16 @@ import {
   Menu,
   X,
   ChevronRight,
+  ChevronDown,
   Home,
+  ShieldOff,
+  Globe,
+  ShieldCheck,
+  Cloud,
+  Box,
+  Compass,
+  HardDrive,
+  Layers,
 } from 'lucide-react';
 import { ComponentCard } from '@/components/docs/ComponentCard';
 import { TemplateCard } from '@/components/docs/TemplateCard';
@@ -38,9 +47,22 @@ const sections = [
     ],
   },
   {
+    id: 'yaml',
+    label: 'Éditeur YAML',
+    icon: '02',
+    color: 'oklch(0.75 0.18 75)',   // signal-infra (amber)
+    children: [
+      { id: 'yaml-structure', label: 'Structure du fichier' },
+      { id: 'yaml-zones', label: 'Zones réseau' },
+      { id: 'yaml-components', label: 'Composants' },
+      { id: 'yaml-connections', label: 'Connexions' },
+      { id: 'yaml-editeur', label: 'Utiliser l\'éditeur' },
+    ],
+  },
+  {
     id: 'composants',
     label: 'Catalogue composants',
-    icon: '02',
+    icon: '03',
     color: 'oklch(0.70 0.15 220)',   // signal-client (blue)
     children: [
       { id: 'component-client-http', label: 'Client HTTP' },
@@ -51,19 +73,30 @@ const sections = [
       { id: 'component-base-de-donnees', label: 'Base de données' },
       { id: 'component-cache', label: 'Cache' },
       { id: 'component-file-de-messages', label: 'File de messages' },
+      { id: 'component-circuit-breaker', label: 'Circuit Breaker' },
+      { id: 'component-cdn', label: 'CDN' },
+      { id: 'component-waf', label: 'WAF' },
+      { id: 'component-firewall', label: 'Firewall' },
+      { id: 'component-serverless', label: 'Serverless' },
+      { id: 'component-container', label: 'Container' },
+      { id: 'component-service-discovery', label: 'Service Discovery' },
+      { id: 'component-dns', label: 'DNS' },
+      { id: 'component-cloud-storage', label: 'Cloud Storage' },
+      { id: 'component-cloud-function', label: 'Cloud Function' },
+      { id: 'component-zone-reseau', label: 'Zone Réseau' },
     ],
   },
   {
     id: 'templates',
     label: 'Templates',
-    icon: '03',
+    icon: '04',
     color: 'oklch(0.68 0.18 290)',   // signal-server (purple)
     children: [],
   },
   {
     id: 'metriques',
     label: 'Métriques',
-    icon: '04',
+    icon: '05',
     color: 'oklch(0.72 0.19 155)',   // signal-data (green)
     children: [],
   },
@@ -214,6 +247,79 @@ function GuideStep({ id, step, title, children }: {
   );
 }
 
+// ── Category Accordion ──
+function CategoryAccordion({ label, color, count, defaultOpen = false, children }: {
+  label: string; color: string; count: number; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div className="mb-2 border border-border/50 overflow-hidden" style={{ borderRadius: '4px' }}>
+      {/* Trigger */}
+      <button
+        onClick={() => setIsOpen(prev => !prev)}
+        className={cn(
+          'group flex items-center gap-3 w-full py-3 px-4 transition-all duration-200 cursor-pointer select-none',
+          isOpen ? 'bg-muted/40' : 'hover:bg-muted/20'
+        )}
+      >
+        {/* Expand/collapse indicator */}
+        <div
+          className="flex items-center justify-center w-5 h-5 border shrink-0 transition-colors duration-200"
+          style={{
+            borderColor: isOpen ? color : 'var(--border)',
+            backgroundColor: isOpen ? `${color}15` : 'transparent',
+            borderRadius: '3px',
+          }}
+        >
+          <ChevronDown
+            className="w-3 h-3 transition-transform duration-300"
+            style={{
+              transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              color: isOpen ? color : 'var(--muted-foreground)',
+            }}
+          />
+        </div>
+
+        {/* Color bar */}
+        <div className="w-1 h-4 shrink-0" style={{ backgroundColor: color, borderRadius: '1px' }} />
+
+        {/* Label */}
+        <span
+          className="text-[11px] font-mono uppercase font-semibold tracking-wider transition-colors"
+          style={{ color: isOpen ? color : 'var(--muted-foreground)' }}
+        >
+          {label}
+        </span>
+
+        {/* Count badge */}
+        <span
+          className="text-[9px] font-mono px-1.5 py-0.5 border transition-colors"
+          style={{
+            borderColor: isOpen ? `${color}40` : 'var(--border)',
+            color: isOpen ? color : 'var(--muted-foreground)',
+            borderRadius: '2px',
+          }}
+        >
+          {count}
+        </span>
+
+        {/* Gradient line */}
+        <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${color}15, transparent)` }} />
+      </button>
+
+      {/* Content */}
+      {isOpen && (
+        <div className="border-t border-border/30 px-4 pt-4 pb-3 bg-background">
+          <div className="space-y-4">
+            {children}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DocsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
@@ -266,13 +372,13 @@ export default function DocsPage() {
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* ── Sidebar — desktop ── */}
-        <aside className="hidden md:flex flex-col w-56 border-r border-border shrink-0 overflow-y-auto">
-          <div className="p-4 flex-1">
+        <aside className="hidden md:flex flex-col w-56 border-r border-border shrink-0">
+          <div className="flex-1 overflow-y-auto docs-scroller p-4">
             <SidebarContent activeId={activeId} />
           </div>
 
           {/* Sidebar footer */}
-          <div className="p-4 border-t border-border">
+          <div className="p-4 border-t border-border shrink-0">
             <Link
               href="/simulator"
               className="flex items-center gap-2 font-mono text-[10px] text-signal-active hover:text-signal-active/80 transition-colors"
@@ -291,7 +397,7 @@ export default function DocsPage() {
         )}
 
         {/* ── Main content ── */}
-        <main ref={mainRef} className="flex-1 overflow-y-auto px-6 py-8 md:px-12 max-w-4xl">
+        <main ref={mainRef} className="flex-1 overflow-y-auto docs-scroller px-6 py-8 md:px-12 max-w-4xl">
 
           {/* ═══ SECTION 1: GUIDE ═══ */}
           <SectionHeader
@@ -305,7 +411,7 @@ export default function DocsPage() {
           <div className="ml-0 space-y-0">
             <GuideStep id="guide-composants" step="01" title="Ajouter des composants">
               <p>
-                Ouvrez le panneau de composants à gauche (bouton <strong className="text-foreground">RACK</strong> dans le header). Les composants sont organisés en 3 catégories :
+                Ouvrez le panneau de composants à gauche (bouton <strong className="text-foreground">RACK</strong> dans le header). Les composants sont organisés en 7 catégories :
               </p>
               <div className="flex flex-wrap gap-2 mt-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border border-blue-500/30 text-blue-400" style={{ borderRadius: '2px' }}>
@@ -319,6 +425,22 @@ export default function DocsPage() {
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border border-emerald-500/30 text-emerald-400" style={{ borderRadius: '2px' }}>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   Données
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border border-rose-500/30 text-rose-400" style={{ borderRadius: '2px' }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                  Résilience
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border border-amber-500/30 text-amber-400" style={{ borderRadius: '2px' }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  Compute
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border border-sky-500/30 text-sky-400" style={{ borderRadius: '2px' }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                  Cloud
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border border-slate-500/30 text-slate-400" style={{ borderRadius: '2px' }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                  Zones
                 </span>
               </div>
               <p className="text-muted-foreground mt-2">
@@ -377,24 +499,271 @@ export default function DocsPage() {
             </GuideStep>
           </div>
 
-          {/* ═══ SECTION 2: COMPOSANTS ═══ */}
+          {/* ═══ SECTION 2: YAML ═══ */}
+          <div className="mt-16" />
+          <SectionHeader
+            id="yaml"
+            label="Éditeur YAML"
+            icon="02"
+            color="oklch(0.75 0.18 75)"
+            description="Définissez votre architecture en YAML — importez, exportez, versionnez. Une alternative puissante au drag & drop."
+          />
+
+          <div className="space-y-6">
+            {/* Structure du fichier */}
+            <div id="yaml-structure" className="scroll-mt-16">
+              <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Structure du fichier</h2>
+              <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+                Un fichier YAML d&apos;architecture contient 4 sections principales :
+              </p>
+              <div className="border border-border bg-card/30 overflow-hidden" style={{ borderRadius: '3px' }}>
+                <div className="px-3 py-1.5 border-b border-border bg-card/50 flex items-center gap-2">
+                  <div className="w-3 h-0.5 rounded-full bg-signal-infra" />
+                  <span className="font-mono text-[9px] uppercase text-muted-foreground font-semibold">Structure de base</span>
+                </div>
+                <pre className="p-4 font-mono text-[11px] leading-relaxed text-foreground overflow-x-auto"><code>{`version: 1
+name: "Mon Architecture"
+
+zones:        # Optionnel — zones réseau
+  backend:
+    type: backend
+    domain: "api.example.com"
+
+components:   # Requis — vos composants
+  clients:
+    type: client-group
+    config:
+      virtualClients: 50
+
+  server:
+    type: http-server
+    zone: backend
+    config:
+      port: 8080
+
+connections:  # Requis — liens entre composants
+  - from: clients
+    to: server`}</code></pre>
+              </div>
+              <div className="mt-3 space-y-1 ml-2">
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-infra" />
+                  <code className="text-foreground/80 font-mono text-[11px]">version</code>
+                  <span className="text-muted-foreground">— Toujours <code className="font-mono">1</code></span>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-infra" />
+                  <code className="text-foreground/80 font-mono text-[11px]">name</code>
+                  <span className="text-muted-foreground">— Nom libre de votre architecture</span>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-infra" />
+                  <code className="text-foreground/80 font-mono text-[11px]">zones</code>
+                  <span className="text-muted-foreground">— Optionnel. Groupes logiques de composants</span>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-infra" />
+                  <code className="text-foreground/80 font-mono text-[11px]">components</code>
+                  <span className="text-muted-foreground">— Requis. La clé = identifiant unique du composant</span>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-infra" />
+                  <code className="text-foreground/80 font-mono text-[11px]">connections</code>
+                  <span className="text-muted-foreground">— Requis. Liste de liens <code className="font-mono">from → to</code></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Zones réseau */}
+            <div id="yaml-zones" className="scroll-mt-16">
+              <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Zones réseau</h2>
+              <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+                Les zones regroupent visuellement les composants. Un composant peut appartenir à une zone via la propriété <code className="font-mono text-[11px] bg-muted px-1 py-0.5" style={{ borderRadius: '2px' }}>zone</code>.
+              </p>
+              <div className="border border-border bg-card/30 overflow-hidden" style={{ borderRadius: '3px' }}>
+                <div className="px-3 py-1.5 border-b border-border bg-card/50 flex items-center gap-2">
+                  <div className="w-3 h-0.5 rounded-full bg-signal-infra" />
+                  <span className="font-mono text-[9px] uppercase text-muted-foreground font-semibold">Exemple de zones</span>
+                </div>
+                <pre className="p-4 font-mono text-[11px] leading-relaxed text-foreground overflow-x-auto"><code>{`zones:
+  frontend:
+    type: frontend        # frontend | backend | dmz | database | external
+    domain: "app.example.com"
+    subdomains:
+      - "cdn.example.com"
+    interZoneLatency: 5   # Latence inter-zone en ms
+    position: { x: 50, y: 50 }
+    size: { width: 400, height: 300 }`}</code></pre>
+              </div>
+              <div className="mt-3 p-3 border border-border bg-muted/20 font-mono text-[10px] text-muted-foreground" style={{ borderRadius: '3px' }}>
+                <strong className="text-foreground">Types disponibles :</strong> frontend, backend, dmz, database, external
+              </div>
+            </div>
+
+            {/* Composants */}
+            <div id="yaml-components" className="scroll-mt-16">
+              <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Composants</h2>
+              <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+                Chaque composant a un <code className="font-mono text-[11px] bg-muted px-1 py-0.5" style={{ borderRadius: '2px' }}>type</code> et un bloc <code className="font-mono text-[11px] bg-muted px-1 py-0.5" style={{ borderRadius: '2px' }}>config</code> optionnel. Si <code className="font-mono text-[11px] bg-muted px-1 py-0.5" style={{ borderRadius: '2px' }}>config</code> est omis, les valeurs par défaut sont utilisées.
+              </p>
+              <div className="border border-border bg-card/30 overflow-hidden" style={{ borderRadius: '3px' }}>
+                <div className="px-3 py-1.5 border-b border-border bg-card/50 flex items-center gap-2">
+                  <div className="w-3 h-0.5 rounded-full bg-signal-infra" />
+                  <span className="font-mono text-[9px] uppercase text-muted-foreground font-semibold">Exemples de composants</span>
+                </div>
+                <pre className="p-4 font-mono text-[11px] leading-relaxed text-foreground overflow-x-auto"><code>{`components:
+  # Groupe de clients virtuels
+  load-test:
+    type: client-group
+    config:
+      label: "Load Test"
+      virtualClients: 200
+      rampUpTime: 5000
+      distribution: uniform   # uniform | normal | burst
+
+  # Serveur HTTP avec ressources
+  api:
+    type: http-server
+    zone: backend             # Rattaché à la zone "backend"
+    config:
+      label: "API Server"
+      port: 8080
+      responseDelay: 50
+      errorRate: 0.01
+
+  # Base de données
+  db:
+    type: database
+    zone: backend
+    config:
+      label: "PostgreSQL"
+      maxConnections: 100
+      queryDelay: 10
+
+  # Load balancer
+  lb:
+    type: load-balancer
+    config:
+      algorithm: round-robin  # round-robin | least-connections | random`}</code></pre>
+              </div>
+
+              {/* Types reference */}
+              <div className="mt-3 overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                <table className="w-full font-mono text-[11px]">
+                  <thead>
+                    <tr className="text-muted-foreground text-left border-b border-border bg-card/50">
+                      <th className="py-2 px-3 text-[9px] uppercase font-semibold">Type YAML</th>
+                      <th className="py-2 px-3 text-[9px] uppercase font-semibold">Composant</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {[
+                      ['http-client', 'Client HTTP'],
+                      ['http-server', 'Serveur HTTP'],
+                      ['client-group', 'Groupe de clients'],
+                      ['api-gateway', 'API Gateway'],
+                      ['load-balancer', 'Load Balancer'],
+                      ['database', 'Base de données'],
+                      ['cache', 'Cache'],
+                      ['message-queue', 'File de messages'],
+                      ['circuit-breaker', 'Circuit Breaker'],
+                      ['cdn', 'CDN'],
+                      ['waf', 'WAF'],
+                      ['firewall', 'Firewall'],
+                      ['serverless', 'Serverless'],
+                      ['container', 'Container'],
+                      ['service-discovery', 'Service Discovery'],
+                      ['dns', 'DNS'],
+                      ['cloud-storage', 'Cloud Storage'],
+                      ['cloud-function', 'Cloud Function'],
+                    ].map(([type, name], i) => (
+                      <tr key={type} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
+                        <td className="py-1.5 px-3"><code>{type}</code></td>
+                        <td className="py-1.5 px-3">{name}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Connexions */}
+            <div id="yaml-connections" className="scroll-mt-16">
+              <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Connexions</h2>
+              <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+                Les connexions définissent le flux de données entre composants.
+                Utilisez l&apos;identifiant du composant (la clé dans <code className="font-mono text-[11px] bg-muted px-1 py-0.5" style={{ borderRadius: '2px' }}>components</code>).
+              </p>
+              <div className="border border-border bg-card/30 overflow-hidden" style={{ borderRadius: '3px' }}>
+                <div className="px-3 py-1.5 border-b border-border bg-card/50 flex items-center gap-2">
+                  <div className="w-3 h-0.5 rounded-full bg-signal-infra" />
+                  <span className="font-mono text-[9px] uppercase text-muted-foreground font-semibold">Exemple de connexions</span>
+                </div>
+                <pre className="p-4 font-mono text-[11px] leading-relaxed text-foreground overflow-x-auto"><code>{`connections:
+  - from: load-test    # ID du composant source
+    to: lb             # ID du composant cible
+
+  - from: lb
+    to: api
+
+  - from: api
+    to: db`}</code></pre>
+              </div>
+            </div>
+
+            {/* Utiliser l'éditeur */}
+            <div id="yaml-editeur" className="scroll-mt-16">
+              <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Utiliser l&apos;éditeur</h2>
+              <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+                L&apos;éditeur YAML est accessible depuis la barre d&apos;outils du simulateur (bouton <strong className="text-foreground">YAML</strong>).
+              </p>
+              <div className="space-y-3">
+                <div className="p-3 border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-instrument text-[9px] text-signal-infra">EXPORTER</span>
+                    <span className="text-border">|</span>
+                    <span className="text-[12px] text-muted-foreground">Charge l&apos;architecture actuelle du canvas dans l&apos;éditeur en YAML</span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-instrument text-[9px] text-signal-active">APPLIQUER</span>
+                    <span className="text-border">|</span>
+                    <span className="text-[12px] text-muted-foreground">Parse le YAML et remplace l&apos;architecture sur le canvas</span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-instrument text-[9px] text-muted-foreground">.YAML</span>
+                    <span className="text-border">|</span>
+                    <span className="text-[12px] text-muted-foreground">Télécharge le contenu en fichier <code className="font-mono text-[11px]">.yaml</code></span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-instrument text-[9px] text-muted-foreground">COPIER</span>
+                    <span className="text-border">|</span>
+                    <span className="text-[12px] text-muted-foreground">Copie le contenu dans le presse-papier</span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-instrument text-[9px] text-muted-foreground">CHARGER</span>
+                    <span className="text-border">|</span>
+                    <span className="text-[12px] text-muted-foreground">Importe un fichier <code className="font-mono text-[11px]">.yaml</code> depuis le disque</span>
+                  </div>
+                </div>
+                <div className="p-3 border border-signal-infra/20 bg-signal-infra/5 font-mono text-[11px] text-foreground/80 leading-relaxed" style={{ borderRadius: '3px' }}>
+                  <strong className="text-signal-infra">Astuce :</strong> Exportez votre architecture, modifiez le YAML, puis appliquez pour itérer rapidement. Les fichiers <code>.yaml</code> sont compatibles Git pour le versioning.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ═══ SECTION 3: COMPOSANTS ═══ */}
           <div className="mt-16" />
           <SectionHeader
             id="composants"
             label="Catalogue des composants"
-            icon="02"
+            icon="03"
             color="oklch(0.70 0.15 220)"
-            description="9 types de composants répartis en 3 catégories. Chaque composant est configurable via le panneau de propriétés."
+            description="20 types de composants répartis en 7 catégories. Chaque composant est configurable via le panneau de propriétés."
           />
 
           {/* Category: Simulation */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-1 h-4 bg-blue-500" style={{ borderRadius: '1px' }} />
-              <span className="text-[10px] font-mono uppercase text-blue-400 font-semibold tracking-wider">Simulation</span>
-              <div className="flex-1 h-px bg-blue-500/10" />
-            </div>
-            <div className="space-y-4">
+          <CategoryAccordion label="Simulation" color="#3b82f6" count={3}>
               <ComponentCard
                 icon={<Monitor className="w-4 h-4" />}
                 name="Client HTTP"
@@ -435,17 +804,10 @@ export default function DocsPage() {
                   { name: 'baseInterval', type: 'number', defaultValue: '1000', description: 'Intervalle de base entre requêtes (ms)' },
                 ]}
               />
-            </div>
-          </div>
+          </CategoryAccordion>
 
           {/* Category: Infrastructure */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-1 h-4 bg-purple-500" style={{ borderRadius: '1px' }} />
-              <span className="text-[10px] font-mono uppercase text-purple-400 font-semibold tracking-wider">Infrastructure</span>
-              <div className="flex-1 h-px bg-purple-500/10" />
-            </div>
-            <div className="space-y-4">
+          <CategoryAccordion label="Infrastructure" color="#a855f7" count={2}>
               <ComponentCard
                 icon={<Shield className="w-4 h-4" />}
                 name="API Gateway"
@@ -474,17 +836,10 @@ export default function DocsPage() {
                   { name: 'stickySessions.ttl', type: 'number', defaultValue: '300', description: 'Durée de la session (s)' },
                 ]}
               />
-            </div>
-          </div>
+          </CategoryAccordion>
 
           {/* Category: Data */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-1 h-4 bg-emerald-500" style={{ borderRadius: '1px' }} />
-              <span className="text-[10px] font-mono uppercase text-emerald-400 font-semibold tracking-wider">Données</span>
-              <div className="flex-1 h-px bg-emerald-500/10" />
-            </div>
-            <div className="space-y-4">
+          <CategoryAccordion label="Données" color="#10b981" count={3}>
               <ComponentCard
                 icon={<Database className="w-4 h-4" />}
                 name="Base de données"
@@ -527,15 +882,175 @@ export default function DocsPage() {
                   { name: 'consumerCount', type: 'number', defaultValue: '1', description: 'Nombre de consommateurs' },
                 ]}
               />
-            </div>
-          </div>
+          </CategoryAccordion>
 
-          {/* ═══ SECTION 3: TEMPLATES ═══ */}
+          {/* Category: Infrastructure (suite) */}
+          <CategoryAccordion label="Infrastructure (suite)" color="#a855f7" count={5}>
+              <ComponentCard
+                icon={<Globe className="w-4 h-4" />}
+                name="CDN"
+                description="Content Delivery Network — cache en edge avec latence réduite. Simule les cache hit/miss."
+                category="infrastructure"
+                properties={[
+                  { name: 'provider', type: 'enum', defaultValue: 'generic', description: 'Provider (Cloudflare, CloudFront, Akamai, Generic)' },
+                  { name: 'cacheHitRatio', type: 'number', defaultValue: '85', description: 'Ratio de cache hit (0-100%)' },
+                  { name: 'edgeLatencyMs', type: 'number', defaultValue: '5', description: 'Latence edge en ms (cache hit)' },
+                  { name: 'originLatencyMs', type: 'number', defaultValue: '50', description: 'Latence origin en ms (cache miss)' },
+                  { name: 'cacheTTLSeconds', type: 'number', defaultValue: '3600', description: 'TTL du cache en secondes' },
+                ]}
+              />
+              <ComponentCard
+                icon={<ShieldCheck className="w-4 h-4" />}
+                name="WAF"
+                description="Web Application Firewall — filtre les requêtes malveillantes (SQL injection, XSS, rate limiting)."
+                category="infrastructure"
+                properties={[
+                  { name: 'provider', type: 'enum', defaultValue: 'generic', description: 'Provider (AWS WAF, Cloudflare, Azure WAF, Generic)' },
+                  { name: 'blockRate', type: 'number', defaultValue: '5', description: 'Taux de blocage simulé (0-100%)' },
+                  { name: 'inspectionLatencyMs', type: 'number', defaultValue: '2', description: "Latence d'inspection en ms" },
+                  { name: 'rules.sqlInjection', type: 'boolean', defaultValue: 'true', description: 'Protection SQL Injection' },
+                  { name: 'rules.xss', type: 'boolean', defaultValue: 'true', description: 'Protection XSS' },
+                  { name: 'rules.rateLimiting', type: 'boolean', defaultValue: 'true', description: 'Rate limiting' },
+                ]}
+              />
+              <ComponentCard
+                icon={<ShieldOff className="w-4 h-4" />}
+                name="Firewall"
+                description="Firewall réseau — filtre le trafic par action par défaut (allow/deny) et ports autorisés."
+                category="infrastructure"
+                properties={[
+                  { name: 'defaultAction', type: 'enum', defaultValue: 'allow', description: 'Action par défaut (allow, deny)' },
+                  { name: 'inspectionLatencyMs', type: 'number', defaultValue: '1', description: "Latence d'inspection en ms" },
+                  { name: 'allowedPorts', type: 'string', defaultValue: '80, 443, 8080', description: 'Ports autorisés (séparés par virgule)' },
+                ]}
+              />
+              <ComponentCard
+                icon={<Compass className="w-4 h-4" />}
+                name="Service Discovery"
+                description="Registre de services — résout dynamiquement les instances saines (Consul, Eureka, Kubernetes)."
+                category="infrastructure"
+                properties={[
+                  { name: 'provider', type: 'enum', defaultValue: 'consul', description: 'Provider (Consul, Eureka, Kubernetes, Generic)' },
+                  { name: 'lookupLatencyMs', type: 'number', defaultValue: '2', description: 'Latence de lookup en ms' },
+                  { name: 'healthCheckIntervalMs', type: 'number', defaultValue: '10000', description: 'Intervalle health check en ms' },
+                  { name: 'cacheTTLMs', type: 'number', defaultValue: '5000', description: 'TTL du cache de résolution en ms' },
+                ]}
+              />
+              <ComponentCard
+                icon={<Globe className="w-4 h-4" />}
+                name="DNS"
+                description="Résolution DNS avec TTL configurable et support du failover entre cibles."
+                category="infrastructure"
+                properties={[
+                  { name: 'resolutionLatencyMs', type: 'number', defaultValue: '5', description: 'Latence de résolution en ms' },
+                  { name: 'ttlSeconds', type: 'number', defaultValue: '300', description: 'TTL en secondes' },
+                  { name: 'failoverEnabled', type: 'boolean', defaultValue: 'false', description: 'Activer le failover entre cibles' },
+                ]}
+              />
+          </CategoryAccordion>
+
+          {/* Category: Resilience */}
+          <CategoryAccordion label="Résilience" color="#f43f5e" count={1}>
+              <ComponentCard
+                icon={<ShieldOff className="w-4 h-4" />}
+                name="Circuit Breaker"
+                description="Pattern Circuit Breaker — protège les services en aval. 3 états : closed, open, half-open."
+                category="resilience"
+                properties={[
+                  { name: 'failureThreshold', type: 'number', defaultValue: '5', description: "Nombre d'erreurs avant ouverture du circuit" },
+                  { name: 'successThreshold', type: 'number', defaultValue: '3', description: 'Succès nécessaires en half-open pour fermer' },
+                  { name: 'timeout', type: 'number', defaultValue: '30000', description: "Délai avant passage en half-open (ms)" },
+                  { name: 'halfOpenMaxRequests', type: 'number', defaultValue: '3', description: 'Requêtes autorisées en half-open' },
+                ]}
+              />
+          </CategoryAccordion>
+
+          {/* Category: Compute */}
+          <CategoryAccordion label="Compute" color="#f59e0b" count={2}>
+              <ComponentCard
+                icon={<Cloud className="w-4 h-4" />}
+                name="Serverless"
+                description="Fonction serverless avec cold start, concurrence limitée et auto-scaling des instances."
+                category="compute"
+                properties={[
+                  { name: 'provider', type: 'enum', defaultValue: 'aws', description: 'Provider (AWS, Azure, GCP, Generic)' },
+                  { name: 'runtime', type: 'string', defaultValue: 'nodejs20.x', description: 'Runtime de la fonction' },
+                  { name: 'memoryMB', type: 'number', defaultValue: '256', description: 'Mémoire allouée en MB' },
+                  { name: 'coldStartMs', type: 'number', defaultValue: '500', description: 'Latence cold start en ms' },
+                  { name: 'warmStartMs', type: 'number', defaultValue: '5', description: 'Latence warm start en ms' },
+                  { name: 'concurrencyLimit', type: 'number', defaultValue: '100', description: 'Concurrence maximale' },
+                  { name: 'minInstances', type: 'number', defaultValue: '0', description: "Instances minimum (provisioned)" },
+                  { name: 'maxInstances', type: 'number', defaultValue: '100', description: 'Instances maximum' },
+                ]}
+              />
+              <ComponentCard
+                icon={<Box className="w-4 h-4" />}
+                name="Container"
+                description="Container Docker/Kubernetes avec replicas, limites de ressources et auto-scaling HPA."
+                category="compute"
+                properties={[
+                  { name: 'image', type: 'string', defaultValue: 'app:latest', description: 'Image Docker' },
+                  { name: 'replicas', type: 'number', defaultValue: '2', description: 'Nombre de replicas' },
+                  { name: 'cpuLimit', type: 'string', defaultValue: '500m', description: 'Limite CPU (millicores)' },
+                  { name: 'memoryLimit', type: 'string', defaultValue: '512Mi', description: 'Limite mémoire' },
+                  { name: 'responseDelayMs', type: 'number', defaultValue: '20', description: 'Délai de réponse en ms' },
+                  { name: 'autoScaling.enabled', type: 'boolean', defaultValue: 'true', description: 'Activer le HPA' },
+                  { name: 'autoScaling.targetCPU', type: 'number', defaultValue: '70', description: 'Seuil CPU pour le scaling (%)' },
+                ]}
+              />
+          </CategoryAccordion>
+
+          {/* Category: Cloud */}
+          <CategoryAccordion label="Cloud" color="#0ea5e9" count={2}>
+              <ComponentCard
+                icon={<HardDrive className="w-4 h-4" />}
+                name="Cloud Storage"
+                description="Stockage objet cloud (S3, Azure Blob, GCS) avec classes de stockage et rate limiting."
+                category="cloud"
+                properties={[
+                  { name: 'provider', type: 'enum', defaultValue: 'aws', description: 'Provider (AWS S3, Azure Blob, GCS, Generic)' },
+                  { name: 'storageClass', type: 'enum', defaultValue: 'standard', description: 'Classe (Standard, Infrequent Access, Archive)' },
+                  { name: 'readLatencyMs', type: 'number', defaultValue: '20', description: 'Latence lecture en ms' },
+                  { name: 'writeLatencyMs', type: 'number', defaultValue: '50', description: 'Latence écriture en ms' },
+                  { name: 'maxRequestsPerSecond', type: 'number', defaultValue: '5500', description: 'Max requêtes par seconde' },
+                ]}
+              />
+              <ComponentCard
+                icon={<Cloud className="w-4 h-4" />}
+                name="Cloud Function"
+                description="Fonction cloud managée (AWS Lambda, Azure Function) — hérite de la configuration Serverless avec presets cloud."
+                category="cloud"
+                properties={[
+                  { name: 'serviceType', type: 'enum', defaultValue: 'aws-lambda', description: 'Service (AWS Lambda, Azure Function, GCP Cloud Function)' },
+                  { name: 'provider', type: 'enum', defaultValue: 'aws', description: 'Provider cloud' },
+                  { name: 'coldStartMs', type: 'number', defaultValue: '500', description: 'Latence cold start en ms' },
+                  { name: 'concurrencyLimit', type: 'number', defaultValue: '100', description: 'Concurrence maximale' },
+                ]}
+              />
+          </CategoryAccordion>
+
+          {/* Category: Zones */}
+          <CategoryAccordion label="Zones" color="#64748b" count={1}>
+              <ComponentCard
+                icon={<Layers className="w-4 h-4" />}
+                name="Zone Réseau"
+                description="Zone de regroupement réseau (public, DMZ, backend, data). Les composants placés dans une zone héritent de sa latence inter-zone."
+                category="zone"
+                properties={[
+                  { name: 'zoneType', type: 'enum', defaultValue: 'backend', description: 'Type de zone (public, dmz, backend, data, custom)' },
+                  { name: 'domain', type: 'string', defaultValue: '', description: 'Domaine de la zone (ex: api.example.com)' },
+                  { name: 'interZoneLatency', type: 'number', defaultValue: '0', description: 'Latence ajoutée pour les requêtes sortantes (ms)' },
+                  { name: 'color', type: 'string', defaultValue: '#3b82f6', description: 'Couleur de la zone' },
+                ]}
+              />
+          </CategoryAccordion>
+
+          {/* ═══ SECTION 4: TEMPLATES ═══ */}
           <div className="mt-16" />
           <SectionHeader
             id="templates"
             label="Templates d'architecture"
-            icon="03"
+            icon="04"
             color="oklch(0.68 0.18 290)"
             description="4 architectures pré-configurées accessibles depuis le menu TPL dans le header."
           />
@@ -571,12 +1086,12 @@ export default function DocsPage() {
             />
           </div>
 
-          {/* ═══ SECTION 4: MÉTRIQUES ═══ */}
+          {/* ═══ SECTION 5: MÉTRIQUES ═══ */}
           <div className="mt-16" />
           <SectionHeader
             id="metriques"
             label="Référence métriques"
-            icon="04"
+            icon="05"
             color="oklch(0.72 0.19 155)"
             description="Les métriques collectées pendant la simulation et comment les interpréter."
           />

@@ -7,6 +7,8 @@ import type { SimulationMetrics, ExtendedSimulationMetrics, ResourceSample, Clie
  * et les statistiques par groupe de clients.
  */
 export class MetricsCollector {
+  private static readonly MAX_LATENCY_SAMPLES = 10000;
+
   private metrics: SimulationMetrics;
   private latencies: number[] = [];
 
@@ -53,6 +55,10 @@ export class MetricsCollector {
   recordResponse(success: boolean, latency: number): void {
     this.metrics.responsesReceived++;
     this.latencies.push(latency);
+    // Rotate oldest samples to prevent unbounded growth
+    if (this.latencies.length > MetricsCollector.MAX_LATENCY_SAMPLES) {
+      this.latencies = this.latencies.slice(-MetricsCollector.MAX_LATENCY_SAMPLES);
+    }
 
     if (success) {
       this.metrics.successCount++;

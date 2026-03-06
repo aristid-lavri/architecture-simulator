@@ -160,14 +160,14 @@ function ReportContent({ report }: ReportContentProps) {
       </div>
 
       {/* Client Groups Stats */}
-      {clientGroupStats.size > 0 && (
+      {Object.keys(clientGroupStats).length > 0 && (
         <div className="space-y-2">
           <h4 className="font-medium flex items-center gap-2">
             <Users className="h-4 w-4" />
             Groupes de clients
           </h4>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {Array.from(clientGroupStats.entries()).map(([groupId, stats]) => (
+            {Object.entries(clientGroupStats).map(([groupId, stats]) => (
               <div key={groupId} className="bg-muted/50 rounded-lg p-3">
                 <div className="text-sm font-medium truncate mb-1">
                   {groupId.split('-').slice(0, 2).join('-')}
@@ -187,14 +187,14 @@ function ReportContent({ report }: ReportContentProps) {
       )}
 
       {/* Server Resource Utilization */}
-      {resourceUtilizations.size > 0 && (
+      {Object.keys(resourceUtilizations).length > 0 && (
         <div className="space-y-2">
           <h4 className="font-medium flex items-center gap-2">
             <Server className="h-4 w-4" />
             Utilisation des ressources serveur
           </h4>
           <div className="space-y-2">
-            {Array.from(resourceUtilizations.entries()).map(([nodeId, util]) => (
+            {Object.entries(resourceUtilizations).map(([nodeId, util]) => (
               <div key={nodeId} className="bg-muted/50 rounded-lg p-3">
                 <div className="text-sm font-medium mb-2 truncate">
                   {nodeId.split('-').slice(0, 2).join('-')}
@@ -244,7 +244,7 @@ function ReportContent({ report }: ReportContentProps) {
       )}
 
       {/* Warnings */}
-      {(metrics.errorCount > 0 || Array.from(resourceUtilizations.values()).some(u => u.cpu > 90 || u.memory > 90)) && (
+      {(metrics.errorCount > 0 || Object.values(resourceUtilizations).some(u => u.cpu > 90 || u.memory > 90)) && (
         <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-4">
           <div className="flex items-center gap-2 text-orange-500 font-medium mb-2">
             <AlertTriangle className="h-4 w-4" />
@@ -254,10 +254,10 @@ function ReportContent({ report }: ReportContentProps) {
             {metrics.errorCount > 0 && (
               <li>• {metrics.errorCount} requêtes ont échoué ({Math.round((metrics.errorCount / metrics.responsesReceived) * 100)}% du total)</li>
             )}
-            {Array.from(resourceUtilizations.values()).some(u => u.cpu > 90) && (
+            {Object.values(resourceUtilizations).some(u => u.cpu > 90) && (
               <li>• Saturation CPU détectée sur certains serveurs</li>
             )}
-            {Array.from(resourceUtilizations.values()).some(u => u.memory > 90) && (
+            {Object.values(resourceUtilizations).some(u => u.memory > 90) && (
               <li>• Saturation mémoire détectée sur certains serveurs</li>
             )}
           </ul>
@@ -286,13 +286,7 @@ export function SimulationReportDrawer() {
   const handleExport = () => {
     if (!report) return;
 
-    const exportData = {
-      ...report,
-      resourceUtilizations: Object.fromEntries(report.resourceUtilizations),
-      clientGroupStats: Object.fromEntries(report.clientGroupStats),
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

@@ -52,6 +52,7 @@ function AnimatedEdgeComponent({
 }: EdgeProps<AnimatedEdge>) {
   const allParticles = useSimulationStore((state) => state.particles);
   const simulationState = useSimulationStore((state) => state.state);
+  const particles = useMemo(() => allParticles.filter((p) => p.edgeId === id), [allParticles, id]);
   const pathRef = useRef<SVGPathElement>(null);
   const [pathLength, setPathLength] = useState(0);
 
@@ -60,11 +61,6 @@ function AnimatedEdgeComponent({
   const strokeWidth = data?.strokeWidth || (selected ? 2 : 1.5);
   const strokeStyle = data?.strokeStyle || 'solid';
   const pathType = data?.pathType || 'bezier';
-
-  const particles = useMemo(
-    () => allParticles.filter((p) => p.edgeId === id),
-    [allParticles, id]
-  );
 
   const [edgePath, labelX, labelY] = useMemo(() => {
     const pathParams = {
