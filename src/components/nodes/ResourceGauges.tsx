@@ -1,7 +1,6 @@
 'use client';
 
 import { memo } from 'react';
-import { Cpu, MemoryStick, Wifi, HardDrive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ResourceUtilization, ServerResources } from '@/types';
 
@@ -11,41 +10,32 @@ interface ResourceGaugesProps {
   compact?: boolean;
 }
 
-interface GaugeBarProps {
-  value: number;
-  max?: number;
-  label: string;
-  icon: React.ReactNode;
-  compact?: boolean;
+function getBarColor(percentage: number): string {
+  if (percentage < 70) return 'bg-signal-healthy';
+  if (percentage < 90) return 'bg-signal-warning';
+  return 'bg-signal-critical';
 }
 
-function getUtilizationColor(percentage: number): string {
-  if (percentage < 70) return 'bg-green-500';
-  if (percentage < 90) return 'bg-orange-500';
-  return 'bg-red-500';
+function getTextColor(percentage: number): string {
+  if (percentage < 70) return 'text-signal-healthy';
+  if (percentage < 90) return 'text-signal-warning';
+  return 'text-signal-critical';
 }
 
-function getUtilizationTextColor(percentage: number): string {
-  if (percentage < 70) return 'text-green-500';
-  if (percentage < 90) return 'text-orange-500';
-  return 'text-red-500';
-}
-
-function GaugeBar({ value, max = 100, label, icon, compact = false }: GaugeBarProps) {
-  const percentage = Math.min(100, (value / max) * 100);
-  const colorClass = getUtilizationColor(percentage);
+function GaugeBar({ value, label, compact = false }: { value: number; label: string; compact?: boolean }) {
+  const percentage = Math.min(100, value);
 
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5">
-        <div className="w-3 h-3 text-muted-foreground">{icon}</div>
-        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+      <div className="flex items-center gap-1.5" role="progressbar" aria-valuenow={Math.round(percentage)} aria-valuemin={0} aria-valuemax={100} aria-label={`${label}: ${Math.round(percentage)}%`}>
+        <span className="font-mono text-[9px] text-muted-foreground w-6">{label}</span>
+        <div className="flex-1 h-0.5 bg-border rounded-full overflow-hidden">
           <div
-            className={cn('h-full transition-all duration-300', colorClass)}
+            className={cn('h-full resource-bar', getBarColor(percentage))}
             style={{ width: `${percentage}%` }}
           />
         </div>
-        <span className={cn('text-[10px] font-medium w-7 text-right', getUtilizationTextColor(percentage))}>
+        <span className={cn('font-mono text-[9px] w-6 text-right', getTextColor(percentage))}>
           {Math.round(percentage)}%
         </span>
       </div>
@@ -53,19 +43,14 @@ function GaugeBar({ value, max = 100, label, icon, compact = false }: GaugeBarPr
   }
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <div className="flex items-center gap-1 text-muted-foreground">
-          {icon}
-          <span>{label}</span>
-        </div>
-        <span className={cn('font-medium', getUtilizationTextColor(percentage))}>
-          {Math.round(percentage)}%
-        </span>
+    <div className="space-y-1" role="progressbar" aria-valuenow={Math.round(percentage)} aria-valuemin={0} aria-valuemax={100} aria-label={`${label}: ${Math.round(percentage)}%`}>
+      <div className="flex items-center justify-between font-mono text-[10px]">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={getTextColor(percentage)}>{Math.round(percentage)}%</span>
       </div>
-      <div className="h-2 bg-muted rounded-full overflow-hidden">
+      <div className="h-0.5 bg-border rounded-full overflow-hidden">
         <div
-          className={cn('h-full transition-all duration-300', colorClass)}
+          className={cn('h-full resource-bar', getBarColor(percentage))}
           style={{ width: `${percentage}%` }}
         />
       </div>
@@ -79,40 +64,18 @@ function ResourceGauges({ utilization, resources, compact = false }: ResourceGau
 
   if (compact) {
     return (
-      <div className="space-y-1 pt-1 border-t border-border/50">
-        <GaugeBar
-          value={cpu}
-          label="CPU"
-          icon={<Cpu className="w-3 h-3" />}
-          compact
-        />
-        <GaugeBar
-          value={memory}
-          label="RAM"
-          icon={<MemoryStick className="w-3 h-3" />}
-          compact
-        />
-        <GaugeBar
-          value={network}
-          label="NET"
-          icon={<Wifi className="w-3 h-3" />}
-          compact
-        />
-        {disk !== undefined && (
-          <GaugeBar
-            value={disk}
-            label="DISK"
-            icon={<HardDrive className="w-3 h-3" />}
-            compact
-          />
-        )}
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5">
+      <div className="space-y-0.5 pt-1.5 border-t border-border/50">
+        <GaugeBar value={cpu} label="CPU" compact />
+        <GaugeBar value={memory} label="MEM" compact />
+        <GaugeBar value={network} label="NET" compact />
+        {disk !== undefined && <GaugeBar value={disk} label="DSK" compact />}
+        <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground pt-0.5">
           <span>
-            Conn: <span className="font-medium text-foreground">{activeConnections}/{connections.maxConcurrent}</span>
+            conn <span className="text-foreground">{activeConnections}/{connections.maxConcurrent}</span>
           </span>
           {queuedRequests > 0 && (
-            <span className="text-orange-500">
-              Queue: <span className="font-medium">{queuedRequests}</span>
+            <span className="text-signal-warning">
+              q:<span className="font-semibold">{queuedRequests}</span>
             </span>
           )}
         </div>
@@ -121,39 +84,18 @@ function ResourceGauges({ utilization, resources, compact = false }: ResourceGau
   }
 
   return (
-    <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
-      <GaugeBar
-        value={cpu}
-        label="CPU"
-        icon={<Cpu className="w-4 h-4" />}
-      />
-      <GaugeBar
-        value={memory}
-        label="Mémoire"
-        icon={<MemoryStick className="w-4 h-4" />}
-      />
-      <GaugeBar
-        value={network}
-        label="Réseau"
-        icon={<Wifi className="w-4 h-4" />}
-      />
-      {disk !== undefined && (
-        <GaugeBar
-          value={disk}
-          label="Disque"
-          icon={<HardDrive className="w-4 h-4" />}
-        />
-      )}
-      <div className="flex items-center justify-between text-xs pt-2 border-t border-border/50">
-        <div className="text-muted-foreground">
-          Connexions: <span className="font-medium text-foreground">{activeConnections}/{connections.maxConcurrent}</span>
-        </div>
-        <div className={cn(
-          'text-muted-foreground',
-          queuedRequests > 0 && 'text-orange-500'
-        )}>
-          File: <span className="font-medium">{queuedRequests}/{connections.queueSize}</span>
-        </div>
+    <div className="space-y-2 p-3 bg-muted/20 rounded border border-border/50">
+      <GaugeBar value={cpu} label="CPU" />
+      <GaugeBar value={memory} label="MEM" />
+      <GaugeBar value={network} label="NET" />
+      {disk !== undefined && <GaugeBar value={disk} label="DSK" />}
+      <div className="flex items-center justify-between font-mono text-[10px] pt-1.5 border-t border-border/50">
+        <span className="text-muted-foreground">
+          conn <span className="text-foreground">{activeConnections}/{connections.maxConcurrent}</span>
+        </span>
+        <span className={cn('text-muted-foreground', queuedRequests > 0 && 'text-signal-warning')}>
+          queue <span className="font-semibold">{queuedRequests}/{connections.queueSize}</span>
+        </span>
       </div>
     </div>
   );

@@ -3,11 +3,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ═══════════════════════════════════════════════════════════════
+   SIGNAL Design System — "Chaque pixel est un capteur"
+   Ingénierie aérospatiale × Cinématographie Ridley Scott
+   ═══════════════════════════════════════════════════════════════ */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-space-grotesk);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -44,75 +50,151 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
+  /* SIGNAL Colors */
+  --color-signal-active: var(--signal-active);
+  --color-signal-flux: var(--signal-flux);
+  --color-signal-healthy: var(--signal-healthy);
+  --color-signal-warning: var(--signal-warning);
+  --color-signal-critical: var(--signal-critical);
+  --color-signal-computing: var(--signal-computing);
+  --color-signal-client: var(--signal-client);
+  --color-signal-server: var(--signal-server);
+  --color-signal-data: var(--signal-data);
+  --color-signal-infra: var(--signal-infra);
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --radius: 0.25rem;
+
+  /* SIGNAL Operational Colors */
+  --signal-active: oklch(0.75 0.18 75);
+  --signal-flux: oklch(0.70 0.15 220);
+  --signal-healthy: oklch(0.72 0.19 155);
+  --signal-warning: oklch(0.78 0.16 65);
+  --signal-critical: oklch(0.65 0.22 25);
+  --signal-computing: oklch(0.68 0.18 290);
+
+  /* SIGNAL Component Colors */
+  --signal-client: oklch(0.70 0.15 220);
+  --signal-server: oklch(0.68 0.18 290);
+  --signal-data: oklch(0.72 0.19 155);
+  --signal-infra: oklch(0.75 0.18 75);
+
+  /* Light mode — Craie × Abysse inversé */
+  --background: oklch(0.97 0.005 250);
+  --foreground: oklch(0.15 0.035 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.15 0.035 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.15 0.035 250);
+  --primary: oklch(0.55 0.18 250);
+  --primary-foreground: oklch(0.98 0.005 250);
+  --secondary: oklch(0.94 0.008 250);
+  --secondary-foreground: oklch(0.20 0.04 250);
+  --muted: oklch(0.94 0.008 250);
+  --muted-foreground: oklch(0.45 0.03 250);
+  --accent: oklch(0.94 0.008 250);
+  --accent-foreground: oklch(0.20 0.04 250);
+  --destructive: oklch(0.55 0.22 25);
+  --border: oklch(0.15 0.035 250 / 10%);
+  --input: oklch(0.94 0.008 250);
+  --ring: oklch(0.55 0.18 250);
+  --chart-1: oklch(0.55 0.15 220);
+  --chart-2: oklch(0.55 0.19 155);
+  --chart-3: oklch(0.60 0.18 75);
+  --chart-4: oklch(0.52 0.18 290);
+  --chart-5: oklch(0.55 0.22 25);
+  --sidebar: oklch(0.95 0.006 250);
+  --sidebar-foreground: oklch(0.15 0.035 250);
+  --sidebar-primary: oklch(0.55 0.18 250);
+  --sidebar-primary-foreground: oklch(0.98 0.005 250);
+  --sidebar-accent: oklch(0.94 0.008 250);
+  --sidebar-accent-foreground: oklch(0.20 0.04 250);
+  --sidebar-border: oklch(0.15 0.035 250 / 10%);
+  --sidebar-ring: oklch(0.55 0.18 250);
+
+  /* Node styling — light */
+  --node-bg: oklch(1 0 0);
+  --node-border: oklch(0.15 0.035 250 / 15%);
+  --node-border-hover: oklch(0.15 0.035 250 / 25%);
+  --node-shadow: 0 1px 3px oklch(0.15 0.035 250 / 8%);
+
+  /* Edge colors — light */
+  --edge-color: oklch(0.15 0.035 250 / 25%);
+  --edge-color-active: oklch(0.15 0.035 250 / 35%);
+
+  /* Grid colors — light */
+  --grid-minor: oklch(0.15 0.035 250 / 5%);
+  --grid-major: oklch(0.15 0.035 250 / 8%);
+  --minimap-bg: oklch(0.95 0.006 250);
+  --minimap-mask: oklch(0.97 0.005 250 / 70%);
+  --controls-bg: oklch(1 0 0);
 }
 
+/* ═══════════════════════════════════════
+   DARK MODE — Abysse × Craie
+   Deep ocean blue, chalk white, charbon surfaces
+   Inspired by atryleo.com palette
+   ═══════════════════════════════════════ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Abysse — fond principal, bleu océan profond */
+  --background: oklch(0.13 0.035 250);
+  /* Craie — texte principal, blanc chaud légèrement crème */
+  --foreground: oklch(0.92 0.008 90);
+  /* Charbon — surfaces surélevées, bleu-gris plus clair */
+  --card: oklch(0.17 0.04 250);
+  --card-foreground: oklch(0.92 0.008 90);
+  --popover: oklch(0.17 0.04 250);
+  --popover-foreground: oklch(0.92 0.008 90);
+  /* Primary — ambre signal (inchangé) */
+  --primary: oklch(0.75 0.18 75);
+  --primary-foreground: oklch(0.13 0.035 250);
+  /* Secondary — charbon profond */
+  --secondary: oklch(0.21 0.045 250);
+  --secondary-foreground: oklch(0.92 0.008 90);
+  /* Muted — charbon, texte gris bleuté */
+  --muted: oklch(0.21 0.045 250);
+  --muted-foreground: oklch(0.52 0.02 250);
+  /* Accent */
+  --accent: oklch(0.21 0.045 250);
+  --accent-foreground: oklch(0.92 0.008 90);
+  --destructive: oklch(0.65 0.22 25);
+  /* Bordures — craie très atténuée */
+  --border: oklch(0.92 0.008 90 / 8%);
+  --input: oklch(0.17 0.04 250);
+  --ring: oklch(0.75 0.18 75);
+  --chart-1: oklch(0.70 0.15 220);
+  --chart-2: oklch(0.72 0.19 155);
+  --chart-3: oklch(0.75 0.18 75);
+  --chart-4: oklch(0.68 0.18 290);
+  --chart-5: oklch(0.65 0.22 25);
+  /* Sidebar — un cran plus sombre que l'abysse */
+  --sidebar: oklch(0.11 0.03 250);
+  --sidebar-foreground: oklch(0.92 0.008 90);
+  --sidebar-primary: oklch(0.75 0.18 75);
+  --sidebar-primary-foreground: oklch(0.13 0.035 250);
+  --sidebar-accent: oklch(0.21 0.045 250);
+  --sidebar-accent-foreground: oklch(0.92 0.008 90);
+  --sidebar-border: oklch(0.92 0.008 90 / 8%);
+  --sidebar-ring: oklch(0.75 0.18 75);
+
+  /* Node styling — dark, high contrast */
+  --node-bg: oklch(0.20 0.04 250);
+  --node-border: oklch(0.92 0.008 90 / 16%);
+  --node-border-hover: oklch(0.92 0.008 90 / 28%);
+  --node-shadow: 0 2px 8px oklch(0 0 0 / 30%);
+
+  /* Edge colors — dark */
+  --edge-color: oklch(0.92 0.008 90 / 10%);
+  --edge-color-active: oklch(0.92 0.008 90 / 15%);
+
+  /* Grid colors — dark */
+  --grid-minor: oklch(0.92 0.008 90 / 5%);
+  --grid-major: oklch(0.92 0.008 90 / 8%);
+  --minimap-bg: oklch(0.11 0.03 250);
+  --minimap-mask: oklch(0.13 0.035 250 / 70%);
+  --controls-bg: oklch(0.17 0.04 250);
 }
 
 @layer base {
@@ -123,37 +205,63 @@
     @apply bg-background text-foreground;
   }
   html {
-    font-size: 75%;
+    font-size: 80%;
   }
 }
 
-/* React Flow - Rectangular handles (larger for better visibility) */
-.react-flow__handle {
-  width: 18px !important;
-  height: 12px !important;
-  border-radius: 3px !important;
-  border: 2px solid var(--background) !important;
+/* ═══════════════════════════════════════
+   TYPOGRAPHY UTILITIES
+   ═══════════════════════════════════════ */
+.font-display {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
 }
 
-/* Vertical handles (left/right positioned) - taller than wide */
+.text-instrument {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════
+   REACT FLOW — Instrument Style
+   ═══════════════════════════════════════ */
+
+/* Handles — small, precise, angular */
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 2px !important;
+  border: 1.5px solid var(--border) !important;
+  background: var(--background) !important;
+  transition: all 0.15s ease;
+}
+
+.react-flow__handle:hover {
+  border-color: var(--signal-active) !important;
+  box-shadow: 0 0 6px var(--signal-active) !important;
+}
+
+/* Vertical handles */
 .react-flow__handle.react-flow__handle-left,
 .react-flow__handle.react-flow__handle-right {
-  width: 12px !important;
-  height: 22px !important;
+  width: 8px !important;
+  height: 14px !important;
 }
 
-/* Edge styling - thicker edges */
+/* Edge styling — thin, precise */
 .react-flow__edge-path {
-  stroke-width: 3 !important;
+  stroke-width: 1.5 !important;
 }
 
 /* Selected edge styling */
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: #3b82f6 !important;
-  stroke-width: 4 !important;
+  stroke: var(--signal-flux) !important;
+  stroke-width: 2 !important;
+  filter: drop-shadow(0 0 4px oklch(0.70 0.15 220 / 50%));
 }
 
-/* Edge interaction area - easier to click */
+/* Edge interaction area */
 .react-flow__edge-interaction {
   stroke-width: 20 !important;
 }
@@ -161,4 +269,259 @@
 /* Reconnectable edge handles */
 .react-flow__edge .react-flow__edge-textwrapper {
   pointer-events: all;
+}
+
+/* Background grid — technical engineering paper */
+.react-flow__background {
+  opacity: 0.4;
+}
+
+/* MiniMap — instrument-like */
+.react-flow .react-flow__minimap {
+  background: var(--minimap-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+}
+
+/* Controls — angular */
+.react-flow .react-flow__controls {
+  background: var(--controls-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+}
+
+/* Attribution — hide or style */
+.react-flow__attribution {
+  display: none !important;
+}
+
+/* ═══════════════════════════════════════
+   NODE INSTRUMENT STYLES
+   ═══════════════════════════════════════ */
+
+/* Base node instrument styling */
+.node-instrument {
+  background: var(--node-bg);
+  border: 1px solid var(--node-border);
+  border-radius: 3px;
+  transition: border-color 0.2s ease;
+  box-shadow: var(--node-shadow);
+}
+
+.node-instrument:hover {
+  border-color: var(--node-border-hover);
+}
+
+.node-instrument.selected {
+  border-color: var(--signal-active);
+}
+
+/* Node signal border — left accent bar */
+.node-signal-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 3px 0 0 3px;
+}
+
+/* Status pulse animation */
+@keyframes signal-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes signal-pulse-fast {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.signal-pulse {
+  animation: signal-pulse 2s ease-in-out infinite;
+}
+
+.signal-pulse-warning {
+  animation: signal-pulse 1.2s ease-in-out infinite;
+}
+
+.signal-pulse-critical {
+  animation: signal-pulse-fast 0.5s ease-in-out infinite;
+}
+
+/* Resource utilization bar (thin, inline) */
+.resource-bar {
+  height: 2px;
+  border-radius: 1px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+/* ═══════════════════════════════════════
+   SCROLLBAR — Minimal, dark
+   ═══════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* ═══════════════════════════════════════
+   LANDING PAGE ANIMATIONS & MICRO-INTERACTIONS
+   ═══════════════════════════════════════ */
+@keyframes terminal-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.terminal-cursor {
+  animation: terminal-blink 1s step-end infinite;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+/* Stagger delays */
+.delay-1 { animation-delay: 80ms; }
+.delay-2 { animation-delay: 160ms; }
+.delay-3 { animation-delay: 240ms; }
+.delay-4 { animation-delay: 320ms; }
+.delay-5 { animation-delay: 400ms; }
+.delay-6 { animation-delay: 480ms; }
+
+/* Hero dot grid — atryleo-inspired fine quadrillage */
+.hero-dot-grid {
+  --grid-dot-size: 1px;
+  --grid-dot-space: 28px;
+  --grid-dot-color: var(--muted-foreground);
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, var(--grid-dot-color) var(--grid-dot-size), transparent var(--grid-dot-size));
+  background-size: var(--grid-dot-space) var(--grid-dot-space);
+  background-position: center center;
+  opacity: 0.15;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.dark .hero-dot-grid {
+  opacity: 0.12;
+}
+
+/* Hero cross grid — subtle + marks at intersections for depth */
+.hero-cross-grid {
+  --cross-size: 8px;
+  --cross-space: 112px;
+  --cross-color: var(--muted-foreground);
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--cross-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--cross-color) 1px, transparent 1px);
+  background-size: var(--cross-size) var(--cross-size);
+  background-position: center center;
+  opacity: 0;
+  pointer-events: none;
+  mask-image:
+    repeating-conic-gradient(transparent 0 75%, black 0 100%)
+    0 0 / var(--cross-space) var(--cross-space),
+    radial-gradient(ellipse 60% 50% at 50% 40%, black 0%, transparent 100%);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    repeating-conic-gradient(transparent 0 75%, black 0 100%)
+    0 0 / var(--cross-space) var(--cross-space),
+    radial-gradient(ellipse 60% 50% at 50% 40%, black 0%, transparent 100%);
+  -webkit-mask-composite: source-in;
+}
+
+/* Hero glow — subtle text-shadow on accent */
+.hero-glow {
+  text-shadow: 0 0 40px oklch(0.75 0.18 75 / 25%);
+}
+
+/* Scroll indicator — bouncing line */
+@keyframes scroll-bounce {
+  0%, 100% { transform: scaleY(1); opacity: 0.4; }
+  50% { transform: scaleY(1.5); opacity: 0.8; }
+}
+
+.scroll-indicator {
+  animation: scroll-bounce 2s ease-in-out infinite;
+  transform-origin: top;
+}
+
+/* Stat cards — hover lift */
+.stat-card {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stat-card:hover {
+  border-color: var(--signal-active);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 10%);
+}
+
+/* Instrument card hover */
+.instrument-card {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.instrument-card:hover {
+  border-color: oklch(0.92 0.008 90 / 20%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px oklch(0 0 0 / 12%);
+}
+
+/* Demo card hover — lift with glow */
+.demo-card {
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 20px oklch(0 0 0 / 15%);
+}
+
+.demo-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px oklch(0 0 0 / 25%);
+}
+
+/* ═══════════════════════════════════════
+   PARTICLE GLOW
+   ═══════════════════════════════════════ */
+.particle-glow-request {
+  filter: drop-shadow(0 0 4px oklch(0.70 0.15 220 / 60%));
+}
+
+.particle-glow-success {
+  filter: drop-shadow(0 0 4px oklch(0.72 0.19 155 / 60%));
+}
+
+.particle-glow-error {
+  filter: drop-shadow(0 0 4px oklch(0.65 0.22 25 / 60%));
 }

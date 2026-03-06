@@ -25,6 +25,11 @@ interface CacheState {
   entries: Map<string, CacheEntry>;
 }
 
+/**
+ * Simule un cache cle-valeur (Redis/Memcached) avec store reel.
+ * Supporte les politiques d'eviction LRU, LFU et FIFO,
+ * le TTL par entree et le suivi du hit ratio.
+ */
 export class CacheManager {
   private cacheStates: Map<string, CacheState> = new Map();
 

@@ -20,25 +20,18 @@ interface BaseNodeProps {
   selected?: boolean;
 }
 
-const statusStyles: Record<NodeStatus, string> = {
-  idle: '',
-  processing: 'ring-2 ring-blue-500 ring-opacity-50',
-  success: 'ring-2 ring-green-500 ring-opacity-75',
-  error: 'ring-2 ring-red-500 ring-opacity-75',
-};
-
 const statusAnimations: Record<NodeStatus, TargetAndTransition> = {
   idle: {},
   processing: {
-    scale: [1, 1.02, 1],
+    scale: [1, 1.01, 1],
     transition: {
-      duration: 0.8,
+      duration: 1.2,
       repeat: Infinity,
       ease: 'easeInOut',
     },
   },
   success: {
-    scale: [1, 1.05, 1],
+    scale: [1, 1.02, 1],
     transition: { duration: 0.3 },
   },
   error: {
@@ -53,76 +46,83 @@ function BaseNode({ data, selected }: BaseNodeProps) {
   return (
     <motion.div
       className={cn(
-        'relative rounded-lg border-2 bg-background shadow-md transition-all',
-        'min-w-[150px] max-w-[200px]',
-        selected && 'border-primary',
-        statusStyles[status]
+        'node-instrument relative',
+        'min-w-[160px] max-w-[210px]',
+        selected && 'selected'
       )}
-      style={{ borderColor: selected ? undefined : color }}
       animate={statusAnimations[status]}
+      role="group"
+      aria-label={`${label} — ${status}`}
     >
+      {/* Signal bar — left accent */}
+      <div
+        className={cn(
+          'node-signal-bar',
+          status === 'processing' && 'signal-pulse',
+          status === 'error' && 'signal-pulse-critical'
+        )}
+        style={{ backgroundColor: color }}
+      />
+
       {/* Input Handle */}
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-3 !h-3 !bg-muted-foreground !border-2 !border-background"
+        style={{ borderColor: color }}
       />
 
-      {/* Header */}
-      <div
-        className="flex items-center gap-2 px-3 py-2 rounded-t-md"
-        style={{ backgroundColor: `${color}20` }}
-      >
-        <div
-          className="flex items-center justify-center w-8 h-8 rounded-md"
-          style={{ backgroundColor: color, color: 'white' }}
-        >
-          {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{label}</div>
-          {subtitle && (
-            <div className="text-xs text-muted-foreground truncate">
-              {subtitle}
+      {/* Header — instrument label */}
+      <div className="flex items-center justify-between px-3 py-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="text-muted-foreground" style={{ color }}>
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <div className="text-instrument text-[10px] text-muted-foreground truncate">
+              {label}
             </div>
-          )}
+            {subtitle && (
+              <div className="text-xs font-mono text-foreground truncate">
+                {subtitle}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Status dot */}
+        <div
+          className={cn(
+            'w-[6px] h-[6px] rounded-full flex-shrink-0',
+            status === 'idle' && 'bg-muted-foreground/30',
+            status === 'processing' && 'signal-pulse',
+            status === 'success' && '',
+            status === 'error' && 'signal-pulse-critical'
+          )}
+          style={{
+            backgroundColor:
+              status === 'processing'
+                ? color
+                : status === 'success'
+                ? 'oklch(0.72 0.19 155)'
+                : status === 'error'
+                ? 'oklch(0.65 0.22 25)'
+                : undefined,
+          }}
+        />
       </div>
 
       {/* Content */}
       {children && (
-        <div className="px-3 py-2 text-xs text-muted-foreground">
+        <div className="px-3 pb-2 font-mono text-xs text-muted-foreground">
           {children}
         </div>
-      )}
-
-      {/* Status indicator */}
-      {status !== 'idle' && (
-        <motion.div
-          className={cn(
-            'absolute -top-1 -right-1 w-3 h-3 rounded-full',
-            status === 'processing' && 'bg-blue-500',
-            status === 'success' && 'bg-green-500',
-            status === 'error' && 'bg-red-500'
-          )}
-          animate={
-            status === 'processing'
-              ? { opacity: [1, 0.5, 1] }
-              : {}
-          }
-          transition={
-            status === 'processing'
-              ? { duration: 0.8, repeat: Infinity }
-              : {}
-          }
-        />
       )}
 
       {/* Output Handle */}
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-muted-foreground !border-2 !border-background"
+        style={{ borderColor: color }}
       />
     </motion.div>
   );

@@ -1,212 +1,269 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Activity,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Zap,
-  TrendingUp,
-  ChevronUp,
-  ChevronDown,
-  Users,
-  AlertTriangle,
-  Layers,
-} from 'lucide-react';
-import { useState } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
 import { useSimulationStore, selectAverageLatency, selectSuccessRate } from '@/store/simulation-store';
-import { useTranslation } from '@/i18n';
-import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/store/app-store';
+import { useSimulationEvents } from '@/hooks/useSimulationEvents';
+import { OutputPanel } from './OutputPanel';
 import { cn } from '@/lib/utils';
 
-interface MetricCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  suffix?: string;
-  color?: string;
-}
+type BottomTab = 'metrics' | 'output';
 
-function MetricCard({ icon, label, value, suffix, color = 'text-foreground' }: MetricCardProps) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg">
-      <div className={cn('text-muted-foreground', color)}>{icon}</div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-muted-foreground truncate">{label}</p>
-        <p className={cn('text-sm font-semibold', color)}>
-          {value}
-          {suffix && <span className="text-xs font-normal ml-0.5">{suffix}</span>}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export function MetricsPanel() {
-  const { t } = useTranslation();
-  const [isExpanded, setIsExpanded] = useState(true);
-
-  const state = useSimulationStore((s) => s.state);
+function MetricsContent() {
   const metrics = useSimulationStore((s) => s.metrics);
   const avgLatency = useSimulationStore(selectAverageLatency);
   const successRate = useSimulationStore(selectSuccessRate);
   const resourceUtilizations = useSimulationStore((s) => s.resourceUtilizations);
   const clientGroupStats = useSimulationStore((s) => s.clientGroupStats);
 
-  // Only show when simulation is running or has run
-  if (state === 'idle' && metrics.requestsSent === 0) {
+  return (
+    <div className="px-4 pb-3 border-t border-border pt-3 space-y-3">
+      {/* Detailed latency */}
+      <div className="grid grid-cols-4 gap-4 font-mono text-[11px]">
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">MIN LATENCY</span>
+          <span className="text-foreground">{metrics.minLatency === Infinity ? 0 : metrics.minLatency}ms</span>
+        </div>
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">AVG LATENCY</span>
+          <span className="text-foreground">{avgLatency}ms</span>
+        </div>
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">MAX LATENCY</span>
+          <span className="text-foreground">{metrics.maxLatency}ms</span>
+        </div>
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">SUCCESS RATE</span>
+          <span className={cn(
+            successRate >= 95 ? 'text-signal-healthy' : successRate >= 80 ? 'text-signal-warning' : 'text-signal-critical'
+          )}>{successRate}%</span>
+        </div>
+      </div>
+
+      {/* Client Groups */}
+      {clientGroupStats.size > 0 && (
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-1">CLIENT GROUPS</span>
+          <div className="flex gap-3 font-mono text-[11px]">
+            {Array.from(clientGroupStats.entries()).map(([groupId, stats]) => (
+              <div key={groupId} className="flex items-center gap-2 px-2 py-1 bg-muted/30 border border-border" style={{ borderRadius: '2px' }}>
+                <span className="text-signal-flux font-semibold">{stats.activeClients}</span>
+                <span className="text-muted-foreground">clients</span>
+                <span className="text-border">|</span>
+                <span className="text-foreground">{stats.requestsSent}</span>
+                <span className="text-muted-foreground">req</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Resource Utilization */}
+      {resourceUtilizations.size > 0 && (
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-1">SERVER UTILIZATION</span>
+          <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+            {Array.from(resourceUtilizations.entries()).slice(0, 6).map(([nodeId, util]) => (
+              <div key={nodeId} className="flex items-center justify-between px-2 py-1 bg-muted/30 border border-border" style={{ borderRadius: '2px' }}>
+                <span className="text-muted-foreground truncate max-w-20">{nodeId.split('-')[0]}</span>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    util.cpu > 90 ? 'text-signal-critical' : util.cpu > 70 ? 'text-signal-warning' : 'text-signal-healthy'
+                  )}>{Math.round(util.cpu)}%</span>
+                  <span className="text-border">/</span>
+                  <span className={cn(
+                    util.memory > 90 ? 'text-signal-critical' : util.memory > 70 ? 'text-signal-warning' : 'text-signal-healthy'
+                  )}>{Math.round(util.memory)}%</span>
+                  <span className="text-border">/</span>
+                  <span className={cn(
+                    util.network > 90 ? 'text-signal-critical' : util.network > 70 ? 'text-signal-warning' : 'text-signal-healthy'
+                  )}>{Math.round(util.network)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MIN_PANEL_HEIGHT = 120;
+const MAX_PANEL_HEIGHT = 600;
+const DEFAULT_PANEL_HEIGHT = 220;
+
+export function MetricsPanel() {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<BottomTab>('metrics');
+  const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
+  const isDragging = useRef(false);
+  const startY = useRef(0);
+  const startHeight = useRef(0);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    startY.current = e.clientY;
+    startHeight.current = panelHeight;
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = startY.current - ev.clientY;
+      const newHeight = Math.min(MAX_PANEL_HEIGHT, Math.max(MIN_PANEL_HEIGHT, startHeight.current + delta));
+      setPanelHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelHeight]);
+
+  const state = useSimulationStore((s) => s.state);
+  const metrics = useSimulationStore((s) => s.metrics);
+  const avgLatency = useSimulationStore(selectAverageLatency);
+  const successRate = useSimulationStore(selectSuccessRate);
+  const mode = useAppStore((s) => s.mode);
+  const { events } = useSimulationEvents();
+
+  // Hide in edit mode or when no simulation data exists
+  if (mode === 'edit' || (state === 'idle' && metrics.requestsSent === 0 && events.length === 0)) {
     return null;
   }
 
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ y: 100, opacity: 0 }}
+        initial={{ y: 48, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 100, opacity: 0 }}
-        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10"
+        exit={{ y: 48, opacity: 0 }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        className="absolute bottom-0 left-0 right-0 z-10"
       >
-        <div className="bg-background/95 backdrop-blur border rounded-lg shadow-lg overflow-hidden">
-          {/* Header */}
+        <div className="bg-card/95 backdrop-blur-sm border-t border-border">
+          {/* Compact telemetry bar — always visible */}
           <div
-            className="flex items-center justify-between px-4 py-2 border-b cursor-pointer hover:bg-muted/50"
+            className="flex items-center justify-between px-4 h-10 cursor-pointer hover:bg-muted/30 transition-colors"
             onClick={() => setIsExpanded(!isExpanded)}
           >
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
-              <span className="font-medium text-sm">{t('metrics.title')}</span>
-              <span
-                className={cn(
-                  'text-xs px-2 py-0.5 rounded-full',
-                  state === 'running' && 'bg-green-500/20 text-green-500',
-                  state === 'paused' && 'bg-yellow-500/20 text-yellow-500',
-                  state === 'idle' && 'bg-muted text-muted-foreground'
+            <div className="flex items-center gap-6 font-mono text-[11px]">
+              {/* Status dot */}
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  state === 'running' && 'bg-signal-healthy signal-pulse',
+                  state === 'paused' && 'bg-signal-warning',
+                  state === 'idle' && 'bg-muted-foreground/30'
+                )} />
+                <span className="text-muted-foreground uppercase text-[10px]">{state}</span>
+              </div>
+
+              <span className="text-border">|</span>
+
+              {/* Key metrics inline */}
+              <span className="text-muted-foreground">
+                REQ:<span className="text-foreground ml-1">{metrics.requestsSent.toLocaleString()}</span>
+              </span>
+              <span className="text-muted-foreground">
+                RES:<span className="text-foreground ml-1">{metrics.successCount + metrics.errorCount}</span>
+              </span>
+              <span className="text-muted-foreground">
+                ERR:<span className={cn(
+                  'ml-1',
+                  metrics.errorCount > 0 ? 'text-signal-critical' : 'text-foreground'
+                )}>{metrics.errorCount}</span>
+                {metrics.requestsSent > 0 && (
+                  <span className="text-muted-foreground ml-0.5">
+                    ({(100 - successRate).toFixed(1)}%)
+                  </span>
                 )}
-              >
-                {t(`simulation.${state}`)}
+              </span>
+
+              <span className="text-border">|</span>
+
+              <span className="text-muted-foreground">
+                P50:<span className={cn(
+                  'ml-1',
+                  avgLatency < 100 ? 'text-signal-healthy' : avgLatency < 500 ? 'text-signal-warning' : 'text-signal-critical'
+                )}>{avgLatency}ms</span>
+              </span>
+              <span className="text-muted-foreground">
+                RPS:<span className="text-foreground ml-1">{metrics.requestsPerSecond}</span>
               </span>
             </div>
-            <Button variant="ghost" size="icon" className="h-6 w-6">
-              {isExpanded ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronUp className="h-4 w-4" />
-              )}
-            </Button>
+
+            <div className="flex items-center gap-2">
+              {/* Tab buttons */}
+              <div className="flex gap-px" style={{ borderRadius: '2px' }}>
+                <button
+                  className={cn(
+                    'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors',
+                    activeTab === 'metrics'
+                      ? 'text-foreground bg-muted/50'
+                      : 'text-muted-foreground hover:text-foreground/70'
+                  )}
+                  style={{ borderRadius: '2px 0 0 2px' }}
+                  onClick={(e) => { e.stopPropagation(); setActiveTab('metrics'); setIsExpanded(true); }}
+                >
+                  Metrics
+                </button>
+                <button
+                  className={cn(
+                    'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors',
+                    activeTab === 'output'
+                      ? 'text-foreground bg-muted/50'
+                      : 'text-muted-foreground hover:text-foreground/70'
+                  )}
+                  style={{ borderRadius: '0 2px 2px 0' }}
+                  onClick={(e) => { e.stopPropagation(); setActiveTab('output'); setIsExpanded(true); }}
+                >
+                  Output
+                  {events.length > 0 && (
+                    <span className="text-signal-flux ml-1">({events.length})</span>
+                  )}
+                </button>
+              </div>
+
+              <button className="text-muted-foreground hover:text-foreground transition-colors">
+                {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+              </button>
+            </div>
           </div>
 
-          {/* Metrics Grid */}
+          {/* Expanded details */}
           <AnimatePresence>
             {isExpanded && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
+                animate={{ height: panelHeight, opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: isDragging.current ? 0 : 0.2 }}
+                className="overflow-hidden relative"
               >
-                <div className="p-3 grid grid-cols-4 gap-2 min-w-[500px]">
-                  <MetricCard
-                    icon={<TrendingUp className="h-4 w-4" />}
-                    label={t('metrics.requestsSent')}
-                    value={metrics.requestsSent}
-                  />
-                  <MetricCard
-                    icon={<CheckCircle2 className="h-4 w-4" />}
-                    label={t('metrics.successRate')}
-                    value={successRate}
-                    suffix="%"
-                    color={successRate >= 95 ? 'text-green-500' : successRate >= 80 ? 'text-yellow-500' : 'text-red-500'}
-                  />
-                  <MetricCard
-                    icon={<Clock className="h-4 w-4" />}
-                    label={t('metrics.avgLatency')}
-                    value={avgLatency}
-                    suffix="ms"
-                    color={avgLatency < 100 ? 'text-green-500' : avgLatency < 500 ? 'text-yellow-500' : 'text-red-500'}
-                  />
-                  <MetricCard
-                    icon={<Zap className="h-4 w-4" />}
-                    label={t('metrics.requestsPerSecond')}
-                    value={metrics.requestsPerSecond}
-                    suffix="rps"
-                  />
+                {/* Resize handle */}
+                <div
+                  onMouseDown={handleResizeStart}
+                  className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 group flex items-center justify-center"
+                >
+                  <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-muted-foreground transition-colors" />
                 </div>
-
-                {/* Additional stats row */}
-                <div className="px-3 pb-3 grid grid-cols-4 gap-2 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3 text-green-500" />
-                    <span>{metrics.successCount} success</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <XCircle className="h-3 w-3 text-red-500" />
-                    <span>{metrics.errorCount} errors</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    <span>Min: {metrics.minLatency === Infinity ? 0 : metrics.minLatency}ms</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    <span>Max: {metrics.maxLatency}ms</span>
-                  </div>
+                <div className="h-full overflow-y-auto">
+                  {activeTab === 'metrics' ? (
+                    <MetricsContent />
+                  ) : (
+                    <OutputPanel eventCount={events.length} panelHeight={panelHeight} />
+                  )}
                 </div>
-
-                {/* Stress Testing Stats (if client groups are active) */}
-                {clientGroupStats.size > 0 && (
-                  <div className="px-3 pb-3 border-t pt-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="h-3 w-3 text-blue-500" />
-                      <span className="text-xs font-medium">Groupes de clients</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      {Array.from(clientGroupStats.entries()).map(([groupId, stats]) => (
-                        <div key={groupId} className="bg-muted/50 rounded p-2">
-                          <div className="font-medium truncate">{stats.activeClients} clients</div>
-                          <div className="text-muted-foreground">{stats.requestsSent} req</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Resource Utilization Summary */}
-                {resourceUtilizations.size > 0 && (
-                  <div className="px-3 pb-3 border-t pt-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Layers className="h-3 w-3 text-purple-500" />
-                      <span className="text-xs font-medium">Utilisation serveurs</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {Array.from(resourceUtilizations.entries()).slice(0, 4).map(([nodeId, util]) => (
-                        <div key={nodeId} className="flex items-center justify-between bg-muted/50 rounded p-2">
-                          <span className="text-muted-foreground">CPU/Mem/Net</span>
-                          <div className="flex items-center gap-1">
-                            <span className={cn(
-                              util.cpu > 90 ? 'text-red-500' : util.cpu > 70 ? 'text-yellow-500' : 'text-green-500'
-                            )}>{Math.round(util.cpu)}%</span>
-                            <span>/</span>
-                            <span className={cn(
-                              util.memory > 90 ? 'text-red-500' : util.memory > 70 ? 'text-yellow-500' : 'text-green-500'
-                            )}>{Math.round(util.memory)}%</span>
-                            <span>/</span>
-                            <span className={cn(
-                              util.network > 90 ? 'text-red-500' : util.network > 70 ? 'text-yellow-500' : 'text-green-500'
-                            )}>{Math.round(util.network)}%</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {/* Queue/Reject warnings */}
-                    {Array.from(resourceUtilizations.values()).some(u => u.queuedRequests > 0) && (
-                      <div className="flex items-center gap-1 mt-2 text-orange-500">
-                        <AlertTriangle className="h-3 w-3" />
-                        <span className="text-xs">Requêtes en file d'attente</span>
-                      </div>
-                    )}
-                  </div>
-                )}
               </motion.div>
             )}
           </AnimatePresence>

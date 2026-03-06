@@ -15,9 +15,15 @@ import { useSimulationStore } from '@/store/simulation-store';
 import type { ParticleType } from '@/types';
 
 const particleColors: Record<ParticleType, string> = {
-  request: '#3b82f6',
-  'response-success': '#22c55e',
-  'response-error': '#ef4444',
+  request: 'oklch(0.70 0.15 220)',
+  'response-success': 'oklch(0.72 0.19 155)',
+  'response-error': 'oklch(0.65 0.22 25)',
+};
+
+const particleGlowClass: Record<ParticleType, string> = {
+  request: 'particle-glow-request',
+  'response-success': 'particle-glow-success',
+  'response-error': 'particle-glow-error',
 };
 
 export interface AnimatedEdgeData extends Record<string, unknown> {
@@ -49,9 +55,9 @@ function AnimatedEdgeComponent({
   const pathRef = useRef<SVGPathElement>(null);
   const [pathLength, setPathLength] = useState(0);
 
-  // Edge customization from data
-  const edgeColor = data?.color || (selected ? '#3b82f6' : (simulationState === 'running' ? '#666' : '#888'));
-  const strokeWidth = data?.strokeWidth || (selected ? 4 : 3);
+  // Edge customization
+  const edgeColor = data?.color || (selected ? 'oklch(0.70 0.15 220)' : (simulationState === 'running' ? 'var(--edge-color-active)' : 'var(--edge-color)'));
+  const strokeWidth = data?.strokeWidth || (selected ? 2 : 1.5);
   const strokeStyle = data?.strokeStyle || 'solid';
   const pathType = data?.pathType || 'bezier';
 
@@ -60,7 +66,6 @@ function AnimatedEdgeComponent({
     [allParticles, id]
   );
 
-  // Calculate path based on pathType
   const [edgePath, labelX, labelY] = useMemo(() => {
     const pathParams = {
       sourceX,
@@ -82,48 +87,45 @@ function AnimatedEdgeComponent({
     }
   }, [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, pathType]);
 
-  // Get stroke dasharray based on style
   const strokeDasharray = useMemo(() => {
     switch (strokeStyle) {
-      case 'dashed':
-        return '8 4';
-      case 'dotted':
-        return '2 4';
-      default:
-        return undefined;
+      case 'dashed': return '8 4';
+      case 'dotted': return '2 4';
+      default: return undefined;
     }
   }, [strokeStyle]);
 
-  // Get path length when path changes
   useEffect(() => {
     if (pathRef.current) {
       setPathLength(pathRef.current.getTotalLength());
     }
   }, [edgePath]);
 
-  // Get point on the actual SVG path at progress t (0-1)
   const getPointOnPath = (t: number): { x: number; y: number } => {
     if (!pathRef.current || pathLength === 0) {
-      // Fallback to linear interpolation
       return {
         x: sourceX + (targetX - sourceX) * t,
         y: sourceY + (targetY - sourceY) * t,
       };
     }
-
     const point = pathRef.current.getPointAtLength(t * pathLength);
     return { x: point.x, y: point.y };
+  };
+
+  const getAngleOnPath = (t: number): number => {
+    if (!pathRef.current || pathLength === 0) {
+      return Math.atan2(targetY - sourceY, targetX - sourceX) * (180 / Math.PI);
+    }
+    const len = t * pathLength;
+    const p1 = pathRef.current.getPointAtLength(Math.max(0, len - 1));
+    const p2 = pathRef.current.getPointAtLength(Math.min(pathLength, len + 1));
+    return Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
   };
 
   return (
     <>
       {/* Hidden path for measuring */}
-      <path
-        ref={pathRef}
-        d={edgePath}
-        fill="none"
-        style={{ visibility: 'hidden' }}
-      />
+      <path ref={pathRef} d={edgePath} fill="none" style={{ visibility: 'hidden' }} />
 
       <BaseEdge
         id={id}
@@ -137,39 +139,34 @@ function AnimatedEdgeComponent({
         }}
       />
 
-      {/* Particles rendered as SVG circles */}
+      {/* Particles — luminous streaks, not circles */}
       {particles.map((particle) => {
-        // For backward direction, invert the progress (1 - progress)
         const effectiveProgress = particle.direction === 'backward'
           ? 1 - particle.progress
           : particle.progress;
         const point = getPointOnPath(effectiveProgress);
+        const angle = getAngleOnPath(effectiveProgress);
         const color = particleColors[particle.type];
+        const glowClass = particleGlowClass[particle.type];
 
         return (
-          <g key={particle.id}>
-            {/* Glow effect */}
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r={8}
+          <g key={particle.id} className={glowClass} aria-hidden="true">
+            {/* Streak particle */}
+            <rect
+              x={point.x - 7}
+              y={point.y - 1}
+              width={14}
+              height={2}
+              rx={1}
               fill={color}
-              opacity={0.3}
-            />
-            {/* Main particle */}
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r={6}
-              fill={color}
-              stroke="white"
-              strokeWidth={2}
+              opacity={0.9}
+              transform={`rotate(${angle}, ${point.x}, ${point.y})`}
             />
           </g>
         );
       })}
 
-      {/* Edge label or particle count */}
+      {/* Edge label / particle count */}
       {(particles.length > 0 || data?.label) && (
         <EdgeLabelRenderer>
           <div
@@ -178,7 +175,7 @@ function AnimatedEdgeComponent({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: 'all',
             }}
-            className="nodrag nopan px-2 py-0.5 text-xs bg-white/80 rounded-full border shadow-sm"
+            className="nodrag nopan px-1.5 py-0.5 text-[10px] font-mono bg-background/90 border border-border rounded text-muted-foreground"
           >
             {particles.length > 0 ? particles.length : data?.label}
           </div>

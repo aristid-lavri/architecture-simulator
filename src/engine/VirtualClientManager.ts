@@ -1,5 +1,6 @@
 import type { ClientGroupNodeData, RampUpCurve } from '@/types';
 
+/** Etat d'un client virtuel individuel dans un groupe. */
 export interface VirtualClient {
   id: number;
   groupId: string;
@@ -15,6 +16,11 @@ interface BurstState {
   lastBurstTime: number;
 }
 
+/**
+ * Gere les clients virtuels pour le stress testing.
+ * Supporte le ramp-up progressif (lineaire, exponentiel, par paliers),
+ * les distributions de charge (uniform, random, burst) et les modes sequentiel/parallele.
+ */
 export class VirtualClientManager {
   private clients: Map<string, VirtualClient[]> = new Map();
   private rampUpTimers: Map<string, ReturnType<typeof setInterval>> = new Map();

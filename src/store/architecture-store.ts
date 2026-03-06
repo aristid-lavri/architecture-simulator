@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Node, Edge } from '@xyflow/react';
 
+/**
+ * Etat du graphe d'architecture (noeuds et aretes).
+ * Persiste dans localStorage via le middleware Zustand persist.
+ */
 interface ArchitectureState {
   nodes: Node[];
   edges: Edge[];
@@ -20,6 +24,11 @@ interface ArchitectureState {
   save: () => void;
 }
 
+/**
+ * Store Zustand pour le graphe d'architecture.
+ * Persiste automatiquement noeuds, aretes et timestamp dans localStorage
+ * sous la cle 'architecture-simulator-storage'.
+ */
 export const useArchitectureStore = create<ArchitectureState>()(
   persist(
     (set, get) => ({
@@ -98,13 +107,20 @@ export const useArchitectureStore = create<ArchitectureState>()(
   )
 );
 
-// Utility function to export architecture as JSON
+/**
+ * Exporte l'architecture courante au format JSON.
+ * @returns Chaine JSON contenant les noeuds, aretes et timestamp d'export.
+ */
 export function exportArchitecture(): string {
   const { nodes, edges } = useArchitectureStore.getState();
   return JSON.stringify({ nodes, edges, exportedAt: Date.now() }, null, 2);
 }
 
-// Utility function to import architecture from JSON
+/**
+ * Importe une architecture depuis une chaine JSON.
+ * @param json - JSON contenant les proprietes nodes et edges.
+ * @returns true si l'import a reussi, false sinon.
+ */
 export function importArchitecture(json: string): boolean {
   try {
     const data = JSON.parse(json);

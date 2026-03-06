@@ -32,7 +32,7 @@ import MessageQueueNode from '@/components/nodes/MessageQueueNode';
 import ApiGatewayNode from '@/components/nodes/ApiGatewayNode';
 import AnimatedEdge from '@/components/edges/AnimatedEdge';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock } from 'lucide-react';
 import type { ComponentType } from '@/types';
 import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData } from '@/types';
@@ -126,50 +126,32 @@ function ZoomControls({ isEditable }: { isEditable: boolean }) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
   return (
-    <Panel position="bottom-left" className="flex gap-2">
-      <div className="flex items-center gap-1 bg-background border rounded-lg p-1 shadow-sm">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
+    <Panel position="bottom-left">
+      <div className="flex items-center gap-px bg-card border border-border" style={{ borderRadius: '3px' }}>
+        <button
+          className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => zoomOut()}
           title="Zoom arrière"
         >
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
+          <ZoomOut className="h-3 w-3" />
+        </button>
+        <button
+          className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => zoomIn()}
           title="Zoom avant"
         >
-          <ZoomIn className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
+          <ZoomIn className="h-3 w-3" />
+        </button>
+        <button
+          className="h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => fitView({ padding: 0.2 })}
-          title="Ajuster à l'écran"
+          title="Ajuster"
         >
-          <Maximize2 className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-1 bg-background border rounded-lg p-1 shadow-sm">
-        <Button
-          variant={isEditable ? 'ghost' : 'secondary'}
-          size="icon"
-          className="h-8 w-8"
-          disabled
-          title={isEditable ? 'Mode édition' : 'Mode simulation'}
-        >
-          {isEditable ? (
-            <Unlock className="h-4 w-4" />
-          ) : (
-            <Lock className="h-4 w-4" />
-          )}
-        </Button>
+          <Maximize2 className="h-3 w-3" />
+        </button>
+        <div className="h-7 w-7 flex items-center justify-center text-muted-foreground/50">
+          {isEditable ? <Unlock className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+        </div>
       </div>
     </Panel>
   );
@@ -249,14 +231,31 @@ export function FlowCanvas() {
     prevStoredEdgesRef.current = storedEdges;
   }, [storedNodes, storedEdges, setNodes, setEdges]);
 
-  // Sync node data changes from store to local state (for PropertiesPanel updates)
+  // Sync node changes from store to local state (for PropertiesPanel updates and deletions)
   useEffect(() => {
     if (!initializedRef.current) return;
 
-    // Check if any node data has changed in the store
     setNodes((currentNodes) => {
+      const storedNodeIds = new Set(storedNodes.map((n) => n.id));
+      const currentNodeIds = new Set(currentNodes.map((n) => n.id));
       let hasChanges = false;
-      const updatedNodes = currentNodes.map((node) => {
+
+      // Remove nodes that no longer exist in the store
+      let updatedNodes = currentNodes;
+      if (currentNodes.some((n) => !storedNodeIds.has(n.id))) {
+        updatedNodes = currentNodes.filter((n) => storedNodeIds.has(n.id));
+        hasChanges = true;
+      }
+
+      // Add nodes that exist in store but not locally
+      const newNodes = storedNodes.filter((n) => !currentNodeIds.has(n.id));
+      if (newNodes.length > 0) {
+        updatedNodes = [...updatedNodes, ...newNodes];
+        hasChanges = true;
+      }
+
+      // Update data for existing nodes
+      updatedNodes = updatedNodes.map((node) => {
         const storedNode = storedNodes.find((n) => n.id === node.id);
         if (storedNode) {
           // Compare data (excluding status which is managed by simulation)
@@ -284,17 +283,33 @@ export function FlowCanvas() {
     });
   }, [storedNodes, setNodes]);
 
-  // Sync edge data changes from store to local state (for PropertiesPanel updates)
+  // Sync edge changes from store to local state (for PropertiesPanel updates and deletions)
   useEffect(() => {
     if (!initializedRef.current) return;
 
-    // Check if any edge data has changed in the store
     setEdges((currentEdges) => {
+      const storedEdgeIds = new Set(storedEdges.map((e) => e.id));
+      const currentEdgeIds = new Set(currentEdges.map((e) => e.id));
       let hasChanges = false;
-      const updatedEdges = currentEdges.map((edge) => {
+
+      // Remove edges that no longer exist in the store
+      let updatedEdges = currentEdges;
+      if (currentEdges.some((e) => !storedEdgeIds.has(e.id))) {
+        updatedEdges = currentEdges.filter((e) => storedEdgeIds.has(e.id));
+        hasChanges = true;
+      }
+
+      // Add edges that exist in store but not locally
+      const newEdges = storedEdges.filter((e) => !currentEdgeIds.has(e.id));
+      if (newEdges.length > 0) {
+        updatedEdges = [...updatedEdges, ...newEdges];
+        hasChanges = true;
+      }
+
+      // Update data for existing edges
+      updatedEdges = updatedEdges.map((edge) => {
         const storedEdge = storedEdges.find((e) => e.id === edge.id);
         if (storedEdge) {
-          // Compare data
           if (JSON.stringify(edge.data) !== JSON.stringify(storedEdge.data)) {
             hasChanges = true;
             return {
@@ -604,33 +619,38 @@ export function FlowCanvas() {
         }}
       >
         <Background
-          variant={BackgroundVariant.Dots}
+          variant={BackgroundVariant.Lines}
           gap={20}
-          size={1}
-          className="bg-muted/30"
+          size={0.5}
+          color="var(--grid-minor)"
+        />
+        <Background
+          id="major-grid"
+          variant={BackgroundVariant.Lines}
+          gap={100}
+          size={0.5}
+          color="var(--grid-major)"
         />
 
         <Controls
           showZoom={false}
           showFitView={false}
           showInteractive={false}
-          className="bg-background border rounded-lg shadow-sm"
         />
 
         <MiniMap
           nodeColor={(node) => {
-            if (node.type === 'http-client') return '#3b82f6';
-            if (node.type === 'http-server') return '#8b5cf6';
-            if (node.type === 'client-group') return '#2563eb';
-            if (node.type === 'database') return '#9333ea';
-            if (node.type === 'cache') return '#f97316';
-            if (node.type === 'load-balancer') return '#22c55e';
-            if (node.type === 'message-queue') return '#eab308';
-            if (node.type === 'api-gateway') return '#3b82f6';
-            return '#6366f1';
+            if (node.type === 'http-client') return 'oklch(0.70 0.15 220)';
+            if (node.type === 'http-server') return 'oklch(0.68 0.18 290)';
+            if (node.type === 'client-group') return 'oklch(0.70 0.15 220)';
+            if (node.type === 'database') return 'oklch(0.72 0.19 155)';
+            if (node.type === 'cache') return 'oklch(0.72 0.19 155)';
+            if (node.type === 'load-balancer') return 'oklch(0.75 0.18 75)';
+            if (node.type === 'message-queue') return 'oklch(0.75 0.18 75)';
+            if (node.type === 'api-gateway') return 'oklch(0.75 0.18 75)';
+            return 'oklch(0.55 0 0)';
           }}
-          maskColor="rgba(0, 0, 0, 0.1)"
-          className="bg-background border rounded-lg shadow-sm"
+          maskColor="var(--minimap-mask)"
         />
 
         {/* Custom Controls Panel with working zoom buttons */}
@@ -639,22 +659,24 @@ export function FlowCanvas() {
         {/* Mode Indicator */}
         <Panel position="top-left">
           <div
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+            className={cn(
+              'px-2 py-1 font-mono text-[10px] font-semibold border',
               mode === 'edit'
-                ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20'
-                : 'bg-green-500/10 text-green-500 border border-green-500/20'
-            }`}
+                ? 'text-signal-flux border-signal-flux/30 bg-signal-flux/10'
+                : 'text-signal-active border-signal-active/30 bg-signal-active/10'
+            )}
+            style={{ borderRadius: '2px' }}
           >
-            {mode === 'edit' ? t('canvas.editMode') : t('canvas.simulationMode')}
+            {mode === 'edit' ? 'MODE:EDIT' : 'MODE:SIM'}
           </div>
         </Panel>
 
         {/* Empty State */}
         {nodes.length === 0 && (
           <Panel position="top-center" className="mt-20">
-            <div className="text-center text-muted-foreground">
-              <p className="text-lg font-medium">{t('canvas.empty')}</p>
-              <p className="text-sm mt-1">
+            <div className="text-center text-muted-foreground font-mono">
+              <p className="text-sm">{t('canvas.empty')}</p>
+              <p className="text-xs mt-1 text-muted-foreground/60">
                 {t('simulation.noComponents')}
               </p>
             </div>

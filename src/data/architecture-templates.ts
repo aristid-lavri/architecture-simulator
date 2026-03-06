@@ -101,8 +101,11 @@ const loadBalancedNodes: Node[] = [
     data: {
       ...defaultClientGroupData,
       label: 'Clients',
-      virtualClients: 3,
-      baseInterval: 1000,
+      virtualClients: 50,
+      baseInterval: 300,
+      rampUpEnabled: true,
+      rampUpDuration: 15000,
+      rampUpCurve: 'linear' as const,
     },
   },
   {
@@ -229,6 +232,7 @@ const microservicesNodes: Node[] = [
       label: 'Clients',
       virtualClients: 30,
       baseInterval: 300,
+      paths: ['/api/service-a', '/api/service-b'],
     },
   },
   {
@@ -238,6 +242,12 @@ const microservicesNodes: Node[] = [
     data: {
       ...defaultApiGatewayNodeData,
       label: 'API Gateway',
+      routeRules: [
+        { id: 'ms-rule-1', pathPattern: '/api/service-a', targetServiceName: 'service-a', priority: 1 },
+        { id: 'ms-rule-2', pathPattern: '/api/service-a/**', targetServiceName: 'service-a', priority: 2 },
+        { id: 'ms-rule-3', pathPattern: '/api/service-b', targetServiceName: 'service-b', priority: 3 },
+        { id: 'ms-rule-4', pathPattern: '/api/service-b/**', targetServiceName: 'service-b', priority: 4 },
+      ],
     },
   },
   {
@@ -246,6 +256,8 @@ const microservicesNodes: Node[] = [
     position: { x: 550, y: 100 },
     data: {
       label: 'Service A',
+      serviceName: 'service-a',
+      basePath: '/api/service-a',
       port: 8081,
       responseStatus: 200,
       responseBody: '{"service": "A"}',
@@ -261,6 +273,8 @@ const microservicesNodes: Node[] = [
     position: { x: 550, y: 300 },
     data: {
       label: 'Service B',
+      serviceName: 'service-b',
+      basePath: '/api/service-b',
       port: 8082,
       responseStatus: 200,
       responseBody: '{"service": "B"}',
@@ -304,15 +318,15 @@ const microservicesEdges: Edge[] = [
     type: 'animated',
   },
   {
-    id: 'ms-edge-serviceA-db',
-    source: 'ms-service-a',
-    target: 'ms-database',
+    id: 'ms-edge-gateway-serviceB',
+    source: 'ms-api-gateway',
+    target: 'ms-service-b',
     type: 'animated',
   },
   {
-    id: 'ms-edge-serviceA-serviceB',
+    id: 'ms-edge-serviceA-db',
     source: 'ms-service-a',
-    target: 'ms-service-b',
+    target: 'ms-database',
     type: 'animated',
   },
   {

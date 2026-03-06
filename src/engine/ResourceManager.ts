@@ -1,8 +1,17 @@
 import type { ServerResources, ResourceUtilization, DegradationSettings } from '@/types';
 
+/**
+ * Utilitaire statique pour calculer l'utilisation des ressources serveur
+ * et la degradation de latence sous charge.
+ *
+ * Formules : CPU = (activeReq x procTime) / (cores x 1000) x 100,
+ * Memoire = (baseUsage + activeReq x memPerReq) / totalMB x 100,
+ * Reseau = (RPS x (reqSize + resSize) x 8) / (bandwidth x 1000) x 100.
+ */
 export class ResourceManager {
   /**
-   * Calcule l'utilisation actuelle des ressources
+   * Calcule l'utilisation actuelle des ressources (CPU, memoire, reseau, disque).
+   * Toutes les valeurs retournees sont clampees a 100%.
    */
   static calculateUtilization(
     resources: ServerResources,
@@ -28,7 +37,9 @@ export class ResourceManager {
   }
 
   /**
-   * Calcule la latence dégradée basée sur l'utilisation
+   * Calcule la latence degradee selon la formule configuree.
+   * Utilise le max de (CPU, memoire, reseau) comme facteur de degradation.
+   * @returns baseLatency si la degradation est desactivee.
    */
   static calculateDegradedLatency(
     baseLatency: number,
@@ -52,7 +63,8 @@ export class ResourceManager {
   }
 
   /**
-   * Vérifie si le serveur peut accepter une nouvelle requête
+   * Verifie si le serveur peut accepter une nouvelle requete.
+   * @returns 'accept' si sous la limite, 'queue' si la file a de la place, 'reject' sinon.
    */
   static canAcceptRequest(
     resources: ServerResources,

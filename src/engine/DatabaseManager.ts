@@ -20,6 +20,11 @@ interface DatabaseState {
   queriesLastSecond: number[];
 }
 
+/**
+ * Simule une base de donnees avec pool de connexions et degradation de latence.
+ * Supporte les requetes read/write/transaction avec des latences distinctes.
+ * La latence augmente quadratiquement quand le pool depasse 50% d'utilisation.
+ */
 export class DatabaseManager {
   private databaseStates: Map<string, DatabaseState> = new Map();
 

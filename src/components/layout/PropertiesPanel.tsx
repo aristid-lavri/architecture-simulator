@@ -651,18 +651,18 @@ function ClientGroupConfig({ data, onUpdate }: ClientGroupConfigProps) {
   const [concurrentRequests, setConcurrentRequests] = useState(data.concurrentRequests || 5);
   const [baseInterval, setBaseInterval] = useState(data.baseInterval || 1000);
   const [intervalVariance, setIntervalVariance] = useState(data.intervalVariance || 20);
-  const [rampUpDuration, setRampUpDuration] = useState((data.rampUpDuration || 30000) / 1000);
+  const [rampUpDuration, setRampUpDuration] = useState(data.rampUpDuration || 30000);
   const [burstSize, setBurstSize] = useState(data.burstSize || 5);
-  const [burstInterval, setBurstInterval] = useState((data.burstInterval || 5000) / 1000);
+  const [burstInterval, setBurstInterval] = useState(data.burstInterval || 5000);
 
   useEffect(() => {
     setVirtualClients(data.virtualClients || 10);
     setConcurrentRequests(data.concurrentRequests || 5);
     setBaseInterval(data.baseInterval || 1000);
     setIntervalVariance(data.intervalVariance || 20);
-    setRampUpDuration((data.rampUpDuration || 30000) / 1000);
+    setRampUpDuration(data.rampUpDuration || 30000);
     setBurstSize(data.burstSize || 5);
-    setBurstInterval((data.burstInterval || 5000) / 1000);
+    setBurstInterval(data.burstInterval || 5000);
   }, [data]);
 
   return (
@@ -841,15 +841,15 @@ function ClientGroupConfig({ data, onUpdate }: ClientGroupConfigProps) {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <label>Intervalle entre bursts</label>
-                  <span className="text-muted-foreground">{burstInterval}s</span>
+                  <span className="text-muted-foreground">{burstInterval}ms</span>
                 </div>
                 <Slider
                   value={[burstInterval]}
                   onValueChange={([value]) => setBurstInterval(value)}
-                  onValueCommit={([value]) => onUpdate({ burstInterval: value * 1000 })}
-                  min={1}
-                  max={60}
-                  step={1}
+                  onValueCommit={([value]) => onUpdate({ burstInterval: value })}
+                  min={1000}
+                  max={60000}
+                  step={1000}
                 />
               </div>
             </>
@@ -878,15 +878,15 @@ function ClientGroupConfig({ data, onUpdate }: ClientGroupConfigProps) {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <label>Durée</label>
-                  <span className="text-muted-foreground">{rampUpDuration}s</span>
+                  <span className="text-muted-foreground">{rampUpDuration}ms</span>
                 </div>
                 <Slider
                   value={[rampUpDuration]}
                   onValueChange={([value]) => setRampUpDuration(value)}
-                  onValueCommit={([value]) => onUpdate({ rampUpDuration: value * 1000 })}
-                  min={1}
-                  max={300}
-                  step={1}
+                  onValueCommit={([value]) => onUpdate({ rampUpDuration: value })}
+                  min={1000}
+                  max={300000}
+                  step={1000}
                 />
               </div>
 
@@ -1546,7 +1546,7 @@ function CacheConfig({ data, onUpdate }: CacheConfigProps) {
   const [setLatency, setSetLatency] = useState(config.performance.setLatencyMs);
   const [hitRatio, setHitRatio] = useState(config.initialHitRatio);
   const [hitVariance, setHitVariance] = useState(config.hitRatioVariance);
-  const [warmUpDuration, setWarmUpDuration] = useState(config.warmUpDurationMs / 1000);
+  const [warmUpDuration, setWarmUpDuration] = useState(config.warmUpDurationMs);
 
   // Sync local state when data changes
   useEffect(() => {
@@ -1557,7 +1557,7 @@ function CacheConfig({ data, onUpdate }: CacheConfigProps) {
     setSetLatency(config.performance.setLatencyMs);
     setHitRatio(config.initialHitRatio);
     setHitVariance(config.hitRatioVariance);
-    setWarmUpDuration(config.warmUpDurationMs / 1000);
+    setWarmUpDuration(config.warmUpDurationMs);
   }, [data]);
 
   const updateConfiguration = (updates: Partial<CacheNodeData['configuration']>) => {
@@ -1758,15 +1758,15 @@ function CacheConfig({ data, onUpdate }: CacheConfigProps) {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <label>Durée</label>
-                <span className="text-muted-foreground">{warmUpDuration}s</span>
+                <span className="text-muted-foreground">{warmUpDuration}ms</span>
               </div>
               <Slider
                 value={[warmUpDuration]}
                 onValueChange={([value]) => setWarmUpDuration(value)}
-                onValueCommit={([value]) => onUpdate({ warmUpDurationMs: value * 1000 })}
-                min={1}
-                max={300}
-                step={1}
+                onValueCommit={([value]) => onUpdate({ warmUpDurationMs: value })}
+                min={1000}
+                max={300000}
+                step={1000}
               />
               <p className="text-xs text-muted-foreground">
                 Pendant le warm-up, le hit ratio augmente progressivement
@@ -1796,15 +1796,15 @@ function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
   };
 
   // Local state for sliders
-  const [healthCheckInterval, setHealthCheckInterval] = useState(config.healthCheck.intervalMs / 1000);
-  const [healthCheckTimeout, setHealthCheckTimeout] = useState(config.healthCheck.timeoutMs / 1000);
+  const [healthCheckInterval, setHealthCheckInterval] = useState(config.healthCheck.intervalMs);
+  const [healthCheckTimeout, setHealthCheckTimeout] = useState(config.healthCheck.timeoutMs);
   const [unhealthyThreshold, setUnhealthyThreshold] = useState(config.healthCheck.unhealthyThreshold);
   const [sessionTTL, setSessionTTL] = useState(config.sessionTTLSeconds);
 
   // Sync local state when data changes
   useEffect(() => {
-    setHealthCheckInterval(config.healthCheck.intervalMs / 1000);
-    setHealthCheckTimeout(config.healthCheck.timeoutMs / 1000);
+    setHealthCheckInterval(config.healthCheck.intervalMs);
+    setHealthCheckTimeout(config.healthCheck.timeoutMs);
     setUnhealthyThreshold(config.healthCheck.unhealthyThreshold);
     setSessionTTL(config.sessionTTLSeconds);
   }, [data]);
@@ -1866,29 +1866,29 @@ function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <label>Intervalle</label>
-                  <span className="text-muted-foreground">{healthCheckInterval}s</span>
+                  <span className="text-muted-foreground">{healthCheckInterval}ms</span>
                 </div>
                 <Slider
                   value={[healthCheckInterval]}
                   onValueChange={([value]) => setHealthCheckInterval(value)}
-                  onValueCommit={([value]) => updateHealthCheck({ intervalMs: value * 1000 })}
-                  min={1}
-                  max={60}
-                  step={1}
+                  onValueCommit={([value]) => updateHealthCheck({ intervalMs: value })}
+                  min={1000}
+                  max={60000}
+                  step={1000}
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <label>Timeout</label>
-                  <span className="text-muted-foreground">{healthCheckTimeout}s</span>
+                  <span className="text-muted-foreground">{healthCheckTimeout}ms</span>
                 </div>
                 <Slider
                   value={[healthCheckTimeout]}
                   onValueChange={([value]) => setHealthCheckTimeout(value)}
-                  onValueCommit={([value]) => updateHealthCheck({ timeoutMs: value * 1000 })}
-                  min={1}
-                  max={30}
-                  step={1}
+                  onValueCommit={([value]) => updateHealthCheck({ timeoutMs: value })}
+                  min={1000}
+                  max={30000}
+                  step={1000}
                 />
               </div>
               <div className="space-y-2">
@@ -2295,7 +2295,7 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
   const [authFailureRate, setAuthFailureRate] = useState(config.authFailureRate);
   const [requestsPerSecond, setRequestsPerSecond] = useState(config.rateLimiting.requestsPerSecond);
   const [burstSize, setBurstSize] = useState(config.rateLimiting.burstSize);
-  const [timeout, setTimeout] = useState(config.routing.timeout / 1000);
+  const [timeout, setTimeout] = useState(config.routing.timeout);
   const [baseLatency, setBaseLatency] = useState(config.baseLatencyMs);
   const [errorRate, setErrorRate] = useState(config.errorRate);
 
@@ -2304,7 +2304,7 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
     setAuthFailureRate(config.authFailureRate);
     setRequestsPerSecond(config.rateLimiting.requestsPerSecond);
     setBurstSize(config.rateLimiting.burstSize);
-    setTimeout(config.routing.timeout / 1000);
+    setTimeout(config.routing.timeout);
     setBaseLatency(config.baseLatencyMs);
     setErrorRate(config.errorRate);
   }, [data]);
@@ -2475,15 +2475,15 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <label>Timeout</label>
-              <span className="text-muted-foreground">{timeout}s</span>
+              <span className="text-muted-foreground">{timeout}ms</span>
             </div>
             <Slider
               value={[timeout]}
               onValueChange={([value]) => setTimeout(value)}
-              onValueCommit={([value]) => updateRouting({ timeout: value * 1000 })}
-              min={1}
-              max={120}
-              step={1}
+              onValueCommit={([value]) => updateRouting({ timeout: value })}
+              min={1000}
+              max={120000}
+              step={1000}
             />
           </div>
         </div>

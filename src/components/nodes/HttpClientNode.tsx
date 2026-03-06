@@ -3,15 +3,13 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { motion } from 'framer-motion';
-import { Monitor, ArrowRight, Repeat } from 'lucide-react';
+import { Monitor, Repeat } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import type { NodeStatus, HttpMethod, RequestMode } from '@/types';
 
 export interface HttpClientNodeData {
   label: string;
   status?: NodeStatus;
-  // HTTP Client specific
   method: HttpMethod;
   path: string;
   requestMode: RequestMode;
@@ -25,18 +23,13 @@ interface HttpClientNodeProps {
 }
 
 const methodColors: Record<HttpMethod, string> = {
-  GET: 'bg-green-500',
-  POST: 'bg-blue-500',
-  PUT: 'bg-orange-500',
-  DELETE: 'bg-red-500',
+  GET: 'text-signal-healthy',
+  POST: 'text-signal-flux',
+  PUT: 'text-signal-infra',
+  DELETE: 'text-signal-critical',
 };
 
-const statusStyles: Record<NodeStatus, string> = {
-  idle: '',
-  processing: 'ring-2 ring-blue-500 ring-opacity-50',
-  success: 'ring-2 ring-green-500 ring-opacity-75',
-  error: 'ring-2 ring-red-500 ring-opacity-75',
-};
+const SIGNAL_CLIENT = 'oklch(0.70 0.15 220)';
 
 function HttpClientNode({ data, selected }: HttpClientNodeProps) {
   const {
@@ -48,98 +41,83 @@ function HttpClientNode({ data, selected }: HttpClientNodeProps) {
     interval,
   } = data;
 
-  const nodeColor = '#3b82f6'; // Blue for HTTP Client
-
   return (
     <motion.div
       className={cn(
-        'relative rounded-lg border-2 bg-background shadow-md transition-all',
-        'min-w-[180px] max-w-[220px]',
-        selected ? 'border-primary' : 'border-blue-500',
-        statusStyles[status]
+        'node-instrument relative min-w-44 max-w-56',
+        selected && 'selected'
       )}
       animate={
         status === 'processing'
-          ? { scale: [1, 1.02, 1] }
+          ? { scale: [1, 1.01, 1] }
           : status === 'error'
           ? { x: [-2, 2, -2, 2, 0] }
           : {}
       }
       transition={
         status === 'processing'
-          ? { duration: 0.8, repeat: Infinity, ease: 'easeInOut' }
+          ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }
           : { duration: 0.3 }
       }
     >
-      {/* Header */}
+      {/* Signal bar */}
       <div
-        className="flex items-center gap-2 px-3 py-2 rounded-t-md"
-        style={{ backgroundColor: `${nodeColor}20` }}
-      >
+        className={cn(
+          'node-signal-bar',
+          status === 'processing' && 'signal-pulse',
+          status === 'error' && 'signal-pulse-critical'
+        )}
+        style={{ backgroundColor: SIGNAL_CLIENT }}
+      />
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Monitor className="w-3.5 h-3.5" style={{ color: SIGNAL_CLIENT }} />
+          <span className="text-instrument text-[10px] text-muted-foreground">
+            {label}
+          </span>
+        </div>
         <div
-          className="flex items-center justify-center w-8 h-8 rounded-md"
-          style={{ backgroundColor: nodeColor, color: 'white' }}
-        >
-          <Monitor className="w-4 h-4" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{label}</div>
-          <div className="text-xs text-muted-foreground">Client HTTP</div>
-        </div>
+          className={cn(
+            'w-1.5 h-1.5 rounded-full',
+            status === 'idle' && 'bg-muted-foreground/30',
+            status === 'processing' && 'signal-pulse',
+            status === 'success' && 'bg-signal-healthy',
+            status === 'error' && 'bg-signal-critical signal-pulse-critical'
+          )}
+          style={status === 'processing' ? { backgroundColor: SIGNAL_CLIENT } : undefined}
+        />
       </div>
 
       {/* Content */}
-      <div className="px-3 py-2 space-y-2">
-        {/* Method and Path */}
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="secondary"
-            className={cn('text-white text-xs px-2 py-0', methodColors[method])}
-          >
+      <div className="px-3 pb-2.5 space-y-1.5">
+        {/* Method + Path */}
+        <div className="flex items-center gap-2 font-mono text-xs">
+          <span className={cn('font-semibold', methodColors[method])}>
             {method}
-          </Badge>
-          <span className="text-xs text-muted-foreground truncate flex-1">
-            {path}
           </span>
+          <span className="text-foreground truncate">{path}</span>
         </div>
 
-        {/* Mode indicator */}
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        {/* Mode */}
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
           {requestMode === 'loop' ? (
             <>
-              <Repeat className="w-3 h-3" />
-              <span>Boucle {interval ? `(${interval}ms)` : ''}</span>
+              <Repeat className="w-2.5 h-2.5" />
+              <span>{interval || 1000}ms</span>
             </>
           ) : (
-            <>
-              <ArrowRight className="w-3 h-3" />
-              <span>Requête unique</span>
-            </>
+            <span>single</span>
           )}
         </div>
       </div>
 
-      {/* Status indicator */}
-      {status !== 'idle' && (
-        <motion.div
-          className={cn(
-            'absolute -top-1 -right-1 w-3 h-3 rounded-full',
-            status === 'processing' && 'bg-blue-500',
-            status === 'success' && 'bg-green-500',
-            status === 'error' && 'bg-red-500'
-          )}
-          animate={status === 'processing' ? { opacity: [1, 0.5, 1] } : {}}
-          transition={
-            status === 'processing' ? { duration: 0.8, repeat: Infinity } : {}
-          }
-        />
-      )}
-
-      {/* Output Handle only (Client sends requests) */}
+      {/* Output Handle only */}
       <Handle
         type="source"
         position={Position.Right}
-        className="!bg-blue-500"
+        style={{ borderColor: SIGNAL_CLIENT }}
       />
     </motion.div>
   );

@@ -1,5 +1,11 @@
 import type { SimulationMetrics, ExtendedSimulationMetrics, ResourceSample, ClientGroupMetrics } from '@/types';
 
+/**
+ * Collecteur de metriques pour la simulation.
+ * Enregistre les requetes, reponses, latences (avec percentiles P50/P95/P99),
+ * les rejets, les metriques de file d'attente, l'historique des ressources
+ * et les statistiques par groupe de clients.
+ */
 export class MetricsCollector {
   private metrics: SimulationMetrics;
   private latencies: number[] = [];

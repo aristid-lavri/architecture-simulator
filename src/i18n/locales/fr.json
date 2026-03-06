@@ -118,7 +118,7 @@
       "hitRatioVariance": "Variance (%)",
       "warmUp": "Période de warm-up",
       "warmUpEnabled": "Activer le warm-up",
-      "warmUpDuration": "Durée (s)"
+      "warmUpDuration": "Durée (ms)"
     },
     "loadBalancer": {
       "algorithm": "Algorithme de répartition",
@@ -128,8 +128,8 @@
       "weighted": "Weighted",
       "healthCheck": "Health Check",
       "healthCheckEnabled": "Activer",
-      "healthCheckInterval": "Intervalle (s)",
-      "healthCheckTimeout": "Timeout (s)",
+      "healthCheckInterval": "Intervalle (ms)",
+      "healthCheckTimeout": "Timeout (ms)",
       "unhealthyThreshold": "Seuil d'échec",
       "stickySessions": "Sessions persistantes",
       "stickyEnabled": "Activer",
@@ -176,7 +176,7 @@
       "routing": "Routage",
       "pathPrefix": "Préfixe de chemin",
       "stripPrefix": "Retirer le préfixe",
-      "timeout": "Timeout (s)",
+      "timeout": "Timeout (ms)",
       "performance": "Performance",
       "baseLatency": "Latence de base (ms)",
       "errorRate": "Taux d'erreur (%)",

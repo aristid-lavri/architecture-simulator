@@ -13,12 +13,13 @@ const translations: Record<Locale, TranslationKeys> = {
   en,
 };
 
-// i18n Store
+/** Etat du store i18n avec locale courante et setter. */
 interface I18nState {
   locale: Locale;
   setLocale: (locale: Locale) => void;
 }
 
+/** Store Zustand pour la locale. Persiste dans localStorage sous 'architecture-simulator-i18n'. */
 export const useI18nStore = create<I18nState>()(
   persist(
     (set) => ({
@@ -31,7 +32,13 @@ export const useI18nStore = create<I18nState>()(
   )
 );
 
-// Hook to get translations
+/**
+ * Hook React pour acceder aux traductions.
+ * @returns t - Fonction de traduction par cle en notation pointee (ex: "header.title").
+ * @returns locale - Locale courante ('fr' | 'en').
+ * @returns setLocale - Setter pour changer la locale.
+ * @returns translations - Objet complet des traductions pour la locale courante.
+ */
 export function useTranslation() {
   const { locale, setLocale } = useI18nStore();
   const t = translations[locale];
@@ -61,9 +68,10 @@ export function useTranslation() {
   };
 }
 
-// Export available locales
+/** Liste des locales disponibles dans l'application. */
 export const availableLocales: Locale[] = ['fr', 'en'];
 
+/** Noms lisibles des locales pour l'affichage dans l'UI. */
 export const localeNames: Record<Locale, string> = {
   fr: 'Français',
   en: 'English',

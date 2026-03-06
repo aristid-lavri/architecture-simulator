@@ -19,7 +19,11 @@ import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import {
   generateParticleId,
   createRequestSentEvent,
+  createRequestReceivedEvent,
+  createProcessingStartEvent,
+  createProcessingEndEvent,
   createResponseSentEvent,
+  createErrorEvent,
   simulationEvents,
 } from './events';
 import { MetricsCollector } from './metrics';
@@ -28,6 +32,7 @@ import { VirtualClientManager } from './VirtualClientManager';
 import { LoadBalancerManager } from './LoadBalancerManager';
 import { CacheManager } from './CacheManager';
 import { DatabaseManager } from './DatabaseManager';
+import { ParticleManager } from './ParticleManager';
 import { defaultServerResources, defaultDegradation } from '@/types';
 import {
   HandlerRegistry,
@@ -42,6 +47,10 @@ import {
   type RequestDecision,
 } from './handlers';
 
+/**
+ * Callbacks fournis par la couche React pour recevoir les mises a jour du moteur.
+ * Le moteur ne modifie jamais les stores directement — il notifie via ces callbacks.
+ */
 interface SimulationCallbacks {
   onStateChange: (state: SimulationState) => void;
   onAddParticle: (particle: Particle) => void;
@@ -52,8 +61,10 @@ interface SimulationCallbacks {
   onResourceUpdate?: (nodeId: string, utilization: ResourceUtilization) => void;
   onClientGroupUpdate?: (groupId: string, activeClients: number, requestsSent: number) => void;
   onMessageQueueUpdate?: (nodeId: string, utilization: MessageQueueUtilization) => void;
+  onError?: (error: Error) => void;
 }
 
+/** Etat interne d'un serveur HTTP pendant la simulation (ressources, utilisation, requetes actives). */
 interface ServerState {
   nodeId: string;
   resources: ServerResources;
@@ -61,12 +72,14 @@ interface ServerState {
   activeRequests: Map<string, ActiveRequest>;
 }
 
+/** Requete en cours de traitement sur un serveur. */
 interface ActiveRequest {
   id: string;
   startedAt: number;
   estimatedCompletion: number;
 }
 
+/** Requete en file d'attente lorsque le serveur est a capacite maximale. */
 interface QueuedRequest {
   id: string;
   clientGroupId?: string;
@@ -76,7 +89,10 @@ interface QueuedRequest {
   sourceNode: Node;
 }
 
-// Request chain tracking - pour suivre une requête sur toutes les étapes
+/**
+ * Suivi d'une chaine de requete a travers la topologie.
+ * Enregistre le chemin complet (noeuds et aretes traverses) et l'etat cache-aside.
+ */
 interface RequestChain {
   id: string;
   originNodeId: string;           // Le node d'origine (client ou client-group)
@@ -91,6 +107,15 @@ interface RequestChain {
   waitingForDb?: boolean;         // True si on attend la réponse DB après cache miss
 }
 
+/**
+ * Orchestrateur principal de la simulation.
+ *
+ * Coordonne le cycle de vie (start/pause/resume/stop), les managers specialises
+ * (ressources, cache, DB, load balancer), les handlers de requetes (strategy pattern),
+ * les particules d'animation et la collecte de metriques.
+ *
+ * Communique avec la couche React exclusivement via les SimulationCallbacks.
+ */
 export class SimulationEngine {
   private nodes: Node[] = [];
   private edges: Edge[] = [];
@@ -99,10 +124,9 @@ export class SimulationEngine {
   private callbacks: SimulationCallbacks;
   private metrics: MetricsCollector;
 
-  // Animation frame and timers
-  private animationFrameId: number | null = null;
+  // Animation and timers
+  private particleManager: ParticleManager;
   private clientTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
-  private activeParticles: Map<string, Particle> = new Map();
 
   // Stress testing - Resource management
   private virtualClientManager: VirtualClientManager = new VirtualClientManager();
@@ -127,6 +151,11 @@ export class SimulationEngine {
   constructor(callbacks: SimulationCallbacks) {
     this.callbacks = callbacks;
     this.metrics = new MetricsCollector();
+    this.particleManager = new ParticleManager({
+      onAddParticle: callbacks.onAddParticle,
+      onRemoveParticle: callbacks.onRemoveParticle,
+      onUpdateParticle: callbacks.onUpdateParticle,
+    });
 
     // Initialize managers
     this.loadBalancerManager = new LoadBalancerManager();
@@ -152,19 +181,27 @@ export class SimulationEngine {
     ]);
   }
 
+  /** Met a jour le graphe de noeuds et aretes utilise par la simulation. */
   setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
     this.nodes = nodes;
     this.edges = edges;
   }
 
+  /** Ajuste la vitesse de simulation (clampee entre 0.5x et 4x). */
   setSpeed(speed: number): void {
     this.speed = Math.max(0.5, Math.min(4, speed));
   }
 
+  /** Retourne l'etat courant de la simulation (idle, running, paused). */
   getState(): SimulationState {
     return this.state;
   }
 
+  /**
+   * Demarre la simulation.
+   * Initialise les handlers, les etats serveurs, les clients HTTP, les client groups,
+   * l'echantillonnage des ressources et la boucle d'animation.
+   */
   start(): void {
     if (this.state === 'running') return;
 
@@ -188,9 +225,10 @@ export class SimulationEngine {
     this.startResourceSampling();
 
     // Start animation loop
-    this.startAnimationLoop();
+    this.particleManager.startAnimationLoop(() => this.state);
   }
 
+  /** Met en pause la simulation en arretant l'animation, tout en conservant l'etat. */
   pause(): void {
     if (this.state !== 'running') return;
 
@@ -198,12 +236,10 @@ export class SimulationEngine {
     this.callbacks.onStateChange('paused');
 
     // Stop animation but keep state
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    this.particleManager.stopAnimationLoop();
   }
 
+  /** Reprend la simulation apres une pause. */
   resume(): void {
     if (this.state !== 'paused') return;
 
@@ -211,9 +247,13 @@ export class SimulationEngine {
     this.callbacks.onStateChange('running');
 
     // Resume animation
-    this.startAnimationLoop();
+    this.particleManager.startAnimationLoop(() => this.state);
   }
 
+  /**
+   * Arrete completement la simulation.
+   * Nettoie les timers, particules, chaines de requetes, etats serveurs et handlers.
+   */
   stop(): void {
     this.state = 'idle';
     this.callbacks.onStateChange('idle');
@@ -244,17 +284,9 @@ export class SimulationEngine {
     const nodeIds = this.nodes.map((n) => n.id);
     this.handlerRegistry.cleanupAll(nodeIds);
 
-    // Stop animation
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-
-    // Clear particles
-    this.activeParticles.forEach((_, id) => {
-      this.callbacks.onRemoveParticle(id);
-    });
-    this.activeParticles.clear();
+    // Stop animation and clear particles
+    this.particleManager.stopAnimationLoop();
+    this.particleManager.clearAll();
 
     // Reset node states
     this.nodes.forEach((node) => {
@@ -266,6 +298,7 @@ export class SimulationEngine {
     this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
   }
 
+  /** Reinitialise la simulation (alias de stop). */
   reset(): void {
     this.stop();
   }
@@ -335,8 +368,7 @@ export class SimulationEngine {
       startTime: Date.now(),
     };
 
-    this.activeParticles.set(particle.id, particle);
-    this.callbacks.onAddParticle(particle);
+    this.particleManager.add(particle);
 
     // Schedule request arrival
     setTimeout(() => {
@@ -351,10 +383,10 @@ export class SimulationEngine {
     edge: Edge
   ): void {
     if (this.state !== 'running') return;
+    try {
 
     // Remove request particle
-    this.activeParticles.delete(requestParticle.id);
-    this.callbacks.onRemoveParticle(requestParticle.id);
+    this.particleManager.remove(requestParticle.id);
 
     // Get or create request chain
     const chainId = requestParticle.data?.chainId as string || generateParticleId();
@@ -382,6 +414,12 @@ export class SimulationEngine {
     this.callbacks.onNodeStatusChange(client.id, 'idle');
     this.callbacks.onNodeStatusChange(server.id, 'processing');
 
+    // Emit REQUEST_RECEIVED event
+    const clientData = client.data as HttpClientNodeData;
+    simulationEvents.emit(createRequestReceivedEvent(
+      client.id, server.id, clientData.method, clientData.path
+    ));
+
     // Use handler pattern for consistent behavior
     const processingDelay = this.getNodeProcessingDelay(server);
     const outgoingEdges = this.edges.filter((e) => e.source === server.id);
@@ -400,6 +438,9 @@ export class SimulationEngine {
       waitingForDb: chain.waitingForDb,
     };
 
+    // Emit PROCESSING_START event
+    simulationEvents.emit(createProcessingStartEvent(server.id));
+
     // Get handler and decision
     const nodeType = server.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
@@ -410,6 +451,10 @@ export class SimulationEngine {
       if (this.state !== 'running') return;
       this.executeDecision(decision, server, chainId, context);
     }, processingDelay);
+    } catch (error) {
+      console.error('[SimulationEngine] Error in handleRequestArrival:', error);
+      this.callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   /**
@@ -480,6 +525,9 @@ export class SimulationEngine {
   ): void {
     const chain = this.activeChains.get(chainId);
 
+    // Emit PROCESSING_END event
+    simulationEvents.emit(createProcessingEndEvent(sourceNode.id));
+
     switch (decision.action) {
       case 'forward':
         // Forward to the targets
@@ -517,8 +565,7 @@ export class SimulationEngine {
             data: { chainId: effectiveChainId },
           };
 
-          this.activeParticles.set(particle.id, particle);
-          this.callbacks.onAddParticle(particle);
+          this.particleManager.add(particle);
           this.callbacks.onNodeStatusChange(sourceNode.id, 'processing');
 
           setTimeout(() => {
@@ -546,6 +593,7 @@ export class SimulationEngine {
         this.metrics.recordRejection();
         this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
         this.callbacks.onNodeStatusChange(sourceNode.id, 'error');
+        simulationEvents.emit(createErrorEvent(sourceNode.id, decision.reason || 'rejected'));
         this.sendChainResponse(chainId, sourceNode);
         break;
 
@@ -576,8 +624,7 @@ export class SimulationEngine {
             data: { chainId },
           };
 
-          this.activeParticles.set(particle.id, particle);
-          this.callbacks.onAddParticle(particle);
+          this.particleManager.add(particle);
 
           setTimeout(() => {
             this.handleChainRequestArrival(particle, sourceNode, dbNode,
@@ -621,8 +668,7 @@ export class SimulationEngine {
             data: { chainId: notifyChainId },
           };
 
-          this.activeParticles.set(particle.id, particle);
-          this.callbacks.onAddParticle(particle);
+          this.particleManager.add(particle);
 
           setTimeout(() => {
             this.handleChainRequestArrival(particle, sourceNode, targetNode,
@@ -645,10 +691,10 @@ export class SimulationEngine {
     chainId: string
   ): void {
     if (this.state !== 'running') return;
+    try {
 
     // Remove request particle
-    this.activeParticles.delete(requestParticle.id);
-    this.callbacks.onRemoveParticle(requestParticle.id);
+    this.particleManager.remove(requestParticle.id);
 
     const chain = this.activeChains.get(chainId);
     if (!chain) return;
@@ -660,6 +706,11 @@ export class SimulationEngine {
     // Update statuses
     this.callbacks.onNodeStatusChange(sourceNode.id, 'idle');
     this.callbacks.onNodeStatusChange(targetNode.id, 'processing');
+
+    // Emit REQUEST_RECEIVED event
+    simulationEvents.emit(createRequestReceivedEvent(
+      sourceNode.id, targetNode.id, 'GET', chain.requestPath || '/'
+    ));
 
     const processingDelay = this.getNodeProcessingDelay(targetNode);
 
@@ -676,6 +727,9 @@ export class SimulationEngine {
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
     };
+
+    // Emit PROCESSING_START event
+    simulationEvents.emit(createProcessingStartEvent(targetNode.id));
 
     // Get outgoing edges for this node
     const outgoingEdges = this.edges.filter((e) => e.source === targetNode.id);
@@ -713,6 +767,10 @@ export class SimulationEngine {
 
       this.executeDecision(decision, targetNode, chainId, context);
     }, processingDelay);
+    } catch (error) {
+      console.error('[SimulationEngine] Error in handleChainRequestArrival:', error);
+      this.callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   /**
@@ -807,16 +865,20 @@ export class SimulationEngine {
       data: { chainId },
     };
 
-    this.activeParticles.set(particle.id, particle);
-    this.callbacks.onAddParticle(particle);
+    this.particleManager.add(particle);
+
+    // Emit RESPONSE_SENT event
+    simulationEvents.emit(createResponseSentEvent(
+      currentNodeId, previousNodeId, edgeId, isError ? 500 : 200, undefined,
+      Date.now() - chain.startTime
+    ));
 
     // Schedule arrival at previous node
     setTimeout(() => {
       if (this.state !== 'running') return;
 
       // Remove particle
-      this.activeParticles.delete(particle.id);
-      this.callbacks.onRemoveParticle(particle.id);
+      this.particleManager.remove(particle.id);
 
       // Update statuses
       this.callbacks.onNodeStatusChange(currentNodeId, 'idle');
@@ -825,116 +887,6 @@ export class SimulationEngine {
       // Continue backward
       this.sendResponseHop(chainId, currentNodeIndex - 1, currentEdgeIndex - 1, isError);
     }, responseDuration);
-  }
-
-  private sendResponse(
-    client: Node,
-    server: Node,
-    edge: Edge,
-    serverData: HttpServerNodeData
-  ): void {
-    if (this.state !== 'running') return;
-
-    // Determine if this response is an error (based on errorRate)
-    const isError =
-      serverData.errorRate > 0 && Math.random() * 100 < serverData.errorRate;
-    const responseStatus = isError ? 500 : serverData.responseStatus;
-    const particleType: ParticleType = isError
-      ? 'response-error'
-      : 'response-success';
-
-    // Update server status
-    this.callbacks.onNodeStatusChange(
-      server.id,
-      isError ? 'error' : 'success'
-    );
-
-    // Create response event
-    const event = createResponseSentEvent(
-      server.id,
-      client.id,
-      edge.id,
-      responseStatus,
-      serverData.responseBody?.toString(),
-      serverData.responseDelay
-    );
-    simulationEvents.emit(event);
-
-    // Create response particle (backward: server → client)
-    const responseDuration = 2000 / this.speed; // 2 seconds
-    const particle: Particle = {
-      id: generateParticleId(),
-      edgeId: edge.id,
-      type: particleType,
-      direction: 'backward',
-      progress: 0,
-      duration: responseDuration,
-      startTime: Date.now(),
-    };
-
-    this.activeParticles.set(particle.id, particle);
-    this.callbacks.onAddParticle(particle);
-
-    // Schedule response arrival
-    setTimeout(() => {
-      this.handleResponseArrival(particle, client, server, isError);
-    }, responseDuration);
-  }
-
-  private handleResponseArrival(
-    responseParticle: Particle,
-    client: Node,
-    server: Node,
-    isError: boolean
-  ): void {
-    if (this.state !== 'running') return;
-
-    // Remove response particle
-    this.activeParticles.delete(responseParticle.id);
-    this.callbacks.onRemoveParticle(responseParticle.id);
-
-    // Update node states
-    this.callbacks.onNodeStatusChange(server.id, 'idle');
-    this.callbacks.onNodeStatusChange(
-      client.id,
-      isError ? 'error' : 'success'
-    );
-
-    // Record response metric
-    const latency = Date.now() - responseParticle.startTime;
-    this.metrics.recordResponse(!isError, latency);
-    this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
-
-    // Reset client status after a short delay
-    setTimeout(() => {
-      if (this.state === 'running') {
-        this.callbacks.onNodeStatusChange(client.id, 'idle');
-      }
-    }, 300 / this.speed);
-  }
-
-  private startAnimationLoop(): void {
-    const animate = () => {
-      if (this.state !== 'running') return;
-
-      const now = Date.now();
-
-      // Update all particle progress
-      this.activeParticles.forEach((particle, id) => {
-        const elapsed = now - particle.startTime;
-        const progress = Math.min(1, elapsed / particle.duration);
-
-        this.callbacks.onUpdateParticle(id, { progress });
-
-        // Update local reference
-        particle.progress = progress;
-      });
-
-      // Continue animation
-      this.animationFrameId = requestAnimationFrame(animate);
-    };
-
-    this.animationFrameId = requestAnimationFrame(animate);
   }
 
   // ============================================
@@ -1040,6 +992,7 @@ export class SimulationEngine {
         // Record rejection
         this.metrics.recordRejection();
         this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+        simulationEvents.emit(createErrorEvent(targetNode.id, 'capacity'));
         return;
       }
 
@@ -1111,8 +1064,7 @@ export class SimulationEngine {
       },
     };
 
-    this.activeParticles.set(particle.id, particle);
-    this.callbacks.onAddParticle(particle);
+    this.particleManager.add(particle);
 
     // Track active request on server
     if (serverState) {
@@ -1144,8 +1096,7 @@ export class SimulationEngine {
     if (this.state !== 'running') return;
 
     // Remove request particle
-    this.activeParticles.delete(requestParticle.id);
-    this.callbacks.onRemoveParticle(requestParticle.id);
+    this.particleManager.remove(requestParticle.id);
 
     // Update chain path
     const chain = this.activeChains.get(chainId);
@@ -1216,107 +1167,6 @@ export class SimulationEngine {
 
     // Use regular chain response
     this.sendChainResponse(chainId, terminalNode);
-  }
-
-  /**
-   * Send response for a client group request (tracks virtual client completion)
-   */
-  private sendClientGroupResponse(
-    clientGroup: Node,
-    server: Node,
-    edge: Edge,
-    serverData: HttpServerNodeData,
-    virtualClientId: number
-  ): void {
-    if (this.state !== 'running') return;
-
-    // Determine if this response is an error (based on errorRate)
-    const isError =
-      serverData.errorRate > 0 && Math.random() * 100 < serverData.errorRate;
-    const responseStatus = isError ? 500 : serverData.responseStatus;
-    const particleType: ParticleType = isError
-      ? 'response-error'
-      : 'response-success';
-
-    // Update server status
-    this.callbacks.onNodeStatusChange(
-      server.id,
-      isError ? 'error' : 'success'
-    );
-
-    // Create response event
-    const event = createResponseSentEvent(
-      server.id,
-      clientGroup.id,
-      edge.id,
-      responseStatus,
-      serverData.responseBody?.toString(),
-      serverData.responseDelay
-    );
-    simulationEvents.emit(event);
-
-    // Create response particle (backward: server → client)
-    const responseDuration = 2000 / this.speed;
-    const particle: Particle = {
-      id: generateParticleId(),
-      edgeId: edge.id,
-      type: particleType,
-      direction: 'backward',
-      progress: 0,
-      duration: responseDuration,
-      startTime: Date.now(),
-      data: {
-        clientGroupId: clientGroup.id,
-        virtualClientId,
-      },
-    };
-
-    this.activeParticles.set(particle.id, particle);
-    this.callbacks.onAddParticle(particle);
-
-    // Schedule response arrival
-    setTimeout(() => {
-      this.handleClientGroupResponseArrival(particle, clientGroup, server, isError, virtualClientId);
-    }, responseDuration);
-  }
-
-  /**
-   * Handle client group response arrival
-   */
-  private handleClientGroupResponseArrival(
-    responseParticle: Particle,
-    clientGroup: Node,
-    server: Node,
-    isError: boolean,
-    virtualClientId: number
-  ): void {
-    if (this.state !== 'running') return;
-
-    // Remove response particle
-    this.activeParticles.delete(responseParticle.id);
-    this.callbacks.onRemoveParticle(responseParticle.id);
-
-    // Update node states
-    this.callbacks.onNodeStatusChange(server.id, 'idle');
-    this.callbacks.onNodeStatusChange(
-      clientGroup.id,
-      isError ? 'error' : 'success'
-    );
-
-    // Record response metric
-    const latency = Date.now() - responseParticle.startTime;
-    this.metrics.recordResponse(!isError, latency);
-    this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
-
-    // Mark request as completed for this virtual client (allows new parallel requests)
-    this.virtualClientManager.recordRequestCompleted(clientGroup.id, virtualClientId);
-
-    // Reset client status after a short delay
-    setTimeout(() => {
-      if (this.state === 'running') {
-        this.callbacks.onNodeStatusChange(clientGroup.id, 'idle');
-      }
-    }, 300 / this.speed);
   }
 
   /**

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,9 +12,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
-  title: "Architecture Simulator",
-  description: "Interactive architecture patterns simulator with circuit breakers, rate limiting, and network latency",
+  title: "ARCH.SIM — Architecture Simulator",
+  description: "Testez votre architecture avant de la construire. Simulez la charge, visualisez les flux, identifiez les ruptures.",
 };
 
 export default function RootLayout({
@@ -23,9 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" suppressHydrationWarning>
+    <html lang="fr" suppressHydrationWarning className="dark" id="html-root">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased`}
       >
         {children}
       </body>

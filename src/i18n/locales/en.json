@@ -118,7 +118,7 @@
       "hitRatioVariance": "Variance (%)",
       "warmUp": "Warm-up period",
       "warmUpEnabled": "Enable warm-up",
-      "warmUpDuration": "Duration (s)"
+      "warmUpDuration": "Duration (ms)"
     },
     "loadBalancer": {
       "algorithm": "Distribution algorithm",
@@ -128,8 +128,8 @@
       "weighted": "Weighted",
       "healthCheck": "Health Check",
       "healthCheckEnabled": "Enable",
-      "healthCheckInterval": "Interval (s)",
-      "healthCheckTimeout": "Timeout (s)",
+      "healthCheckInterval": "Interval (ms)",
+      "healthCheckTimeout": "Timeout (ms)",
       "unhealthyThreshold": "Failure threshold",
       "stickySessions": "Sticky sessions",
       "stickyEnabled": "Enable",
@@ -176,7 +176,7 @@
       "routing": "Routing",
       "pathPrefix": "Path prefix",
       "stripPrefix": "Strip prefix",
-      "timeout": "Timeout (s)",
+      "timeout": "Timeout (ms)",
       "performance": "Performance",
       "baseLatency": "Base latency (ms)",
       "errorRate": "Error rate (%)",

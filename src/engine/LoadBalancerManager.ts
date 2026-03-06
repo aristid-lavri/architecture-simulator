@@ -24,6 +24,11 @@ interface LoadBalancerState {
   totalRequests: number;
 }
 
+/**
+ * Gere la repartition de charge entre backends.
+ * Implemente 4 algorithmes : round-robin, least-connections, ip-hash, weighted.
+ * Supporte les health checks, sticky sessions et le suivi des connexions actives.
+ */
 export class LoadBalancerManager {
   private lbStates: Map<string, LoadBalancerState> = new Map();
 

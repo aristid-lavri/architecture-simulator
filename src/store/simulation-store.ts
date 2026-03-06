@@ -9,6 +9,7 @@ import type {
   ClientGroupMetrics,
 } from '@/types';
 
+/** Rapport genere a l'arret de la simulation avec metriques finales et historique. */
 export interface SimulationReport {
   duration: number; // actual duration in ms
   configuredDuration: number | null; // configured duration in ms (null = unlimited)
@@ -19,6 +20,10 @@ export interface SimulationReport {
   timestamp: number;
 }
 
+/**
+ * Etat runtime de la simulation : particules, metriques, etats des noeuds, rapport.
+ * Non persiste — reinitialise au changement de mode ou a l'arret.
+ */
 interface SimulationStore {
   // Simulation state
   state: SimulationState;
@@ -99,6 +104,10 @@ const initialMetrics: SimulationMetrics = {
   startTime: null,
 };
 
+/**
+ * Store Zustand pour l'etat runtime de la simulation.
+ * Gere les particules, metriques, etats des noeuds, utilisation des ressources et le rapport final.
+ */
 export const useSimulationStore = create<SimulationStore>((set, get) => ({
   // Initial state
   state: 'idle',
@@ -285,13 +294,20 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   clearClientGroupStats: () => set({ clientGroupStats: new Map() }),
 }));
 
-// Derived selectors
+/**
+ * Selecteur derive : latence moyenne des reponses recues (en ms, arrondi).
+ * @returns 0 si aucune reponse recue.
+ */
 export const selectAverageLatency = (state: SimulationStore): number => {
   const { responsesReceived, totalLatency } = state.metrics;
   if (responsesReceived === 0) return 0;
   return Math.round(totalLatency / responsesReceived);
 };
 
+/**
+ * Selecteur derive : taux de succes en pourcentage (0-100).
+ * @returns 0 si aucune reponse recue.
+ */
 export const selectSuccessRate = (state: SimulationStore): number => {
   const { responsesReceived, successCount } = state.metrics;
   if (responsesReceived === 0) return 0;

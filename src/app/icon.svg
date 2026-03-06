@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Node body -->
+  <rect x="2" y="2" width="28" height="28" rx="4" fill="#1a2744"/>
+
+  <!-- Signal bar -->
+  <rect x="2" y="2" width="4" height="28" rx="4" fill="#c8930a"/>
+  <rect x="4" y="2" width="2" height="28" fill="#c8930a"/>
+
+  <!-- "A" letterform -->
+  <path d="M16 7 L9 25 L12 25 L13.2 21.5 L18.8 21.5 L20 25 L23 25 L16 7Z M14.2 19 L16 13 L17.8 19 L14.2 19Z" fill="#e8e4dd"/>
+
+  <!-- Status dot -->
+  <circle cx="25" cy="7" r="2" fill="#2db87e"/>
+</svg>
