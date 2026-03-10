@@ -19,10 +19,12 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical } from 'lucide-react';
-import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData } from '@/types';
+import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution } from '@/types';
 import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData } from '@/types';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
+import type { ProcessingComplexity } from '@/types';
+import { complexityMultipliers } from '@/types';
 import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
 import type { AnimatedEdgeData } from '@/components/edges/AnimatedEdge';
 import type { Node, Edge } from '@xyflow/react';
@@ -625,6 +627,40 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
           </p>
         </div>
       </div>
+
+      {/* Code Efficiency / Processing Complexity */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Efficacité du code
+        </span>
+        <Separator />
+        <div className="space-y-2">
+          <Label>Complexité du traitement</Label>
+          <div className="grid grid-cols-4 gap-1">
+            {([
+              { value: 'light' as ProcessingComplexity, label: 'Léger', mult: '0.5x' },
+              { value: 'medium' as ProcessingComplexity, label: 'Moyen', mult: '1x' },
+              { value: 'heavy' as ProcessingComplexity, label: 'Lourd', mult: '2.5x' },
+              { value: 'very-heavy' as ProcessingComplexity, label: 'Très lourd', mult: '5x' },
+            ]).map(({ value, label, mult }) => (
+              <Button
+                key={value}
+                variant={(data.processingComplexity || 'medium') === value ? 'default' : 'outline'}
+                size="sm"
+                className="text-[10px] px-1 py-1 h-auto flex flex-col"
+                onClick={() => onUpdate({ processingComplexity: value })}
+              >
+                <span>{label}</span>
+                <span className="text-[8px] opacity-60">{mult}</span>
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Multiplie le temps de traitement par requête ({complexityMultipliers[data.processingComplexity || 'medium']}x).
+            Simule l&apos;impact du code applicatif sur les performances.
+          </p>
+        </div>
+      </div>
     </>
   );
 }
@@ -1092,6 +1128,104 @@ function ClientGroupConfig({ data, onUpdate }: ClientGroupConfigProps) {
               Si des chemins sont définis, chaque requête utilisera un chemin aléatoire parmi ceux-ci.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Request Distribution */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Distribution des requêtes
+        </span>
+        <Separator />
+        <p className="text-xs text-muted-foreground">
+          Définissez une distribution pondérée de types de requêtes. Si activée, remplace la méthode/chemin par défaut.
+        </p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Types de requêtes</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 gap-1"
+              onClick={() => {
+                const current = (data.requestDistribution as RequestTypeDistribution[] | undefined) || [];
+                onUpdate({
+                  requestDistribution: [...current, { method: 'GET' as HttpMethod, path: '/api/data', weight: 10 }],
+                });
+              }}
+            >
+              <Plus className="h-3 w-3" />
+              Ajouter
+            </Button>
+          </div>
+
+          {(!data.requestDistribution || (data.requestDistribution as RequestTypeDistribution[]).length === 0) ? (
+            <p className="text-xs text-muted-foreground italic">
+              Aucune distribution définie. La méthode et le chemin par défaut seront utilisés.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {(data.requestDistribution as RequestTypeDistribution[]).map((dist, index) => {
+                const totalWeight = (data.requestDistribution as RequestTypeDistribution[]).reduce((sum, d) => sum + d.weight, 0);
+                const pct = totalWeight > 0 ? Math.round((dist.weight / totalWeight) * 100) : 0;
+                return (
+                  <div key={index} className="flex items-center gap-1.5 p-2 bg-muted/30 rounded-md">
+                    <Select
+                      value={dist.method}
+                      onValueChange={(value) => {
+                        const newDist = [...(data.requestDistribution as RequestTypeDistribution[])];
+                        newDist[index] = { ...newDist[index], method: value as HttpMethod };
+                        onUpdate({ requestDistribution: newDist });
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-20 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="GET">GET</SelectItem>
+                        <SelectItem value="POST">POST</SelectItem>
+                        <SelectItem value="PUT">PUT</SelectItem>
+                        <SelectItem value="DELETE">DELETE</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={dist.path}
+                      onChange={(e) => {
+                        const newDist = [...(data.requestDistribution as RequestTypeDistribution[])];
+                        newDist[index] = { ...newDist[index], path: e.target.value };
+                        onUpdate({ requestDistribution: newDist });
+                      }}
+                      placeholder="/api/path"
+                      className="h-7 text-xs flex-1"
+                    />
+                    <Input
+                      type="number"
+                      value={dist.weight}
+                      onChange={(e) => {
+                        const newDist = [...(data.requestDistribution as RequestTypeDistribution[])];
+                        newDist[index] = { ...newDist[index], weight: Math.max(1, parseInt(e.target.value) || 1) };
+                        onUpdate({ requestDistribution: newDist });
+                      }}
+                      className="h-7 w-14 text-xs text-center"
+                      min={1}
+                    />
+                    <span className="text-[10px] text-muted-foreground w-8 text-right shrink-0">{pct}%</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => {
+                        const newDist = (data.requestDistribution as RequestTypeDistribution[]).filter((_, i) => i !== index);
+                        onUpdate({ requestDistribution: newDist.length > 0 ? newDist : undefined });
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </>

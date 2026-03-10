@@ -23,6 +23,7 @@ import {
   createProcessingStartEvent,
   createProcessingEndEvent,
   createResponseSentEvent,
+  createResponseReceivedEvent,
   createErrorEvent,
   simulationEvents,
 } from './events';
@@ -56,6 +57,7 @@ import {
   type RequestContext,
   type RequestDecision,
 } from './handlers';
+import { pluginRegistry } from '@/plugins';
 
 /**
  * Callbacks fournis par la couche React pour recevoir les mises a jour du moteur.
@@ -72,6 +74,8 @@ interface SimulationCallbacks {
   onClientGroupUpdate?: (groupId: string, activeClients: number, requestsSent: number) => void;
   onMessageQueueUpdate?: (nodeId: string, utilization: MessageQueueUtilization) => void;
   onError?: (error: Error) => void;
+  onTimeSeriesSnapshot?: (snapshot: import('@/types').TimeSeriesSnapshot) => void;
+  onSimulationComplete?: () => void;
 }
 
 /** Etat interne d'un serveur HTTP pendant la simulation (ressources, utilisation, requetes actives). */
@@ -148,6 +152,13 @@ export class SimulationEngine {
   // Request chain tracking
   private activeChains: Map<string, RequestChain> = new Map();
 
+  // Time-series snapshot interval
+  private timeSeriesInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Throttled metrics update
+  private lastMetricsUpdateTime: number = 0;
+  private metricsUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Handler infrastructure
   private handlerRegistry: HandlerRegistry;
   private loadBalancerManager: LoadBalancerManager;
@@ -199,6 +210,51 @@ export class SimulationEngine {
       new CloudStorageHandler(),
       new CloudFunctionHandler(),
     ]);
+
+    // Register plugin handlers
+    for (const { handler } of pluginRegistry.getNodeHandlers()) {
+      this.handlerRegistry.register(handler);
+    }
+  }
+
+  /** Pousse les metriques vers le callback avec throttle (200ms max). */
+  private pushMetricsUpdate(): void {
+    const now = Date.now();
+    if (now - this.lastMetricsUpdateTime >= 200) {
+      this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+      this.lastMetricsUpdateTime = now;
+      if (this.metricsUpdateTimer) {
+        clearTimeout(this.metricsUpdateTimer);
+        this.metricsUpdateTimer = null;
+      }
+    } else if (!this.metricsUpdateTimer) {
+      this.metricsUpdateTimer = setTimeout(() => {
+        this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+        this.lastMetricsUpdateTime = Date.now();
+        this.metricsUpdateTimer = null;
+      }, 200 - (now - this.lastMetricsUpdateTime));
+    }
+  }
+
+  /** Flush immediat des metriques (utilise avant stop). */
+  private flushMetricsUpdate(): void {
+    if (this.metricsUpdateTimer) {
+      clearTimeout(this.metricsUpdateTimer);
+      this.metricsUpdateTimer = null;
+    }
+    this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+    this.lastMetricsUpdateTime = Date.now();
+  }
+
+  /** Retourne les metriques finales, resourceUtilizations et clientGroupStats. */
+  getFinalMetrics(): {
+    metrics: ReturnType<MetricsCollector['getMetrics']>;
+    extendedMetrics: ReturnType<MetricsCollector['getExtendedMetrics']>;
+  } {
+    return {
+      metrics: this.metrics.getMetrics(),
+      extendedMetrics: this.metrics.getExtendedMetrics(),
+    };
   }
 
   /** Met a jour le graphe de noeuds et aretes utilise par la simulation. */
@@ -232,6 +288,11 @@ export class SimulationEngine {
     // Initialize handlers for all nodes
     this.handlerRegistry.initializeAll(this.nodes);
 
+    // Notify plugin engine hooks
+    for (const hooks of pluginRegistry.getEngineHooks()) {
+      hooks.onSimulationStart?.();
+    }
+
     // Initialize server states for stress testing
     this.initializeServerStates();
 
@@ -243,6 +304,9 @@ export class SimulationEngine {
 
     // Start resource sampling
     this.startResourceSampling();
+
+    // Start time-series snapshot capture (every 5s)
+    this.startTimeSeriesCapture();
 
     // Start animation loop
     this.particleManager.startAnimationLoop(() => this.state);
@@ -295,6 +359,12 @@ export class SimulationEngine {
       this.resourceSamplingInterval = null;
     }
 
+    // Stop time-series capture
+    if (this.timeSeriesInterval) {
+      clearInterval(this.timeSeriesInterval);
+      this.timeSeriesInterval = null;
+    }
+
     // Clear request queues and chains
     this.requestQueues.clear();
     this.serverStates.clear();
@@ -303,6 +373,11 @@ export class SimulationEngine {
     // Cleanup handlers
     const nodeIds = this.nodes.map((n) => n.id);
     this.handlerRegistry.cleanupAll(nodeIds);
+
+    // Notify plugin engine hooks
+    for (const hooks of pluginRegistry.getEngineHooks()) {
+      hooks.onSimulationStop?.();
+    }
 
     // Stop animation and clear particles
     this.particleManager.stopAnimationLoop();
@@ -313,17 +388,43 @@ export class SimulationEngine {
       this.callbacks.onNodeStatusChange(node.id, 'idle');
     });
 
-    // Clear event handlers to prevent accumulation between simulation runs
-    simulationEvents.clear();
+    // Flush final metrics before clearing
+    this.flushMetricsUpdate();
+
+    // Note: Do NOT clear simulationEvents handlers here.
+    // The useSimulationEvents hook manages its own subscription lifecycle.
+    // Clearing handlers here would break the hook's subscription without re-subscribing.
+
+    // Clear throttle timer
+    if (this.metricsUpdateTimer) {
+      clearTimeout(this.metricsUpdateTimer);
+      this.metricsUpdateTimer = null;
+    }
 
     // Reset metrics
     this.metrics.reset();
-    this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
   }
 
   /** Reinitialise la simulation (alias de stop). */
   reset(): void {
     this.stop();
+  }
+
+  /**
+   * Verifie si toutes les requetes finies sont terminees.
+   * Si aucune source continue (loop clients, client groups) n'existe
+   * et qu'il n'y a plus de chaines actives ni de particules, arrete la simulation.
+   */
+  private checkCompletion(): void {
+    if (this.state !== 'running') return;
+
+    // Don't auto-stop if there are continuous request sources
+    if (this.clientTimers.size > 0 || this.clientGroupTimers.size > 0) return;
+
+    // Check if all requests have completed (no active chains, no particles in flight)
+    if (this.activeChains.size === 0 && this.particleManager.getCount() === 0) {
+      this.callbacks.onSimulationComplete?.();
+    }
   }
 
   private startHttpClients(): void {
@@ -367,7 +468,10 @@ export class SimulationEngine {
 
     // Record metric
     this.metrics.recordRequestSent();
-    this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+    this.pushMetricsUpdate();
+
+    // Generate chainId early so it can be tracked from the first event
+    const chainId = generateParticleId();
 
     // Create request event
     const event = createRequestSentEvent(
@@ -375,7 +479,9 @@ export class SimulationEngine {
       edge.target,
       edge.id,
       data.method,
-      data.path
+      data.path,
+      undefined,
+      chainId
     );
     simulationEvents.emit(event);
 
@@ -389,6 +495,7 @@ export class SimulationEngine {
       progress: 0,
       duration: requestDuration,
       startTime: Date.now(),
+      data: { chainId },
     };
 
     this.particleManager.add(particle);
@@ -440,7 +547,7 @@ export class SimulationEngine {
     // Emit REQUEST_RECEIVED event
     const clientData = client.data as HttpClientNodeData;
     simulationEvents.emit(createRequestReceivedEvent(
-      client.id, server.id, clientData.method, clientData.path
+      client.id, server.id, clientData.method, clientData.path, chainId
     ));
 
     // Use handler pattern for consistent behavior
@@ -462,7 +569,7 @@ export class SimulationEngine {
     };
 
     // Emit PROCESSING_START event
-    simulationEvents.emit(createProcessingStartEvent(server.id));
+    simulationEvents.emit(createProcessingStartEvent(server.id, chainId));
 
     // Get handler and decision
     const nodeType = server.type ?? 'default';
@@ -523,6 +630,28 @@ export class SimulationEngine {
   }
 
   /**
+   * Selectionne un type de requete (method + path) depuis la distribution configuree.
+   * Utilise une selection aleatoire ponderee si requestDistribution est defini,
+   * sinon retourne method + selectRandomPath par defaut.
+   */
+  private selectRequestType(data: ClientGroupNodeData): { method: import('@/types').HttpMethod; path: string; body?: string } {
+    if (data.requestDistribution && data.requestDistribution.length > 0) {
+      const totalWeight = data.requestDistribution.reduce((sum, d) => sum + d.weight, 0);
+      let random = Math.random() * totalWeight;
+      for (const dist of data.requestDistribution) {
+        random -= dist.weight;
+        if (random <= 0) {
+          return { method: dist.method, path: dist.path, body: dist.body };
+        }
+      }
+      // Fallback to last entry
+      const last = data.requestDistribution[data.requestDistribution.length - 1];
+      return { method: last.method, path: last.path, body: last.body };
+    }
+    return { method: data.method, path: this.selectRandomPath(data) };
+  }
+
+  /**
    * Forward a request from an intermediary node to downstream nodes
    * Uses handlers to determine the forwarding strategy
    */
@@ -567,7 +696,7 @@ export class SimulationEngine {
     const chain = this.activeChains.get(chainId);
 
     // Emit PROCESSING_END event
-    simulationEvents.emit(createProcessingEndEvent(sourceNode.id));
+    simulationEvents.emit(createProcessingEndEvent(sourceNode.id, chainId));
 
     switch (decision.action) {
       case 'forward':
@@ -633,9 +762,9 @@ export class SimulationEngine {
       case 'reject':
         // Record rejection and send error response
         this.metrics.recordRejection();
-        this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+        this.pushMetricsUpdate();
         this.callbacks.onNodeStatusChange(sourceNode.id, 'error');
-        simulationEvents.emit(createErrorEvent(sourceNode.id, decision.reason || 'rejected'));
+        simulationEvents.emit(createErrorEvent(sourceNode.id, decision.reason || 'rejected', chainId));
         this.sendChainResponse(chainId, sourceNode);
         break;
 
@@ -751,7 +880,7 @@ export class SimulationEngine {
 
     // Emit REQUEST_RECEIVED event
     simulationEvents.emit(createRequestReceivedEvent(
-      sourceNode.id, targetNode.id, 'GET', chain.requestPath || '/'
+      sourceNode.id, targetNode.id, 'GET', chain.requestPath || '/', chainId
     ));
 
     const processingDelay = this.getNodeProcessingDelay(targetNode);
@@ -771,7 +900,7 @@ export class SimulationEngine {
     };
 
     // Emit PROCESSING_START event
-    simulationEvents.emit(createProcessingStartEvent(targetNode.id));
+    simulationEvents.emit(createProcessingStartEvent(targetNode.id, chainId));
 
     // Get outgoing edges for this node
     const outgoingEdges = this.edges.filter((e) => e.source === targetNode.id);
@@ -864,7 +993,24 @@ export class SimulationEngine {
           // Record final metrics
           const latency = Date.now() - chain.startTime;
           this.metrics.recordResponse(!isError, latency);
-          this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+          this.pushMetricsUpdate();
+
+          // Emit RESPONSE_RECEIVED event at origin
+          const lastServerInPath = chain.currentPath.length > 1 ? chain.currentPath[1] : originNode.id;
+          simulationEvents.emit(createResponseReceivedEvent(
+            lastServerInPath,
+            originNode.id,
+            isError ? 500 : 200,
+            latency,
+            chainId
+          ));
+
+          // Record per-server metrics for all servers in the chain
+          for (const nodeId of chain.currentPath) {
+            if (this.serverStates.has(nodeId)) {
+              this.metrics.recordServerResponse(nodeId, !isError, latency);
+            }
+          }
 
           // If this was a client group request, mark virtual client as completed
           if (originNode.type === 'client-group' && chain.virtualClientId !== undefined) {
@@ -879,6 +1025,9 @@ export class SimulationEngine {
           }, 300 / this.speed);
         }
         this.activeChains.delete(chainId);
+
+        // Check if all finite requests have completed
+        this.checkCompletion();
       }
       return;
     }
@@ -912,7 +1061,7 @@ export class SimulationEngine {
     // Emit RESPONSE_SENT event
     simulationEvents.emit(createResponseSentEvent(
       currentNodeId, previousNodeId, edgeId, isError ? 500 : 200, undefined,
-      Date.now() - chain.startTime
+      Date.now() - chain.startTime, chainId
     ));
 
     // Schedule arrival at previous node
@@ -921,6 +1070,24 @@ export class SimulationEngine {
 
       // Remove particle
       this.particleManager.remove(particle.id);
+
+      // Appeler handleResponsePassthrough si le handler du nœud courant le supporte
+      if (currentNode) {
+        const nodeType = currentNode.type ?? 'default';
+        const handler = this.handlerRegistry.getHandler(nodeType);
+        if (handler.handleResponsePassthrough && chain) {
+          const responseContext: RequestContext = {
+            chainId,
+            originNodeId: chain.originNodeId,
+            virtualClientId: chain.virtualClientId,
+            startTime: chain.startTime,
+            currentPath: chain.currentPath,
+            edgePath: chain.edgePath,
+            requestPath: chain.requestPath,
+          };
+          handler.handleResponsePassthrough(currentNode, responseContext, isError);
+        }
+      }
 
       // Update statuses
       this.callbacks.onNodeStatusChange(currentNodeId, 'idle');
@@ -1033,8 +1200,8 @@ export class SimulationEngine {
       if (decision === 'reject') {
         // Record rejection
         this.metrics.recordRejection();
-        this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
-        simulationEvents.emit(createErrorEvent(targetNode.id, 'capacity'));
+        this.pushMetricsUpdate();
+        simulationEvents.emit(createErrorEvent(targetNode.id, 'capacity', undefined));
         return;
       }
 
@@ -1061,23 +1228,25 @@ export class SimulationEngine {
 
     // Record metric
     this.metrics.recordRequestSent();
-    this.callbacks.onMetricsUpdate(this.metrics.getMetrics());
+    this.pushMetricsUpdate();
 
-    // Select a random path from the paths array, or use the default path
-    const selectedPath = this.selectRandomPath(data);
+    // Select request type (method + path) from distribution or defaults
+    const reqType = this.selectRequestType(data);
+
+    // Create a request chain for tracking
+    const chainId = generateParticleId();
 
     // Create request event
     const event = createRequestSentEvent(
       group.id,
       edge.target,
       edge.id,
-      data.method,
-      selectedPath
+      reqType.method,
+      reqType.path,
+      reqType.body,
+      chainId
     );
     simulationEvents.emit(event);
-
-    // Create a request chain for tracking
-    const chainId = generateParticleId();
     const chain: RequestChain = {
       id: chainId,
       originNodeId: group.id,
@@ -1085,7 +1254,7 @@ export class SimulationEngine {
       edgePath: [],
       virtualClientId,
       startTime: Date.now(),
-      requestPath: selectedPath,
+      requestPath: reqType.path,
     };
     this.activeChains.set(chainId, chain);
 
@@ -1251,6 +1420,32 @@ export class SimulationEngine {
   }
 
   /**
+   * Start periodic time-series snapshot capture (every 5 seconds).
+   */
+  private startTimeSeriesCapture(): void {
+    this.timeSeriesInterval = setInterval(() => {
+      if (this.state !== 'running') return;
+
+      // Build resource utilization map for snapshot
+      const resourceUtils = new Map<string, { cpu: number; memory: number }>();
+      this.serverStates.forEach((state, nodeId) => {
+        resourceUtils.set(nodeId, {
+          cpu: state.utilization.cpu,
+          memory: state.utilization.memory,
+        });
+      });
+
+      const snapshot = this.metrics.captureSnapshot(resourceUtils);
+      this.callbacks.onTimeSeriesSnapshot?.(snapshot);
+    }, 5000);
+  }
+
+  /** Get all captured time-series snapshots. */
+  getTimeSeries(): import('@/types').TimeSeriesSnapshot[] {
+    return this.metrics.getTimeSeries();
+  }
+
+  /**
    * Start periodic resource sampling
    */
   private startResourceSampling(): void {
@@ -1268,6 +1463,11 @@ export class SimulationEngine {
           queue.length,
           this.metrics.getMetrics().requestsPerSecond
         );
+
+        // Enrich with per-server throughput and error rate
+        const serverMetrics = this.metrics.getServerMetrics(nodeId);
+        utilization.throughput = serverMetrics.throughput;
+        utilization.errorRate = serverMetrics.errorRate;
 
         state.utilization = utilization;
 

@@ -45,6 +45,11 @@ export class ParticleManager {
     return this.activeParticles.get(particleId);
   }
 
+  /** Retourne le nombre de particules actives. */
+  getCount(): number {
+    return this.activeParticles.size;
+  }
+
   /** Demarre la boucle d'animation a 60fps. Met a jour la progression de chaque particule. */
   startAnimationLoop(getState: () => string): void {
     const animate = () => {

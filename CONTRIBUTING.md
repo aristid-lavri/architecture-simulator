@@ -6,6 +6,7 @@ Merci de votre interet pour Architecture Simulator ! Ce guide vous explique comm
 
 ## Table des matieres
 
+- [Contributor License Agreement (CLA)](#contributor-license-agreement-cla)
 - [Code de conduite](#code-de-conduite)
 - [Comment contribuer](#comment-contribuer)
 - [Configurer l'environnement](#configurer-lenvironnement)
@@ -16,6 +17,20 @@ Merci de votre interet pour Architecture Simulator ! Ce guide vous explique comm
 - [Soumettre une Pull Request](#soumettre-une-pull-request)
 - [Signaler un bug](#signaler-un-bug)
 - [Proposer une fonctionnalite](#proposer-une-fonctionnalite)
+
+---
+
+## Contributor License Agreement (CLA)
+
+Avant votre premiere Pull Request, vous devez signer notre **Contributor License Agreement (CLA)**. Cela nous permet de distribuer le projet sous differentes licences (open source et commerciale).
+
+Le processus est automatise :
+1. Ouvrez votre PR
+2. Le bot CLA Assistant vous demande de signer (une seule fois)
+3. Signez en commentant `I have read the CLA Document and I hereby sign the CLA`
+4. Le bot valide automatiquement vos futures PRs
+
+Le texte complet du CLA est disponible dans [.github/CLA.md](.github/CLA.md).
 
 ---
 

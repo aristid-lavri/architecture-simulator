@@ -1,4 +1,4 @@
-import type { SimulationMetrics, ExtendedSimulationMetrics, ResourceSample, ClientGroupMetrics } from '@/types';
+import type { SimulationMetrics, ExtendedSimulationMetrics, ResourceSample, ClientGroupMetrics, TimeSeriesSnapshot } from '@/types';
 
 /**
  * Collecteur de metriques pour la simulation.
@@ -22,6 +22,12 @@ export class MetricsCollector {
     queuedCount: 0,
   };
   private clientGroupStats: Map<string, ClientGroupMetrics> = new Map();
+
+  // Per-server metrics tracking
+  private perServerMetrics: Map<string, { requests: number; errors: number; totalLatency: number; lastRpsUpdate: number; rps: number }> = new Map();
+
+  // Time-series snapshots
+  private timeSeries: TimeSeriesSnapshot[] = [];
 
   constructor() {
     this.metrics = this.createInitialMetrics();
@@ -119,6 +125,40 @@ export class MetricsCollector {
     return this.getPercentile(99);
   }
 
+  /**
+   * Capture un snapshot temporel des metriques courantes et par serveur.
+   * Appele periodiquement (ex: toutes les 5s) par le SimulationEngine.
+   */
+  captureSnapshot(resourceUtilizations: Map<string, { cpu: number; memory: number }>): TimeSeriesSnapshot {
+    const elapsed = this.metrics.startTime ? Date.now() - this.metrics.startTime : 0;
+    const perServer: TimeSeriesSnapshot['perServer'] = {};
+
+    for (const [nodeId, m] of this.perServerMetrics) {
+      const util = resourceUtilizations.get(nodeId);
+      perServer[nodeId] = {
+        requests: m.requests,
+        errors: m.errors,
+        avgLatency: m.requests > 0 ? Math.round(m.totalLatency / m.requests) : 0,
+        cpu: util?.cpu ?? 0,
+        memory: util?.memory ?? 0,
+      };
+    }
+
+    const snapshot: TimeSeriesSnapshot = {
+      timestamp: Date.now(),
+      elapsed,
+      metrics: { ...this.metrics },
+      perServer,
+    };
+
+    this.timeSeries.push(snapshot);
+    return snapshot;
+  }
+
+  getTimeSeries(): TimeSeriesSnapshot[] {
+    return [...this.timeSeries];
+  }
+
   reset(): void {
     this.metrics = this.createInitialMetrics();
     this.latencies = [];
@@ -131,6 +171,8 @@ export class MetricsCollector {
       queuedCount: 0,
     };
     this.clientGroupStats.clear();
+    this.perServerMetrics.clear();
+    this.timeSeries = [];
   }
 
   // ============================================
@@ -176,6 +218,33 @@ export class MetricsCollector {
       activeClients: 0,
     };
     this.clientGroupStats.set(groupId, { ...existing, ...updates });
+  }
+
+  // Per-server metrics
+  recordServerResponse(nodeId: string, success: boolean, latency: number): void {
+    const existing = this.perServerMetrics.get(nodeId) || {
+      requests: 0, errors: 0, totalLatency: 0, lastRpsUpdate: Date.now(), rps: 0
+    };
+    existing.requests++;
+    if (!success) existing.errors++;
+    existing.totalLatency += latency;
+
+    // Calculate server-specific RPS
+    const elapsed = (Date.now() - existing.lastRpsUpdate) / 1000;
+    if (elapsed > 0) {
+      existing.rps = Math.round((existing.requests / elapsed) * 100) / 100;
+    }
+
+    this.perServerMetrics.set(nodeId, existing);
+  }
+
+  getServerMetrics(nodeId: string): { throughput: number; errorRate: number } {
+    const m = this.perServerMetrics.get(nodeId);
+    if (!m || m.requests === 0) return { throughput: 0, errorRate: 0 };
+    return {
+      throughput: m.rps,
+      errorRate: Math.round((m.errors / m.requests) * 10000) / 100,
+    };
   }
 
   getExtendedMetrics(): ExtendedSimulationMetrics {

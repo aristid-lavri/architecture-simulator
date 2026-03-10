@@ -104,6 +104,7 @@ export interface SimulationEvent {
   sourceNodeId: string;
   targetNodeId?: string;
   edgeId?: string;
+  chainId?: string;
   timestamp: number;
   data: {
     method?: HttpMethod;
@@ -196,6 +197,14 @@ export type LoadDistribution = 'uniform' | 'random' | 'burst';
 /** Courbe de montee en charge progressive des clients virtuels. */
 export type RampUpCurve = 'linear' | 'exponential' | 'step';
 
+/** Definition d'un type de requete avec un poids pour la selection aleatoire ponderee. */
+export interface RequestTypeDistribution {
+  method: HttpMethod;
+  path: string;
+  weight: number; // poids relatif (ex: 60 pour 60%)
+  body?: string;
+}
+
 // ============================================
 // Client Group Node Data
 // ============================================
@@ -234,6 +243,10 @@ export interface ClientGroupNodeData {
   path: string;                       // Path principal (rétrocompatibilité)
   paths?: string[];                   // Liste de paths pour sélection aléatoire
   requestBody?: string;
+
+  // Distribution de types de requêtes (method + path + poids)
+  // Si défini et non vide, chaque requête est choisie selon les poids
+  requestDistribution?: RequestTypeDistribution[];
 
   // Statistiques runtime
   activeClients?: number;
@@ -300,6 +313,9 @@ export interface ResourceUtilization {
   disk?: number;                      // Utilisation disque % (0-100)
   activeConnections: number;          // Connexions actives
   queuedRequests: number;             // Requêtes en file d'attente
+  saturation?: number;                // Max de cpu/memory/network (0-100)
+  throughput?: number;                // Requetes traitees/sec pour ce serveur
+  errorRate?: number;                 // Taux d'erreur pour ce serveur (0-100%)
 }
 
 // ============================================
@@ -319,6 +335,17 @@ export interface DegradationSettings {
 // ============================================
 // Extended HTTP Server Node Data
 // ============================================
+
+/** Niveau de complexite du code applicatif. Multiplie le temps de traitement par requete. */
+export type ProcessingComplexity = 'light' | 'medium' | 'heavy' | 'very-heavy';
+
+/** Multiplicateurs de temps de traitement selon la complexite du code. */
+export const complexityMultipliers: Record<ProcessingComplexity, number> = {
+  'light': 0.5,
+  'medium': 1.0,
+  'heavy': 2.5,
+  'very-heavy': 5.0,
+};
 
 /**
  * Donnees d'un noeud HTTP Server avec gestion des ressources et degradation.
@@ -347,6 +374,9 @@ export interface HttpServerNodeData {
 
   // Paramètres dégradation
   degradation: DegradationSettings;
+
+  // Complexite du code applicatif (multiplicateur de temps de traitement)
+  processingComplexity?: ProcessingComplexity;
 
   [key: string]: unknown;
 }
@@ -380,6 +410,20 @@ export interface ExtendedSimulationMetrics extends SimulationMetrics {
 
   // Stats par groupe de clients
   clientGroupStats: Map<string, ClientGroupMetrics>;
+}
+
+/** Snapshot temporel des metriques pour analyse par intervalle de temps. */
+export interface TimeSeriesSnapshot {
+  timestamp: number;
+  elapsed: number; // ms since simulation start
+  metrics: SimulationMetrics;
+  perServer: Record<string, {
+    requests: number;
+    errors: number;
+    avgLatency: number;
+    cpu: number;
+    memory: number;
+  }>;
 }
 
 /** Echantillon de ressources a un instant T, enregistre toutes les 100ms. */

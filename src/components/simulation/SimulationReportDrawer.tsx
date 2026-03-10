@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -14,10 +15,16 @@ import {
   AlertTriangle,
   Download,
   RotateCcw,
+  ScrollText,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSimulationStore, type SimulationReport } from '@/store/simulation-store';
+import { useArchitectureStore } from '@/store/architecture-store';
 import { cn } from '@/lib/utils';
+import type { SimulationEvent, SimulationEventType, TimeSeriesSnapshot } from '@/types';
+import { MetricSparkline } from './MetricSparkline';
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -31,6 +38,16 @@ function formatNumber(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
   return num.toString();
+}
+
+function SaturationBadge({ saturation }: { saturation: number }) {
+  if (saturation >= 90) {
+    return <span className="text-xs px-2 py-0.5 bg-red-500/15 text-red-500 font-medium rounded">SATURE</span>;
+  }
+  if (saturation >= 70) {
+    return <span className="text-xs px-2 py-0.5 bg-yellow-500/15 text-yellow-500 font-medium rounded">DEGRADE</span>;
+  }
+  return <span className="text-xs px-2 py-0.5 bg-green-500/15 text-green-500 font-medium rounded">OK</span>;
 }
 
 interface MetricCardProps {
@@ -54,6 +71,193 @@ function MetricCard({ icon, label, value, subValue, color = 'text-foreground' }:
   );
 }
 
+const EVENT_TYPE_STYLES: Record<SimulationEventType, { label: string; color: string }> = {
+  REQUEST_SENT: { label: 'REQ→', color: 'text-blue-400' },
+  REQUEST_RECEIVED: { label: 'REQ←', color: 'text-blue-300' },
+  PROCESSING_START: { label: 'PROC', color: 'text-muted-foreground' },
+  PROCESSING_END: { label: 'DONE', color: 'text-muted-foreground' },
+  RESPONSE_SENT: { label: 'RES→', color: 'text-green-500' },
+  RESPONSE_RECEIVED: { label: 'RES←', color: 'text-green-500' },
+  ERROR: { label: 'ERR', color: 'text-red-500' },
+};
+
+interface ChainSummary {
+  chainId: string;
+  events: SimulationEvent[];
+  hasError: boolean;
+  totalLatency: number | null;
+  status: 'success' | 'error' | 'incomplete';
+}
+
+function TracesSection({ events }: { events: SimulationEvent[] }) {
+  const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set());
+  const nodes = useArchitectureStore((s) => s.nodes);
+
+  const labelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const node of nodes) {
+      map.set(node.id, (node.data as { label?: string }).label || node.id.split('-')[0]);
+    }
+    return map;
+  }, [nodes]);
+
+  const getLabel = (id: string) => labelMap.get(id) || id.split('-')[0];
+
+  const chains = useMemo((): ChainSummary[] => {
+    const groups = new Map<string, SimulationEvent[]>();
+    for (const e of events) {
+      const key = e.chainId || '__no_chain__';
+      const list = groups.get(key) || [];
+      list.push(e);
+      groups.set(key, list);
+    }
+
+    const result: ChainSummary[] = [];
+    for (const [chainId, evts] of groups) {
+      const hasError = evts.some((e) => e.type === 'ERROR');
+      const responseSent = evts.find((e) => e.type === 'RESPONSE_SENT' && e.data.latency !== undefined);
+      const hasResponse = evts.some((e) => e.type === 'RESPONSE_SENT' || e.type === 'RESPONSE_RECEIVED');
+      result.push({
+        chainId,
+        events: evts,
+        hasError,
+        totalLatency: responseSent?.data.latency ?? null,
+        status: hasError ? 'error' : hasResponse ? 'success' : 'incomplete',
+      });
+    }
+
+    // Sort: errors first, then by time
+    result.sort((a, b) => {
+      if (a.hasError !== b.hasError) return a.hasError ? -1 : 1;
+      return a.events[0].timestamp - b.events[0].timestamp;
+    });
+
+    return result;
+  }, [events]);
+
+  const toggleChain = (chainId: string) => {
+    setExpandedChains((prev) => {
+      const next = new Set(prev);
+      if (next.has(chainId)) next.delete(chainId);
+      else next.add(chainId);
+      return next;
+    });
+  };
+
+  const statusCounts = useMemo(() => {
+    const success = chains.filter((c) => c.status === 'success').length;
+    const error = chains.filter((c) => c.status === 'error').length;
+    const incomplete = chains.filter((c) => c.status === 'incomplete').length;
+    return { success, error, incomplete };
+  }, [chains]);
+
+  if (events.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <h4 className="font-medium flex items-center gap-2">
+        <ScrollText className="h-4 w-4" />
+        Traces des requêtes
+      </h4>
+
+      {/* Summary badges */}
+      <div className="flex gap-3 text-xs mb-2">
+        <span className="px-2 py-0.5 bg-green-500/10 text-green-500 rounded">
+          {statusCounts.success} succès
+        </span>
+        {statusCounts.error > 0 && (
+          <span className="px-2 py-0.5 bg-red-500/10 text-red-500 rounded">
+            {statusCounts.error} erreurs
+          </span>
+        )}
+        {statusCounts.incomplete > 0 && (
+          <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-500 rounded">
+            {statusCounts.incomplete} incomplètes
+          </span>
+        )}
+        <span className="text-muted-foreground">{events.length} événements total</span>
+      </div>
+
+      {/* Chain list */}
+      <div className="bg-muted/30 rounded-lg border max-h-80 overflow-y-auto">
+        {chains.map((chain) => {
+          const isExpanded = expandedChains.has(chain.chainId);
+          const firstEvent = chain.events[0];
+          return (
+            <div key={chain.chainId} className="border-b border-border/30 last:border-0">
+              <div
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-muted/30 text-sm',
+                  chain.hasError && 'bg-red-500/5'
+                )}
+                onClick={() => toggleChain(chain.chainId)}
+              >
+                {isExpanded
+                  ? <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+                  : <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                }
+                <span className="text-[10px] font-mono px-1 bg-muted/50 text-muted-foreground rounded">
+                  {chain.chainId.slice(-6)}
+                </span>
+                <span className={cn(
+                  'text-xs px-1.5 py-0.5 rounded',
+                  chain.status === 'success' && 'bg-green-500/10 text-green-500',
+                  chain.status === 'error' && 'bg-red-500/10 text-red-500',
+                  chain.status === 'incomplete' && 'bg-yellow-500/10 text-yellow-500',
+                )}>
+                  {chain.status === 'success' ? 'OK' : chain.status === 'error' ? 'ERR' : '...'}
+                </span>
+                {chain.totalLatency !== null && (
+                  <span className="text-xs text-blue-400">{chain.totalLatency}ms</span>
+                )}
+                <span className="text-xs text-muted-foreground">{chain.events.length} evt</span>
+                {firstEvent.data.method && (
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {firstEvent.data.method} {firstEvent.data.path}
+                  </span>
+                )}
+              </div>
+              {isExpanded && (
+                <div className="pl-6 pr-3 pb-2 font-mono text-[11px] leading-relaxed">
+                  {chain.events.map((event) => {
+                    const config = EVENT_TYPE_STYLES[event.type];
+                    return (
+                      <div key={event.id} className="flex gap-2">
+                        <span className="text-muted-foreground/60 shrink-0">
+                          {new Date(event.timestamp).toLocaleTimeString('fr-FR', { hour12: false, fractionalSecondDigits: 3 })}
+                        </span>
+                        <span className={cn('shrink-0 w-10', config.color)}>{config.label}</span>
+                        <span className="text-foreground/80">{getLabel(event.sourceNodeId)}</span>
+                        {event.targetNodeId && (
+                          <>
+                            <span className="text-muted-foreground/40">→</span>
+                            <span className="text-foreground/80">{getLabel(event.targetNodeId)}</span>
+                          </>
+                        )}
+                        {event.data.status && (
+                          <span className={cn(
+                            event.data.status >= 400 ? 'text-red-500' : 'text-green-500'
+                          )}>{event.data.status}</span>
+                        )}
+                        {event.data.latency !== undefined && (
+                          <span className="text-blue-400">{event.data.latency}ms</span>
+                        )}
+                        {event.data.error && (
+                          <span className="text-red-500">{event.data.error}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface ReportContentProps {
   report: SimulationReport;
 }
@@ -69,16 +273,18 @@ function ReportContent({ report }: ReportContentProps) {
     ? Math.round((metrics.successCount / metrics.responsesReceived) * 100)
     : 0;
 
-  const endReasonLabels = {
+  const endReasonLabels: Record<string, string> = {
     manual: 'Arrêt manuel',
     timeout: 'Fin du délai',
     error: 'Erreur',
+    completed: 'Terminée',
   };
 
-  const endReasonColors = {
+  const endReasonColors: Record<string, string> = {
     manual: 'text-blue-500',
     timeout: 'text-green-500',
     error: 'text-red-500',
+    completed: 'text-green-500',
   };
 
   return (
@@ -159,6 +365,41 @@ function ReportContent({ report }: ReportContentProps) {
         </div>
       </div>
 
+      {/* Time Series Evolution */}
+      {report.timeSeries && report.timeSeries.length > 2 && (
+        <div className="space-y-2">
+          <h4 className="font-medium flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Évolution temporelle
+          </h4>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-muted/50 rounded-lg p-3">
+              <div className="text-xs text-muted-foreground mb-2">RPS</div>
+              <MetricSparkline
+                data={report.timeSeries.map((s: TimeSeriesSnapshot) => s.metrics.requestsPerSecond)}
+                width={200} height={40} color="text-blue-400"
+              />
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3">
+              <div className="text-xs text-muted-foreground mb-2">Latence moyenne</div>
+              <MetricSparkline
+                data={report.timeSeries.map((s: TimeSeriesSnapshot) =>
+                  s.metrics.responsesReceived > 0 ? Math.round(s.metrics.totalLatency / s.metrics.responsesReceived) : 0
+                )}
+                width={200} height={40} color="text-yellow-500"
+              />
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3">
+              <div className="text-xs text-muted-foreground mb-2">Erreurs cumulées</div>
+              <MetricSparkline
+                data={report.timeSeries.map((s: TimeSeriesSnapshot) => s.metrics.errorCount)}
+                width={200} height={40} color="text-red-500"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Client Groups Stats */}
       {Object.keys(clientGroupStats).length > 0 && (
         <div className="space-y-2">
@@ -194,10 +435,15 @@ function ReportContent({ report }: ReportContentProps) {
             Utilisation des ressources serveur
           </h4>
           <div className="space-y-2">
-            {Object.entries(resourceUtilizations).map(([nodeId, util]) => (
+            {Object.entries(resourceUtilizations).map(([nodeId, util]) => {
+              const saturation = Math.max(util.cpu, util.memory, util.network);
+              return (
               <div key={nodeId} className="bg-muted/50 rounded-lg p-3">
-                <div className="text-sm font-medium mb-2 truncate">
-                  {nodeId.split('-').slice(0, 2).join('-')}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-medium truncate">
+                    {nodeId.split('-').slice(0, 2).join('-')}
+                  </span>
+                  <SaturationBadge saturation={saturation} />
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-xs">
                   <div>
@@ -238,10 +484,35 @@ function ReportContent({ report }: ReportContentProps) {
                   </div>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
       )}
+
+      {/* Saturation Summary */}
+      {Object.keys(resourceUtilizations).length > 0 && (() => {
+        const entries = Object.values(resourceUtilizations);
+        const saturated = entries.filter(u => Math.max(u.cpu, u.memory, u.network) >= 90).length;
+        const degraded = entries.filter(u => { const s = Math.max(u.cpu, u.memory, u.network); return s >= 70 && s < 90; }).length;
+        const healthy = entries.filter(u => Math.max(u.cpu, u.memory, u.network) < 70).length;
+        return (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-green-500/10 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-green-500">{healthy}</div>
+              <div className="text-xs text-muted-foreground">Serveurs OK</div>
+            </div>
+            <div className="bg-yellow-500/10 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-yellow-500">{degraded}</div>
+              <div className="text-xs text-muted-foreground">Degraded</div>
+            </div>
+            <div className="bg-red-500/10 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-red-500">{saturated}</div>
+              <div className="text-xs text-muted-foreground">Satures</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Warnings */}
       {(metrics.errorCount > 0 || Object.values(resourceUtilizations).some(u => u.cpu > 90 || u.memory > 90)) && (
@@ -262,6 +533,11 @@ function ReportContent({ report }: ReportContentProps) {
             )}
           </ul>
         </div>
+      )}
+
+      {/* Request Traces */}
+      {report.events && report.events.length > 0 && (
+        <TracesSection events={report.events} />
       )}
     </div>
   );

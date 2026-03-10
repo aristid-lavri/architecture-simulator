@@ -7,7 +7,7 @@ import { Server } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ResourceGauges from './ResourceGauges';
 import { useAppStore } from '@/store/app-store';
-import type { NodeStatus, ServerResources, ResourceUtilization, DegradationSettings } from '@/types';
+import type { NodeStatus, ServerResources, ResourceUtilization, DegradationSettings, ProcessingComplexity } from '@/types';
 import { defaultServerResources } from '@/types';
 
 export interface HttpServerNodeData {
@@ -21,6 +21,7 @@ export interface HttpServerNodeData {
   resources?: ServerResources;
   utilization?: ResourceUtilization;
   degradation?: DegradationSettings;
+  processingComplexity?: ProcessingComplexity;
   [key: string]: unknown;
 }
 

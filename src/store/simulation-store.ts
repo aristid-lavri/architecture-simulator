@@ -2,12 +2,16 @@ import { create } from 'zustand';
 import type {
   SimulationState,
   SimulationMetrics,
+  SimulationEvent,
+  TimeSeriesSnapshot,
   Particle,
   NodeState,
   NodeStatus,
   ResourceUtilization,
+  ResourceSample,
   ClientGroupMetrics,
 } from '@/types';
+import { simulationEvents } from '@/engine/events';
 
 /** Rapport genere a l'arret de la simulation avec metriques finales et historique. */
 export interface SimulationReport {
@@ -16,8 +20,10 @@ export interface SimulationReport {
   metrics: SimulationMetrics;
   resourceUtilizations: Record<string, ResourceUtilization>;
   clientGroupStats: Record<string, ClientGroupMetrics>;
-  endReason: 'manual' | 'timeout' | 'error';
+  endReason: 'manual' | 'timeout' | 'error' | 'completed';
   timestamp: number;
+  events: SimulationEvent[]; // request traces captured at stop time
+  timeSeries: TimeSeriesSnapshot[]; // metrics snapshots over time
 }
 
 /**
@@ -45,17 +51,27 @@ interface SimulationStore {
   // Resource utilization for stress testing
   resourceUtilizations: Map<string, ResourceUtilization>;
 
+  // Resource history for sparklines (last 60s)
+  resourceHistory: ResourceSample[];
+
   // Client group stats for stress testing
   clientGroupStats: Map<string, ClientGroupMetrics>;
+
+  // Time-series metrics snapshots
+  metricsTimeSeries: TimeSeriesSnapshot[];
 
   // Report
   report: SimulationReport | null;
   showReport: boolean;
 
+  // Engine metrics provider (set by FlowCanvas to pull fresh metrics from engine)
+  _engineMetricsProvider: (() => SimulationMetrics) | null;
+  registerEngineMetricsProvider: (provider: (() => SimulationMetrics) | null) => void;
+
   // Actions - Simulation control
   start: () => void;
   pause: () => void;
-  stop: (reason?: 'manual' | 'timeout' | 'error') => void;
+  stop: (reason?: 'manual' | 'timeout' | 'error' | 'completed') => void;
   reset: () => void;
   setSpeed: (speed: number) => void;
   setDuration: (duration: number | null) => void;
@@ -84,12 +100,16 @@ interface SimulationStore {
 
   // Actions - Resource utilization
   setResourceUtilization: (nodeId: string, utilization: ResourceUtilization) => void;
+  addResourceSample: (sample: ResourceSample) => void;
   clearResourceUtilizations: () => void;
 
   // Actions - Client group stats
   setClientGroupStats: (groupId: string, stats: ClientGroupMetrics) => void;
   updateClientGroupStats: (groupId: string, activeClients: number, requestsSent: number) => void;
   clearClientGroupStats: () => void;
+
+  // Actions - Time series
+  addTimeSeriesSnapshot: (snapshot: TimeSeriesSnapshot) => void;
 }
 
 const initialMetrics: SimulationMetrics = {
@@ -118,37 +138,56 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   nodeStates: new Map(),
   metrics: { ...initialMetrics },
   resourceUtilizations: new Map(),
+  resourceHistory: [],
   clientGroupStats: new Map(),
+  metricsTimeSeries: [],
   report: null,
   showReport: false,
+  _engineMetricsProvider: null,
+
+  registerEngineMetricsProvider: (provider) => set({ _engineMetricsProvider: provider }),
 
   // Simulation control
-  start: () => set((state) => ({
-    state: 'running',
-    elapsedTime: 0,
-    metrics: {
-      ...state.metrics,
-      startTime: state.metrics.startTime ?? Date.now(),
-    },
-  })),
+  start: () => {
+    // Clear stored events from previous simulation
+    simulationEvents.clearEvents();
+    return set((state) => ({
+      state: 'running',
+      elapsedTime: 0,
+      metrics: {
+        ...state.metrics,
+        startTime: state.metrics.startTime ?? Date.now(),
+      },
+    }));
+  },
 
   pause: () => set({ state: 'paused' }),
 
   stop: (reason = 'manual') => {
     const state = get();
-    const actualDuration = state.metrics.startTime
-      ? Date.now() - state.metrics.startTime
+
+    // Pull fresh metrics from engine if available (source of truth)
+    const freshMetrics = state._engineMetricsProvider ? state._engineMetricsProvider() : null;
+    const metricsForReport = freshMetrics ?? state.metrics;
+
+    const actualDuration = metricsForReport.startTime
+      ? Date.now() - metricsForReport.startTime
       : state.elapsedTime;
 
-    // Generate report
+    // Capture events from the emitter before clearing
+    const capturedEvents = simulationEvents.getEvents();
+
+    // Generate report with fresh engine metrics
     const report: SimulationReport = {
       duration: actualDuration,
       configuredDuration: state.duration ? state.duration * 1000 : null,
-      metrics: { ...state.metrics },
+      metrics: { ...metricsForReport },
       resourceUtilizations: Object.fromEntries(state.resourceUtilizations),
       clientGroupStats: Object.fromEntries(state.clientGroupStats),
       endReason: reason,
       timestamp: Date.now(),
+      events: capturedEvents,
+      timeSeries: [...state.metricsTimeSeries],
     };
 
     set({
@@ -167,7 +206,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     nodeStates: new Map(),
     metrics: { ...initialMetrics },
     resourceUtilizations: new Map(),
+    resourceHistory: [],
     clientGroupStats: new Map(),
+    metricsTimeSeries: [],
   }),
 
   setSpeed: (speed) => set({ speed: Math.max(0.5, Math.min(4, speed)) }),
@@ -262,7 +303,13 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     return { resourceUtilizations: newUtilizations };
   }),
 
-  clearResourceUtilizations: () => set({ resourceUtilizations: new Map() }),
+  addResourceSample: (sample) => set((state) => {
+    const cutoff = Date.now() - 60000;
+    const history = [...state.resourceHistory.filter((s) => s.timestamp > cutoff), sample];
+    return { resourceHistory: history };
+  }),
+
+  clearResourceUtilizations: () => set({ resourceUtilizations: new Map(), resourceHistory: [] }),
 
   // Client group stats
   setClientGroupStats: (groupId, stats) => set((state) => {
@@ -292,6 +339,11 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   }),
 
   clearClientGroupStats: () => set({ clientGroupStats: new Map() }),
+
+  // Time series
+  addTimeSeriesSnapshot: (snapshot) => set((state) => ({
+    metricsTimeSeries: [...state.metricsTimeSeries, snapshot],
+  })),
 }));
 
 /**

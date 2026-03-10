@@ -1,5 +1,5 @@
 import type { Node, Edge } from '@xyflow/react';
-import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { ApiGatewayNodeData, HttpServerNodeData } from '@/types';
 
 /**
@@ -12,6 +12,10 @@ interface GatewayState {
   blockedRequests: number;
   authFailures: number;
   rateLimitHits: number;
+  /** Nombre de requêtes actuellement en cours de traitement (forwarded, pas encore répondues) */
+  activeRequests: number;
+  /** True quand le rate limit a été atteint — bloque toutes nouvelles requêtes jusqu'à ce que activeRequests tombe à 0 */
+  isRateLimited: boolean;
 }
 
 /**
@@ -58,8 +62,24 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
     // Vérifier le rate limiting
     if (data.rateLimiting.enabled) {
+      // Si le rate limiter est actif et qu'il y a encore des requêtes en cours,
+      // rejeter immédiatement toute nouvelle requête (vrai comportement rate limiter)
+      if (state.isRateLimited && state.activeRequests > 0) {
+        state.rateLimitHits++;
+        state.blockedRequests++;
+        return { action: 'reject', reason: 'rate-limit' };
+      }
+
+      // Si on était rate limited mais que toutes les requêtes sont terminées, on reset
+      if (state.isRateLimited && state.activeRequests === 0) {
+        state.isRateLimited = false;
+        state.requestsInWindow = 0;
+        state.windowStartTime = Date.now();
+      }
+
       const rateLimitResult = this.checkRateLimit(state, data);
       if (!rateLimitResult.allowed) {
+        state.isRateLimited = true;
         state.rateLimitHits++;
         state.blockedRequests++;
         return { action: 'reject', reason: 'rate-limit' };
@@ -78,6 +98,9 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
     // Trouver la cible en fonction des règles de routage
     const targetEdge = this.findTargetEdge(data, outgoingEdges, allNodes, context);
+
+    // Incrémenter le compteur de requêtes actives (en vol)
+    state.activeRequests++;
 
     return {
       action: 'forward',
@@ -193,6 +216,25 @@ export class ApiGatewayHandler implements NodeRequestHandler {
   }
 
   /**
+   * Gère le passthrough d'une réponse à travers la gateway.
+   * Décrémente le compteur de requêtes actives.
+   */
+  handleResponsePassthrough(
+    node: Node,
+    _context: RequestContext,
+    isError: boolean
+  ): ResponseDecision {
+    const state = this.getOrCreateState(node.id);
+
+    // Décrémenter le compteur de requêtes en vol
+    if (state.activeRequests > 0) {
+      state.activeRequests--;
+    }
+
+    return { action: 'passthrough', isError };
+  }
+
+  /**
    * Récupère les statistiques d'une gateway
    */
   getStats(nodeId: string): {
@@ -229,6 +271,8 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       blockedRequests: 0,
       authFailures: 0,
       rateLimitHits: 0,
+      activeRequests: 0,
+      isRateLimited: false,
     };
   }
 }

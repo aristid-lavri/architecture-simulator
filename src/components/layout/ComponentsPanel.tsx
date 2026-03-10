@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -27,6 +27,7 @@ import {
 import { useTranslation } from '@/i18n';
 import { cn } from '@/lib/utils';
 import type { ComponentType } from '@/types';
+import { pluginRegistry } from '@/plugins';
 
 interface ComponentItem {
   type: ComponentType;
@@ -322,12 +323,49 @@ export function ComponentsPanel() {
     });
   }, []);
 
-  const categories: CategoryConfig[] = CATEGORY_ORDER.map(({ key, label }) => ({
-    key,
-    label,
-    signalColor: CATEGORY_SIGNAL_COLORS[key],
-    items: COMPONENTS.filter((c) => c.category === key),
-  }));
+  // Réagir aux changements de plugins
+  const pluginSnapshot = useSyncExternalStore(
+    (cb) => pluginRegistry.subscribe(cb),
+    () => pluginRegistry.getRegisteredPlugins().length,
+    () => 0,
+  );
+
+  const categories: CategoryConfig[] = useMemo(() => {
+    // Convertir les nœuds de plugins en ComponentItem
+    const pluginItems: ComponentItem[] = pluginRegistry.getNodeDefinitions()
+      .filter(def => def.panel)
+      .map(def => ({
+        type: def.type as ComponentType,
+        nameKey: def.panel!.name,
+        descriptionKey: def.panel!.description,
+        icon: def.panel!.icon,
+        signalColor: def.panel!.signalColor,
+        category: def.panel!.category as ComponentItem['category'],
+      }));
+
+    const allComponents = [...COMPONENTS, ...pluginItems];
+
+    // Collecter les catégories dynamiques des plugins
+    const pluginCategories = new Set(
+      pluginItems.map(p => p.category).filter(c => !CATEGORY_ORDER.some(co => co.key === c))
+    );
+
+    const allCategoryOrder = [
+      ...CATEGORY_ORDER,
+      ...Array.from(pluginCategories).map(key => ({
+        key: key as ComponentItem['category'],
+        label: key.toUpperCase(),
+      })),
+    ];
+
+    return allCategoryOrder.map(({ key, label }) => ({
+      key,
+      label,
+      signalColor: CATEGORY_SIGNAL_COLORS[key] || 'oklch(0.65 0.15 180)',
+      items: allComponents.filter((c) => c.category === key),
+    })).filter(c => c.items.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pluginSnapshot]);
 
   return (
     <div

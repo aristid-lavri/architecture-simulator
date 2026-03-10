@@ -2,21 +2,66 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useSimulationStore, selectAverageLatency, selectSuccessRate } from '@/store/simulation-store';
 import { useAppStore } from '@/store/app-store';
 import { useSimulationEvents } from '@/hooks/useSimulationEvents';
+import { useArchitectureStore } from '@/store/architecture-store';
 import { OutputPanel } from './OutputPanel';
+import { MetricSparkline } from './MetricSparkline';
 import { cn } from '@/lib/utils';
 
 type BottomTab = 'metrics' | 'output';
+
+function SaturationBadge({ saturation }: { saturation: number }) {
+  if (saturation >= 90) {
+    return <span className="text-[8px] px-1 py-0 bg-signal-critical/15 text-signal-critical font-mono" style={{ borderRadius: '2px' }}>SATURE</span>;
+  }
+  if (saturation >= 70) {
+    return <span className="text-[8px] px-1 py-0 bg-signal-warning/15 text-signal-warning font-mono" style={{ borderRadius: '2px' }}>DEGRADE</span>;
+  }
+  return <span className="text-[8px] px-1 py-0 bg-signal-healthy/15 text-signal-healthy font-mono" style={{ borderRadius: '2px' }}>OK</span>;
+}
 
 function MetricsContent() {
   const metrics = useSimulationStore((s) => s.metrics);
   const avgLatency = useSimulationStore(selectAverageLatency);
   const successRate = useSimulationStore(selectSuccessRate);
   const resourceUtilizations = useSimulationStore((s) => s.resourceUtilizations);
+  const resourceHistory = useSimulationStore((s) => s.resourceHistory);
   const clientGroupStats = useSimulationStore((s) => s.clientGroupStats);
+  const metricsTimeSeries = useSimulationStore((s) => s.metricsTimeSeries);
+  const nodes = useArchitectureStore((s) => s.nodes);
+  const [selectedServer, setSelectedServer] = useState<string | null>(null);
+
+  // Node label map
+  const labelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const node of nodes) {
+      map.set(node.id, (node.data as { label?: string }).label || node.id.split('-')[0]);
+    }
+    return map;
+  }, [nodes]);
+
+  // Build sparkline data per server from resourceHistory
+  const serverSparklines = useMemo(() => {
+    const result = new Map<string, { cpu: number[]; memory: number[]; queue: number[] }>();
+    const byNode = new Map<string, typeof resourceHistory>();
+    for (const sample of resourceHistory) {
+      const list = byNode.get(sample.nodeId) || [];
+      list.push(sample);
+      byNode.set(sample.nodeId, list);
+    }
+    for (const [nodeId, samples] of byNode) {
+      const recent = samples.slice(-30);
+      result.set(nodeId, {
+        cpu: recent.map((s) => s.cpu),
+        memory: recent.map((s) => s.memory),
+        queue: recent.map((s) => s.queuedRequests),
+      });
+    }
+    return result;
+  }, [resourceHistory]);
 
   return (
     <div className="px-4 pb-3 border-t border-border pt-3 space-y-3">
@@ -42,6 +87,130 @@ function MetricsContent() {
         </div>
       </div>
 
+      {/* Time Series & Per-Component Filter */}
+      {(metricsTimeSeries.length > 0 || resourceUtilizations.size > 0) && (
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-instrument text-[9px] text-muted-foreground">METRICS PAR COMPOSANT</span>
+            <select
+              value={selectedServer || ''}
+              onChange={(e) => setSelectedServer(e.target.value || null)}
+              className="bg-muted/30 border border-border/50 text-[10px] px-1.5 py-0.5 text-foreground focus:outline-none focus:border-blue-400/50 font-mono"
+              style={{ borderRadius: '2px' }}
+            >
+              <option value="">Tous (global)</option>
+              {Array.from(resourceUtilizations.keys()).map((nodeId) => (
+                <option key={nodeId} value={nodeId}>
+                  {labelMap.get(nodeId) || nodeId.split('-')[0]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Per-server metrics when a server is selected */}
+          {selectedServer && (() => {
+            const util = resourceUtilizations.get(selectedServer);
+            const sparklines = serverSparklines.get(selectedServer);
+            if (!util) return null;
+
+            // Build time-series data for this server from snapshots
+            const serverTsRps = metricsTimeSeries
+              .map((s) => s.perServer[selectedServer]?.requests ?? 0)
+              .map((v, i, arr) => i > 0 ? Math.max(0, v - arr[i - 1]) : 0);
+            const serverTsErrors = metricsTimeSeries
+              .map((s) => s.perServer[selectedServer]?.errors ?? 0)
+              .map((v, i, arr) => i > 0 ? Math.max(0, v - arr[i - 1]) : 0);
+
+            return (
+              <div className="px-2 py-1.5 bg-muted/30 border border-border font-mono text-[11px] space-y-1" style={{ borderRadius: '2px' }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-foreground/80 font-semibold">{labelMap.get(selectedServer) || selectedServer.split('-')[0]}</span>
+                  <SaturationBadge saturation={util.saturation ?? Math.max(util.cpu, util.memory, util.network)} />
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-[10px]">
+                  <div>
+                    <span className="text-muted-foreground block">CPU</span>
+                    <span className={cn(util.cpu > 90 ? 'text-signal-critical' : util.cpu > 70 ? 'text-signal-warning' : 'text-signal-healthy')}>
+                      {Math.round(util.cpu)}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block">MEM</span>
+                    <span className={cn(util.memory > 90 ? 'text-signal-critical' : util.memory > 70 ? 'text-signal-warning' : 'text-signal-healthy')}>
+                      {Math.round(util.memory)}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block">RPS</span>
+                    <span className="text-foreground">{util.throughput ?? 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block">Err%</span>
+                    <span className={cn(util.errorRate && util.errorRate > 0 ? 'text-signal-critical' : 'text-signal-healthy')}>
+                      {util.errorRate?.toFixed(1) ?? '0'}%
+                    </span>
+                  </div>
+                </div>
+                {/* Sparklines for selected server */}
+                {sparklines && sparklines.cpu.length > 2 && (
+                  <div className="flex items-center gap-3 mt-1">
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span className="text-[8px] text-muted-foreground/50">CPU</span>
+                      <MetricSparkline data={sparklines.cpu} width={100} height={28}
+                        color={util.cpu > 90 ? 'text-signal-critical' : util.cpu > 70 ? 'text-signal-warning' : 'text-blue-400'} />
+                    </div>
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span className="text-[8px] text-muted-foreground/50">MEM</span>
+                      <MetricSparkline data={sparklines.memory} width={100} height={28}
+                        color={util.memory > 90 ? 'text-signal-critical' : util.memory > 70 ? 'text-signal-warning' : 'text-emerald-400'} />
+                    </div>
+                    {serverTsRps.length > 2 && (
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-[8px] text-muted-foreground/50">REQ/5s</span>
+                        <MetricSparkline data={serverTsRps} width={100} height={28} color="text-blue-400" />
+                      </div>
+                    )}
+                    {serverTsErrors.length > 2 && serverTsErrors.some(v => v > 0) && (
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-[8px] text-muted-foreground/50">ERR/5s</span>
+                        <MetricSparkline data={serverTsErrors} width={100} height={28} color="text-signal-critical" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Global time-series sparklines when no server selected */}
+          {!selectedServer && metricsTimeSeries.length > 2 && (
+            <div className="flex items-center gap-3 px-2 py-1.5 bg-muted/30 border border-border" style={{ borderRadius: '2px' }}>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[8px] text-muted-foreground/50">RPS</span>
+                <MetricSparkline
+                  data={metricsTimeSeries.map((s) => s.metrics.requestsPerSecond)}
+                  width={120} height={28} color="text-blue-400"
+                />
+              </div>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[8px] text-muted-foreground/50">LATENCY</span>
+                <MetricSparkline
+                  data={metricsTimeSeries.map((s) => s.metrics.responsesReceived > 0 ? Math.round(s.metrics.totalLatency / s.metrics.responsesReceived) : 0)}
+                  width={120} height={28} color="text-signal-warning"
+                />
+              </div>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="text-[8px] text-muted-foreground/50">ERRORS</span>
+                <MetricSparkline
+                  data={metricsTimeSeries.map((s) => s.metrics.errorCount)}
+                  width={120} height={28} color="text-signal-critical"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Client Groups */}
       {clientGroupStats.size > 0 && (
         <div>
@@ -60,29 +229,88 @@ function MetricsContent() {
         </div>
       )}
 
-      {/* Resource Utilization */}
+      {/* Resource Utilization - Enhanced */}
       {resourceUtilizations.size > 0 && (
         <div>
           <span className="text-instrument text-[9px] text-muted-foreground block mb-1">SERVER UTILIZATION</span>
-          <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-            {Array.from(resourceUtilizations.entries()).slice(0, 6).map(([nodeId, util]) => (
-              <div key={nodeId} className="flex items-center justify-between px-2 py-1 bg-muted/30 border border-border" style={{ borderRadius: '2px' }}>
-                <span className="text-muted-foreground truncate max-w-20">{nodeId.split('-')[0]}</span>
-                <div className="flex items-center gap-2">
-                  <span className={cn(
-                    util.cpu > 90 ? 'text-signal-critical' : util.cpu > 70 ? 'text-signal-warning' : 'text-signal-healthy'
-                  )}>{Math.round(util.cpu)}%</span>
-                  <span className="text-border">/</span>
-                  <span className={cn(
-                    util.memory > 90 ? 'text-signal-critical' : util.memory > 70 ? 'text-signal-warning' : 'text-signal-healthy'
-                  )}>{Math.round(util.memory)}%</span>
-                  <span className="text-border">/</span>
-                  <span className={cn(
-                    util.network > 90 ? 'text-signal-critical' : util.network > 70 ? 'text-signal-warning' : 'text-signal-healthy'
-                  )}>{Math.round(util.network)}%</span>
+          <div className="space-y-1.5">
+            {Array.from(resourceUtilizations.entries()).slice(0, 8).map(([nodeId, util]) => {
+              const sparklines = serverSparklines.get(nodeId);
+              const saturation = util.saturation ?? Math.max(util.cpu, util.memory, util.network);
+
+              return (
+                <div key={nodeId} className="px-2 py-1.5 bg-muted/30 border border-border font-mono text-[11px]" style={{ borderRadius: '2px' }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground/80 truncate max-w-24">{labelMap.get(nodeId) || nodeId.split('-')[0]}</span>
+                      <SaturationBadge saturation={saturation} />
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px]">
+                      {util.throughput !== undefined && util.throughput > 0 && (
+                        <span className="text-muted-foreground">
+                          <span className="text-foreground">{util.throughput}</span> rps
+                        </span>
+                      )}
+                      {util.errorRate !== undefined && util.errorRate > 0 && (
+                        <span className="text-signal-critical">
+                          {util.errorRate.toFixed(1)}% err
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 text-[10px]">
+                      <span className={cn(
+                        util.cpu > 90 ? 'text-signal-critical' : util.cpu > 70 ? 'text-signal-warning' : 'text-signal-healthy'
+                      )}>CPU {Math.round(util.cpu)}%</span>
+                      <span className="text-border">/</span>
+                      <span className={cn(
+                        util.memory > 90 ? 'text-signal-critical' : util.memory > 70 ? 'text-signal-warning' : 'text-signal-healthy'
+                      )}>MEM {Math.round(util.memory)}%</span>
+                      <span className="text-border">/</span>
+                      <span className={cn(
+                        util.network > 90 ? 'text-signal-critical' : util.network > 70 ? 'text-signal-warning' : 'text-signal-healthy'
+                      )}>NET {Math.round(util.network)}%</span>
+                    </div>
+                    {sparklines && sparklines.cpu.length > 2 && (
+                      <div className="flex items-center gap-2 ml-auto">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-[8px] text-muted-foreground/50">CPU</span>
+                          <MetricSparkline
+                            data={sparklines.cpu}
+                            width={100}
+                            height={28}
+                            color={util.cpu > 90 ? 'text-signal-critical' : util.cpu > 70 ? 'text-signal-warning' : 'text-blue-400'}
+                          />
+                        </div>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="text-[8px] text-muted-foreground/50">MEM</span>
+                          <MetricSparkline
+                            data={sparklines.memory}
+                            width={100}
+                            height={28}
+                            color={util.memory > 90 ? 'text-signal-critical' : util.memory > 70 ? 'text-signal-warning' : 'text-emerald-400'}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {util.queuedRequests > 0 && (
+                    <div className="flex items-center gap-2 mt-0.5 text-[9px]">
+                      <span className="text-signal-warning">queue: {util.queuedRequests}</span>
+                      {sparklines && sparklines.queue.length > 2 && (
+                        <MetricSparkline
+                          data={sparklines.queue}
+                          width={80}
+                          height={20}
+                          color="text-signal-warning"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -135,6 +363,13 @@ export function MetricsPanel() {
   const successRate = useSimulationStore(selectSuccessRate);
   const mode = useAppStore((s) => s.mode);
   const { events } = useSimulationEvents();
+
+  // Auto-expand when simulation starts
+  useEffect(() => {
+    if (state === 'running') {
+      setIsExpanded(true);
+    }
+  }, [state]);
 
   // Hide in edit mode or when no simulation data exists
   if (mode === 'edit' || (state === 'idle' && metrics.requestsSent === 0 && events.length === 0)) {

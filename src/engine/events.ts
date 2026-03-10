@@ -19,7 +19,8 @@ export function createRequestSentEvent(
   edgeId: string,
   method: HttpMethod,
   path: string,
-  body?: string
+  body?: string,
+  chainId?: string
 ): SimulationEvent {
   return {
     id: generateEventId(),
@@ -27,6 +28,7 @@ export function createRequestSentEvent(
     sourceNodeId,
     targetNodeId,
     edgeId,
+    chainId,
     timestamp: Date.now(),
     data: {
       method,
@@ -40,13 +42,15 @@ export function createRequestReceivedEvent(
   sourceNodeId: string,
   targetNodeId: string,
   method: HttpMethod,
-  path: string
+  path: string,
+  chainId?: string
 ): SimulationEvent {
   return {
     id: generateEventId(),
     type: 'REQUEST_RECEIVED',
     sourceNodeId,
     targetNodeId,
+    chainId,
     timestamp: Date.now(),
     data: {
       method,
@@ -55,21 +59,23 @@ export function createRequestReceivedEvent(
   };
 }
 
-export function createProcessingStartEvent(nodeId: string): SimulationEvent {
+export function createProcessingStartEvent(nodeId: string, chainId?: string): SimulationEvent {
   return {
     id: generateEventId(),
     type: 'PROCESSING_START',
     sourceNodeId: nodeId,
+    chainId,
     timestamp: Date.now(),
     data: {},
   };
 }
 
-export function createProcessingEndEvent(nodeId: string): SimulationEvent {
+export function createProcessingEndEvent(nodeId: string, chainId?: string): SimulationEvent {
   return {
     id: generateEventId(),
     type: 'PROCESSING_END',
     sourceNodeId: nodeId,
+    chainId,
     timestamp: Date.now(),
     data: {},
   };
@@ -81,7 +87,8 @@ export function createResponseSentEvent(
   edgeId: string,
   status: number,
   body?: string,
-  latency?: number
+  latency?: number,
+  chainId?: string
 ): SimulationEvent {
   return {
     id: generateEventId(),
@@ -89,6 +96,7 @@ export function createResponseSentEvent(
     sourceNodeId,
     targetNodeId,
     edgeId,
+    chainId,
     timestamp: Date.now(),
     data: {
       status,
@@ -102,13 +110,15 @@ export function createResponseReceivedEvent(
   sourceNodeId: string,
   targetNodeId: string,
   status: number,
-  latency: number
+  latency: number,
+  chainId?: string
 ): SimulationEvent {
   return {
     id: generateEventId(),
     type: 'RESPONSE_RECEIVED',
     sourceNodeId,
     targetNodeId,
+    chainId,
     timestamp: Date.now(),
     data: {
       status,
@@ -119,12 +129,14 @@ export function createResponseReceivedEvent(
 
 export function createErrorEvent(
   nodeId: string,
-  error: string
+  error: string,
+  chainId?: string
 ): SimulationEvent {
   return {
     id: generateEventId(),
     type: 'ERROR',
     sourceNodeId: nodeId,
+    chainId,
     timestamp: Date.now(),
     data: {
       error,
@@ -135,8 +147,11 @@ export function createErrorEvent(
 // Simple event emitter for simulation events
 type EventHandler = (event: SimulationEvent) => void;
 
+const MAX_STORED_EVENTS = 500;
+
 class SimulationEventEmitter {
   private handlers: Map<SimulationEventType | '*', Set<EventHandler>> = new Map();
+  private storedEvents: SimulationEvent[] = [];
 
   on(type: SimulationEventType | '*', handler: EventHandler): () => void {
     if (!this.handlers.has(type)) {
@@ -151,10 +166,26 @@ class SimulationEventEmitter {
   }
 
   emit(event: SimulationEvent): void {
+    // Store event in ring buffer
+    this.storedEvents.push(event);
+    if (this.storedEvents.length > MAX_STORED_EVENTS) {
+      this.storedEvents = this.storedEvents.slice(-MAX_STORED_EVENTS);
+    }
+
     // Call specific handlers
     this.handlers.get(event.type)?.forEach((handler) => handler(event));
     // Call wildcard handlers
     this.handlers.get('*')?.forEach((handler) => handler(event));
+  }
+
+  /** Get all stored events (up to MAX_STORED_EVENTS). */
+  getEvents(): SimulationEvent[] {
+    return [...this.storedEvents];
+  }
+
+  /** Clear stored events buffer. */
+  clearEvents(): void {
+    this.storedEvents = [];
   }
 
   clear(): void {

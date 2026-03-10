@@ -1,6 +1,7 @@
 import type { Node, Edge } from '@xyflow/react';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { HttpServerNodeData, ResourceUtilization } from '@/types';
+import { complexityMultipliers } from '@/types';
 import { ResourceManager } from '../ResourceManager';
 
 /**
@@ -43,7 +44,12 @@ export class HttpServerHandler implements NodeRequestHandler {
       data.degradation
     );
 
-    return degradedDelay / speed;
+    // Appliquer le multiplicateur de complexité du code
+    const complexityFactor = data.processingComplexity
+      ? complexityMultipliers[data.processingComplexity]
+      : 1.0;
+
+    return (degradedDelay * complexityFactor) / speed;
   }
 
   initialize(node: Node): void {

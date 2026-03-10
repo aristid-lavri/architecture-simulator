@@ -26,13 +26,19 @@ export class ResourceManager {
       ? this.calculateDiskUtilization(resources.disk, activeRequests)
       : undefined;
 
+    const cpuClamped = Math.min(100, cpuUtil);
+    const memClamped = Math.min(100, memUtil);
+    const netClamped = Math.min(100, netUtil);
+    const diskClamped = diskUtil !== undefined ? Math.min(100, diskUtil) : undefined;
+
     return {
-      cpu: Math.min(100, cpuUtil),
-      memory: Math.min(100, memUtil),
-      network: Math.min(100, netUtil),
-      disk: diskUtil !== undefined ? Math.min(100, diskUtil) : undefined,
+      cpu: cpuClamped,
+      memory: memClamped,
+      network: netClamped,
+      disk: diskClamped,
       activeConnections: activeRequests,
       queuedRequests,
+      saturation: Math.max(cpuClamped, memClamped, netClamped, diskClamped ?? 0),
     };
   }
 

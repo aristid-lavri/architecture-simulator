@@ -232,6 +232,34 @@
     "maxLatency": "Max latency",
     "requestsPerSecond": "Requests/second"
   },
+  "output": {
+    "filterByRequest": "Filter by request",
+    "groupByRequest": "Group",
+    "sortByTime": "By time",
+    "sortByLatency": "By latency",
+    "sortByStatus": "Errors first",
+    "noEvents": "No events",
+    "events": "evt",
+    "clearLogs": "Clear logs"
+  },
+  "monitoring": {
+    "saturation": "Saturation",
+    "normal": "Normal",
+    "degraded": "Degraded",
+    "saturated": "Saturated",
+    "throughput": "Throughput",
+    "errorRate": "Error rate",
+    "queueDepth": "Queue depth"
+  },
+  "codeEfficiency": {
+    "title": "Code efficiency",
+    "complexity": "Complexity",
+    "light": "Light",
+    "medium": "Medium",
+    "heavy": "Heavy",
+    "veryHeavy": "Very heavy",
+    "multiplier": "Multiplier"
+  },
   "simulation": {
     "idle": "Idle",
     "running": "Running",

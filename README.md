@@ -7,7 +7,7 @@ Architecture Simulator est un outil interactif open source permettant de concevo
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
-![License](https://img.shields.io/badge/License-MIT-green)
+![License](https://img.shields.io/badge/License-BSL_1.1-blue)
 
 ---
 
@@ -188,7 +188,19 @@ Les contributions sont les bienvenues ! Consultez le guide [CONTRIBUTING.md](CON
 
 ## Licence
 
-Ce projet est distribue sous licence **MIT**. Voir le fichier [LICENSE](LICENSE) pour plus de details.
+Ce projet est distribue sous licence **Business Source License 1.1 (BSL 1.1)**.
+
+**Usage gratuit** pour :
+- Usage personnel et non-commercial
+- Usage educatif et academique
+- Evaluation, developpement et tests (hors production)
+- Production par des organisations de moins de 5 employes
+
+**Usage commercial** (entreprises de 5+ employes en production) : une licence commerciale est requise. Contactez-nous pour les tarifs.
+
+Chaque version du code devient automatiquement **Apache 2.0** quatre ans apres sa publication.
+
+Voir le fichier [LICENSE](LICENSE) pour le texte complet.
 
 ---
 

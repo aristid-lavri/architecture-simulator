@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import {
   ReactFlow,
   Background,
@@ -54,9 +54,10 @@ import type { CacheNodeData } from '@/components/nodes/CacheNode';
 import type { LoadBalancerNodeData } from '@/components/nodes/LoadBalancerNode';
 import type { MessageQueueNodeData } from '@/components/nodes/MessageQueueNode';
 import type { ApiGatewayNodeData } from '@/components/nodes/ApiGatewayNode';
+import { pluginRegistry } from '@/plugins';
 
-// Custom node types
-const nodeTypes = {
+// Built-in node types
+const builtinNodeTypes = {
   'http-client': HttpClientNode,
   'http-server': HttpServerNode,
   'client-group': ClientGroupNode,
@@ -84,7 +85,7 @@ const edgeTypes = {
 };
 
 // Default data for new nodes
-function getDefaultNodeData(type: ComponentType): HttpClientNodeData | HttpServerNodeData | ClientGroupNodeData | DatabaseNodeData | CacheNodeData | LoadBalancerNodeData | MessageQueueNodeData | ApiGatewayNodeData | { label: string } {
+function getDefaultNodeData(type: ComponentType): HttpClientNodeData | HttpServerNodeData | ClientGroupNodeData | DatabaseNodeData | CacheNodeData | LoadBalancerNodeData | MessageQueueNodeData | ApiGatewayNodeData | Record<string, unknown> {
   switch (type) {
     case 'http-client':
       return {
@@ -159,8 +160,14 @@ function getDefaultNodeData(type: ComponentType): HttpClientNodeData | HttpServe
       return { ...defaultDNSNodeData, status: 'idle' };
     case 'cloud-storage':
       return { ...defaultCloudStorageData, status: 'idle' };
-    default:
+    default: {
+      // Chercher dans les plugins enregistrés
+      const pluginData = pluginRegistry.getDefaultNodeData(type);
+      if (pluginData) {
+        return { ...pluginData, status: 'idle' };
+      }
       return { label: type.replace('-', ' ').toUpperCase() };
+    }
   }
 }
 
@@ -203,19 +210,34 @@ function ZoomControls({ isEditable }: { isEditable: boolean }) {
 export function FlowCanvas() {
   const { t } = useTranslation();
   const { mode, setSelectedNodeId, setSelectedEdgeId } = useAppStore();
-  const {
-    state: simulationState,
-    nodeStates,
-    addParticle,
-    removeParticle,
-    updateParticle,
-    setNodeStatus,
-    incrementRequestsSent,
-    recordResponse,
-    setMetrics,
-    setResourceUtilization,
-    updateClientGroupStats,
-  } = useSimulationStore();
+
+  // Merge built-in node types with plugin node types (réactif aux changements de plugins)
+  const pluginSnapshot = useSyncExternalStore(
+    (cb) => pluginRegistry.subscribe(cb),
+    () => pluginRegistry.getRegisteredPlugins().length,
+    () => 0,
+  );
+  const nodeTypes = useMemo(
+    () => ({ ...builtinNodeTypes, ...pluginRegistry.getNodeTypes() }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pluginSnapshot],
+  );
+  // Use individual selectors to avoid re-rendering FlowCanvas on every metrics update
+  const simulationState = useSimulationStore((s) => s.state);
+  const nodeStates = useSimulationStore((s) => s.nodeStates);
+  const addParticle = useSimulationStore((s) => s.addParticle);
+  const removeParticle = useSimulationStore((s) => s.removeParticle);
+  const updateParticle = useSimulationStore((s) => s.updateParticle);
+  const setNodeStatus = useSimulationStore((s) => s.setNodeStatus);
+  const incrementRequestsSent = useSimulationStore((s) => s.incrementRequestsSent);
+  const recordResponse = useSimulationStore((s) => s.recordResponse);
+  const setMetrics = useSimulationStore((s) => s.setMetrics);
+  const setResourceUtilization = useSimulationStore((s) => s.setResourceUtilization);
+  const addResourceSample = useSimulationStore((s) => s.addResourceSample);
+  const updateClientGroupStats = useSimulationStore((s) => s.updateClientGroupStats);
+  const addTimeSeriesSnapshot = useSimulationStore((s) => s.addTimeSeriesSnapshot);
+  const stopSimulation = useSimulationStore((s) => s.stop);
+  const registerEngineMetricsProvider = useSimulationStore((s) => s.registerEngineMetricsProvider);
 
   // Get persisted nodes and edges from architecture store
   const {
@@ -412,7 +434,10 @@ export function FlowCanvas() {
     recordResponse,
     setMetrics,
     setResourceUtilization,
+    addResourceSample,
     updateClientGroupStats,
+    addTimeSeriesSnapshot,
+    stopSimulation,
   });
 
   // Update callbacks ref when they change
@@ -426,9 +451,12 @@ export function FlowCanvas() {
       recordResponse,
       setMetrics,
       setResourceUtilization,
+      addResourceSample,
       updateClientGroupStats,
+      addTimeSeriesSnapshot,
+      stopSimulation,
     };
-  }, [addParticle, removeParticle, updateParticle, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setResourceUtilization, updateClientGroupStats]);
+  }, [addParticle, removeParticle, updateParticle, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setResourceUtilization, addResourceSample, updateClientGroupStats, addTimeSeriesSnapshot, stopSimulation]);
 
   // Initialize simulation engine once
   useEffect(() => {
@@ -457,6 +485,16 @@ export function FlowCanvas() {
         },
         onResourceUpdate: (nodeId, utilization) => {
           callbacksRef.current.setResourceUtilization(nodeId, utilization);
+          callbacksRef.current.addResourceSample({
+            timestamp: Date.now(),
+            nodeId,
+            cpu: utilization.cpu,
+            memory: utilization.memory,
+            network: utilization.network,
+            disk: utilization.disk,
+            activeConnections: utilization.activeConnections,
+            queuedRequests: utilization.queuedRequests,
+          });
         },
         onClientGroupUpdate: (groupId, activeClients, requestsSent) => {
           callbacksRef.current.updateClientGroupStats(groupId, activeClients, requestsSent);
@@ -471,9 +509,22 @@ export function FlowCanvas() {
             )
           );
         },
+        onTimeSeriesSnapshot: (snapshot) => {
+          callbacksRef.current.addTimeSeriesSnapshot(snapshot);
+        },
+        onSimulationComplete: () => {
+          callbacksRef.current.stopSimulation('completed');
+        },
       });
+
+      // Register metrics provider so store.stop() can pull fresh metrics from engine
+      registerEngineMetricsProvider(() => engineRef.current!.getFinalMetrics().metrics);
     }
-  }, []);
+
+    return () => {
+      registerEngineMetricsProvider(null);
+    };
+  }, [registerEngineMetricsProvider]);
 
   // Update engine with current nodes and edges
   useEffect(() => {

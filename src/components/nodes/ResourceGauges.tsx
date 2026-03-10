@@ -58,9 +58,20 @@ function GaugeBar({ value, label, compact = false }: { value: number; label: str
   );
 }
 
+function SaturationDot({ saturation }: { saturation: number }) {
+  if (saturation >= 90) {
+    return <div className="w-1.5 h-1.5 rounded-full bg-signal-critical animate-pulse" title={`Saturé: ${Math.round(saturation)}%`} />;
+  }
+  if (saturation >= 70) {
+    return <div className="w-1.5 h-1.5 rounded-full bg-signal-warning" title={`Dégradé: ${Math.round(saturation)}%`} />;
+  }
+  return <div className="w-1.5 h-1.5 rounded-full bg-signal-healthy" title={`Normal: ${Math.round(saturation)}%`} />;
+}
+
 function ResourceGauges({ utilization, resources, compact = false }: ResourceGaugesProps) {
   const { cpu, memory, network, disk, activeConnections, queuedRequests } = utilization;
   const { connections } = resources;
+  const saturation = utilization.saturation ?? Math.max(cpu, memory, network, disk ?? 0);
 
   if (compact) {
     return (
@@ -70,9 +81,12 @@ function ResourceGauges({ utilization, resources, compact = false }: ResourceGau
         <GaugeBar value={network} label="NET" compact />
         {disk !== undefined && <GaugeBar value={disk} label="DSK" compact />}
         <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground pt-0.5">
-          <span>
-            conn <span className="text-foreground">{activeConnections}/{connections.maxConcurrent}</span>
-          </span>
+          <div className="flex items-center gap-1">
+            <SaturationDot saturation={saturation} />
+            <span>
+              conn <span className="text-foreground">{activeConnections}/{connections.maxConcurrent}</span>
+            </span>
+          </div>
           {queuedRequests > 0 && (
             <span className="text-signal-warning">
               q:<span className="font-semibold">{queuedRequests}</span>
