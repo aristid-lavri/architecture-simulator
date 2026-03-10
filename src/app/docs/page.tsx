@@ -70,7 +70,7 @@ const sections = [
       { id: 'component-groupe-de-clients', label: 'Groupe de clients' },
       { id: 'component-api-gateway', label: 'API Gateway' },
       { id: 'component-load-balancer', label: 'Load Balancer' },
-      { id: 'component-base-de-donnees', label: 'Base de données' },
+      { id: 'component-base-de-données', label: 'Base de données' },
       { id: 'component-cache', label: 'Cache' },
       { id: 'component-file-de-messages', label: 'File de messages' },
       { id: 'component-circuit-breaker', label: 'Circuit Breaker' },
@@ -83,7 +83,10 @@ const sections = [
       { id: 'component-dns', label: 'DNS' },
       { id: 'component-cloud-storage', label: 'Cloud Storage' },
       { id: 'component-cloud-function', label: 'Cloud Function' },
-      { id: 'component-zone-reseau', label: 'Zone Réseau' },
+      { id: 'component-serveur-hôte', label: 'Serveur Hôte' },
+      { id: 'component-api-service', label: 'API Service' },
+      { id: 'component-background-job', label: 'Background Job' },
+      { id: 'component-zone-réseau', label: 'Zone Réseau' },
     ],
   },
   {
@@ -676,6 +679,10 @@ connections:  # Requis — liens entre composants
                       ['dns', 'DNS'],
                       ['cloud-storage', 'Cloud Storage'],
                       ['cloud-function', 'Cloud Function'],
+                      ['host-server', 'Serveur Hôte'],
+                      ['api-service', 'API Service'],
+                      ['background-job', 'Background Job'],
+                      ['network-zone', 'Zone Réseau'],
                     ].map(([type, name], i) => (
                       <tr key={type} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
                         <td className="py-1.5 px-3"><code>{type}</code></td>
@@ -759,7 +766,7 @@ connections:  # Requis — liens entre composants
             label="Catalogue des composants"
             icon="03"
             color="oklch(0.70 0.15 220)"
-            description="20 types de composants répartis en 7 catégories. Chaque composant est configurable via le panneau de propriétés."
+            description="22 types de composants répartis en 7 catégories. Chaque composant est configurable via le panneau de propriétés."
           />
 
           {/* Category: Simulation */}
@@ -966,7 +973,7 @@ connections:  # Requis — liens entre composants
           </CategoryAccordion>
 
           {/* Category: Compute */}
-          <CategoryAccordion label="Compute" color="#f59e0b" count={2}>
+          <CategoryAccordion label="Compute" color="#f59e0b" count={5}>
               <ComponentCard
                 icon={<Cloud className="w-4 h-4" />}
                 name="Serverless"
@@ -996,6 +1003,46 @@ connections:  # Requis — liens entre composants
                   { name: 'responseDelayMs', type: 'number', defaultValue: '20', description: 'Délai de réponse en ms' },
                   { name: 'autoScaling.enabled', type: 'boolean', defaultValue: 'true', description: 'Activer le HPA' },
                   { name: 'autoScaling.targetCPU', type: 'number', defaultValue: '70', description: 'Seuil CPU pour le scaling (%)' },
+                ]}
+              />
+              <ComponentCard
+                icon={<Monitor className="w-4 h-4" />}
+                name="Serveur Hôte"
+                description="Serveur physique ou VM hébergeant des containers Docker. Partage ses ressources CPU/RAM entre ses enfants."
+                category="compute"
+                properties={[
+                  { name: 'os', type: 'enum', defaultValue: 'linux', description: "Système d'exploitation (Linux, Windows, macOS)" },
+                  { name: 'ipAddress', type: 'string', defaultValue: '192.168.1.10', description: 'Adresse IP du serveur' },
+                  { name: 'resources.cpu', type: 'number', defaultValue: '4', description: 'Nombre de cœurs CPU' },
+                  { name: 'resources.memory', type: 'number', defaultValue: '4096', description: 'Mémoire en MB' },
+                  { name: 'degradation', type: 'object', defaultValue: 'enabled', description: 'Dégradation de latence sous charge' },
+                ]}
+              />
+              <ComponentCard
+                icon={<Server className="w-4 h-4" />}
+                name="API Service"
+                description="Service API REST/gRPC hébergé dans un serveur ou container. Configurable en protocole et temps de réponse."
+                category="compute"
+                properties={[
+                  { name: 'serviceName', type: 'string', defaultValue: 'my-service', description: 'Nom du service' },
+                  { name: 'basePath', type: 'string', defaultValue: '/api', description: 'Route de base' },
+                  { name: 'protocol', type: 'enum', defaultValue: 'rest', description: 'Protocole (REST, gRPC, WebSocket, GraphQL)' },
+                  { name: 'responseTime', type: 'number', defaultValue: '50', description: 'Temps de réponse (ms)' },
+                  { name: 'errorRate', type: 'number', defaultValue: '0', description: "Taux d'erreur (0-100%)" },
+                  { name: 'maxConcurrentRequests', type: 'number', defaultValue: '100', description: 'Requêtes concurrentes max' },
+                ]}
+              />
+              <ComponentCard
+                icon={<Zap className="w-4 h-4" />}
+                name="Background Job"
+                description="Job en arrière-plan : cron (planifié), worker (consomme une queue), ou batch (traitement par lots)."
+                category="compute"
+                properties={[
+                  { name: 'jobType', type: 'enum', defaultValue: 'worker', description: 'Type de job (cron, worker, batch)' },
+                  { name: 'schedule', type: 'string', defaultValue: '—', description: 'Expression cron (type cron uniquement)' },
+                  { name: 'concurrency', type: 'number', defaultValue: '1', description: 'Exécutions concurrentes max' },
+                  { name: 'processingTimeMs', type: 'number', defaultValue: '500', description: 'Durée de traitement (ms)' },
+                  { name: 'errorRate', type: 'number', defaultValue: '0', description: "Taux d'erreur (0-100%)" },
                 ]}
               />
           </CategoryAccordion>
@@ -1052,7 +1099,7 @@ connections:  # Requis — liens entre composants
             label="Templates d'architecture"
             icon="04"
             color="oklch(0.68 0.18 290)"
-            description="4 architectures pré-configurées accessibles depuis le menu TPL dans le header."
+            description="5 architectures pré-configurées accessibles depuis le menu TPL dans le header."
           />
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -1083,6 +1130,13 @@ connections:  # Requis — liens entre composants
               topology="Client Group → Serveur → Message Queue → 2x Consumer → Database"
               components={['client-group', 'http-server', 'message-queue', 'database']}
               useCase="Système découplé avec traitement asynchrone. Le producteur répond immédiatement, les consommateurs traitent en arrière-plan."
+            />
+            <TemplateCard
+              name="E-Commerce Microservices"
+              description="Plateforme e-commerce avec zones réseau, microservices et communication asynchrone."
+              topology="Client Group → WAF → LB → 6x Microservices → DB + Cache + MQ"
+              components={['client-group', 'waf', 'load-balancer', 'network-zone', 'api-gateway', 'service-discovery', 'message-queue', 'database', 'cache']}
+              useCase="Architecture e-commerce complète avec séparation en zones (DMZ, Backend, Données). Testez la résilience, le scaling et la communication inter-services."
             />
           </div>
 
