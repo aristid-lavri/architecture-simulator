@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Monitor, Sun, Moon } from 'lucide-react';
+import { ArrowRight, BookOpen, Monitor, Sun, Moon, Github, Star } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 
 // ═══════════════════════════════════════
@@ -535,7 +535,12 @@ export default function LandingPage() {
           <Link href="/docs" className="hover:text-foreground transition-colors">DOCS</Link>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-muted-foreground/50 hidden sm:inline">Accès anticipé</span>
+          <a href="https://github.com/aristid-lavri/architecture-simulator" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors inline-flex items-center gap-1">
+            <Github className="w-3 h-3" />
+            <span className="hidden sm:inline">GitHub</span>
+          </a>
+          <span className="text-border">|</span>
+          <span className="text-signal-healthy hidden sm:inline">Open Source</span>
           <span className="text-border hidden sm:inline">|</span>
           <span className="hover:text-foreground transition-colors">v0.1</span>
           <span className="text-border">|</span>
@@ -608,8 +613,20 @@ export default function LandingPage() {
           </div>
 
           <p className={`font-mono text-[10px] text-muted-foreground/70 mt-5 transition-all duration-700 delay-900 ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}>
-            Gratuit &bull; Aucune inscription &bull; Première simulation en 2 min
+            Open Source &bull; Gratuit &bull; Aucune inscription &bull; Première simulation en 2 min
           </p>
+
+          <a
+            href="https://github.com/aristid-lavri/architecture-simulator"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`group inline-flex items-center gap-2 border border-border text-muted-foreground font-mono text-[11px] px-4 py-1.5 mt-2 transition-all duration-500 hover:border-foreground/30 hover:text-foreground hover:scale-[1.02] active:scale-[0.98] ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}
+            style={{ borderRadius: '2px', transitionDelay: '950ms' }}
+          >
+            <Github className="w-3.5 h-3.5" />
+            <Star className="w-3 h-3 group-hover:text-signal-warning transition-colors duration-300" />
+            Star on GitHub
+          </a>
 
           <div className={`flex items-center gap-1.5 mt-3 font-mono text-[11px] font-semibold text-muted-foreground/50 transition-all duration-700 delay-1000 ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}>
             <Monitor className="w-3.5 h-3.5" />
@@ -897,21 +914,28 @@ components:
             </Link>
 
             <p className="font-mono text-[10px] text-muted-foreground">
-              Gratuit &bull; Aucune inscription &bull; Données 100% locales (localStorage)
+              Open Source &bull; Gratuit &bull; Données 100% locales (localStorage)
             </p>
 
-            <div className="pt-4 border-t border-border/50">
+            <div className="pt-4 border-t border-border/50 space-y-3">
               <p className="font-mono text-[10px] text-muted-foreground/60">
-                Projet en accès anticipé — le code source sera ouvert prochainement.
-                <br />
-                <a href="mailto:lavri.alain@gmail.com" className="text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4">
-                  Demander un accès
-                </a>
-                {' '}&bull;{' '}
-                <Link href="/docs" className="text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4">
-                  Lire la documentation
-                </Link>
+                Projet open source — contributions bienvenues.
               </p>
+              <div className="flex items-center justify-center gap-3">
+                <a
+                  href="https://github.com/aristid-lavri/architecture-simulator"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group inline-flex items-center gap-2 border border-border text-muted-foreground font-mono text-[11px] px-4 py-1.5 transition-all duration-300 hover:border-foreground/30 hover:text-foreground hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ borderRadius: '2px' }}
+                >
+                  <Github className="w-3.5 h-3.5" />
+                  Voir sur GitHub
+                </a>
+                <Link href="/docs" className="text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4 font-mono text-[10px]">
+                  Documentation
+                </Link>
+              </div>
             </div>
           </div>
         </RevealBlock>
@@ -920,7 +944,12 @@ components:
       {/* ── FOOTER ── */}
       <footer className="h-12 border-t border-border flex items-center justify-center gap-2 font-mono text-[10px] text-muted-foreground">
         <img src="/logo.svg" alt="" className="h-3.5 w-3.5 opacity-50 hover:opacity-100 hover:scale-110 transition-all duration-300" />
-        ARCH.SIM v0.1 &bull; NEXT.JS 16 &bull; REACT 19 &bull; TYPESCRIPT 5 &bull; MIT LICENSE
+        ARCH.SIM v0.1 &bull; NEXT.JS 16 &bull; REACT 19 &bull; TYPESCRIPT 5
+        <span className="text-border">&bull;</span>
+        <a href="https://github.com/aristid-lavri/architecture-simulator" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+          <Github className="w-3 h-3" />
+          GitHub
+        </a>
       </footer>
     </div>
   );
