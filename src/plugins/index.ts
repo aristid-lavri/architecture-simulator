@@ -7,3 +7,4 @@ export type {
 } from './types';
 
 export { pluginRegistry, registerPlugin } from './plugin-registry';
+export { canBeChildOfExtended, getAllContainerTypes } from './hierarchy-helpers';

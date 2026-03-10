@@ -19,17 +19,22 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical } from 'lucide-react';
-import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution } from '@/types';
-import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData } from '@/types';
+import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution, HostServerNodeData, HostPortMapping } from '@/types';
+import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
+import type { ApiServiceNodeData, BackgroundJobNodeData, ApiServiceProtocol, BackgroundJobType } from '@/types';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { ProcessingComplexity } from '@/types';
 import { complexityMultipliers } from '@/types';
 import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
 import type { AnimatedEdgeData } from '@/components/edges/AnimatedEdge';
+import type { ConnectionProtocol, ComponentType } from '@/types';
+import { validateConnection } from '@/lib/connection-validator';
+import { useTranslation } from '@/i18n';
 import type { Node, Edge } from '@xyflow/react';
 
 export function PropertiesPanel() {
+  const { t } = useTranslation();
   const { isPropertiesPanelOpen, setPropertiesPanelOpen, selectedNodeId, setSelectedNodeId, selectedEdgeId, setSelectedEdgeId } =
     useAppStore();
   const { nodes, edges, updateNode, removeNode, updateEdge, removeEdge } = useArchitectureStore();
@@ -131,6 +136,51 @@ export function PropertiesPanel() {
                   onChange={(e) => updateEdgeData({ label: e.target.value })}
                   placeholder="Étiquette du lien"
                 />
+              </div>
+            </div>
+
+            {/* Protocol */}
+            <div className="space-y-3">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                {t('connectors.protocol')}
+              </span>
+              <Separator />
+              <div className="space-y-2">
+                <Label>{t('connectors.protocol')}</Label>
+                <Select
+                  value={edgeData.protocol || ''}
+                  onValueChange={(value) => updateEdgeData({ protocol: (value || undefined) as ConnectionProtocol | undefined })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Aucun (direct)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rest">{t('connectors.rest')}</SelectItem>
+                    <SelectItem value="grpc">{t('connectors.grpc')}</SelectItem>
+                    <SelectItem value="graphql">{t('connectors.graphql')}</SelectItem>
+                    <SelectItem value="websocket">{t('connectors.websocket')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {(() => {
+                  const sourceType = sourceNode?.type as ComponentType | undefined;
+                  const targetType = targetNode?.type as ComponentType | undefined;
+                  if (!sourceType || !targetType || !edgeData.protocol) return null;
+                  const validation = validateConnection(sourceType, targetType, edgeData.protocol);
+                  if (validation.valid) return null;
+                  return (
+                    <div className="text-xs text-signal-warning bg-signal-warning/10 border border-signal-warning/20 rounded px-2 py-1.5">
+                      {validation.warning}
+                      {validation.suggestion && (
+                        <button
+                          className="block mt-1 text-signal-active underline cursor-pointer"
+                          onClick={() => updateEdgeData({ protocol: validation.suggestion })}
+                        >
+                          {t('connectors.suggestion')}: {validation.suggestion.toUpperCase()}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -250,6 +300,9 @@ export function PropertiesPanel() {
   const isCloudStorage = selectedNode.type === 'cloud-storage';
   const isCloudFunction = selectedNode.type === 'cloud-function';
   const isNetworkZone = selectedNode.type === 'network-zone';
+  const isHostServer = selectedNode.type === 'host-server';
+  const isApiService = selectedNode.type === 'api-service';
+  const isBackgroundJob = selectedNode.type === 'background-job';
 
   return (
     <div className="w-80 border-l bg-background flex flex-col h-full overflow-hidden">
@@ -458,6 +511,37 @@ export function PropertiesPanel() {
           {isNetworkZone && (
             <NetworkZoneConfig
               data={selectedNode.data as NetworkZoneNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Host Server Configuration */}
+          {isHostServer && (
+            <>
+              <HostServerConfig
+                data={selectedNode.data as HostServerNodeData}
+                onUpdate={updateNodeData}
+                childNodes={nodes.filter((n) => (n as Node & { parentId?: string }).parentId === selectedNode.id)}
+              />
+              <ServerResourcesConfig
+                data={selectedNode.data as { resources?: ServerResources; degradation?: DegradationSettings }}
+                onUpdate={updateNodeData}
+              />
+            </>
+          )}
+
+          {/* API Service Configuration */}
+          {isApiService && (
+            <ApiServiceConfig
+              data={selectedNode.data as ApiServiceNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Background Job Configuration */}
+          {isBackgroundJob && (
+            <BackgroundJobConfig
+              data={selectedNode.data as BackgroundJobNodeData}
               onUpdate={updateNodeData}
             />
           )}
@@ -1237,8 +1321,8 @@ function ClientGroupConfig({ data, onUpdate }: ClientGroupConfigProps) {
 // ============================================
 
 interface ServerResourcesConfigProps {
-  data: HttpServerNodeData;
-  onUpdate: (updates: Partial<HttpServerNodeData>) => void;
+  data: { resources?: ServerResources; degradation?: DegradationSettings; [key: string]: unknown };
+  onUpdate: (updates: Record<string, unknown>) => void;
 }
 
 function ServerResourcesConfig({ data, onUpdate }: ServerResourcesConfigProps) {
@@ -3147,6 +3231,14 @@ function ContainerConfig({ data, onUpdate }: { data: ContainerNodeData; onUpdate
           <Input value={config.memoryLimit} onChange={(e) => onUpdate({ memoryLimit: e.target.value })} placeholder="512Mi" />
         </div>
         <div className="space-y-2">
+          <Label>CPU Limit (cores)</Label>
+          <Input type="number" step="0.5" min="0.5" value={config.cpuLimitCores ?? ''} onChange={(e) => onUpdate({ cpuLimitCores: parseFloat(e.target.value) || 1 })} placeholder="2" />
+        </div>
+        <div className="space-y-2">
+          <Label>Memory Limit (MB)</Label>
+          <Input type="number" min="64" step="64" value={config.memoryLimitMB ?? ''} onChange={(e) => onUpdate({ memoryLimitMB: parseInt(e.target.value) || 256 })} placeholder="512" />
+        </div>
+        <div className="space-y-2">
           <Label>Delai de reponse (ms)</Label>
           <Input type="number" value={config.responseDelayMs} onChange={(e) => onUpdate({ responseDelayMs: parseInt(e.target.value) || 20 })} />
         </div>
@@ -3336,6 +3428,241 @@ function NetworkZoneConfig({ data, onUpdate }: { data: NetworkZoneNodeData; onUp
           <Label>Couleur</Label>
           <Input type="color" value={config.color} onChange={(e) => onUpdate({ color: e.target.value })} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function HostServerConfig({ data, onUpdate, childNodes }: { data: HostServerNodeData; onUpdate: (u: Partial<HostServerNodeData>) => void; childNodes: Node[] }) {
+  const config = { ...defaultHostServerData, ...data };
+  const mappings = config.portMappings || [];
+
+  const addPortMapping = () => {
+    const newMapping: HostPortMapping = {
+      id: `pm-${Date.now()}`,
+      hostPort: 8080,
+      containerNodeId: '',
+      containerPort: 3000,
+      protocol: 'tcp',
+    };
+    onUpdate({ portMappings: [...mappings, newMapping] });
+  };
+
+  const updateMapping = (id: string, updates: Partial<HostPortMapping>) => {
+    onUpdate({
+      portMappings: mappings.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+    });
+  };
+
+  const removeMapping = (id: string) => {
+    onUpdate({ portMappings: mappings.filter((m) => m.id !== id) });
+  };
+
+  const containerChildren = childNodes.filter((n) => n.type === 'container');
+
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Serveur Hote</span>
+      <Separator />
+      <div className="space-y-4">
+        {/* Network */}
+        <div className="space-y-2">
+          <Label>Adresse IP</Label>
+          <Input
+            value={config.ipAddress}
+            onChange={(e) => onUpdate({ ipAddress: e.target.value })}
+            placeholder="192.168.1.10"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Hostname</Label>
+          <Input
+            value={config.hostname || ''}
+            onChange={(e) => onUpdate({ hostname: e.target.value || undefined })}
+            placeholder="web-server-01"
+          />
+        </div>
+
+        {/* Port Mappings */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Port Mappings</Label>
+            <Button variant="ghost" size="sm" onClick={addPortMapping} className="h-6 px-2">
+              <Plus className="h-3 w-3 mr-1" /> Ajouter
+            </Button>
+          </div>
+          {mappings.length === 0 && (
+            <p className="text-xs text-muted-foreground">Aucun mapping configure. Ajoutez un mapping pour router le trafic vers les containers.</p>
+          )}
+          {mappings.map((mapping) => (
+            <div key={mapping.id} className="flex items-center gap-1.5 p-2 rounded-md border bg-muted/30">
+              <Input
+                type="number"
+                value={mapping.hostPort}
+                onChange={(e) => updateMapping(mapping.id, { hostPort: parseInt(e.target.value) || 0 })}
+                className="w-16 h-7 text-xs"
+                placeholder="8080"
+              />
+              <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+              <Select
+                value={mapping.containerNodeId || '_none'}
+                onValueChange={(v) => updateMapping(mapping.id, { containerNodeId: v === '_none' ? '' : v })}
+              >
+                <SelectTrigger className="h-7 text-xs flex-1">
+                  <SelectValue placeholder="Container..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">-- Aucun --</SelectItem>
+                  {containerChildren.map((child) => (
+                    <SelectItem key={child.id} value={child.id}>
+                      {(child.data as { label?: string }).label || child.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                value={mapping.containerPort}
+                onChange={(e) => updateMapping(mapping.id, { containerPort: parseInt(e.target.value) || 0 })}
+                className="w-16 h-7 text-xs"
+                placeholder="3000"
+              />
+              <Select
+                value={mapping.protocol}
+                onValueChange={(v) => updateMapping(mapping.id, { protocol: v as 'tcp' | 'udp' })}
+              >
+                <SelectTrigger className="h-7 text-xs w-16">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tcp">TCP</SelectItem>
+                  <SelectItem value="udp">UDP</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeMapping(mapping.id)}
+                className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+          {containerChildren.length === 0 && mappings.length > 0 && (
+            <p className="text-xs text-signal-warning">Aucun container enfant detecte. Placez des containers dans ce host server.</p>
+          )}
+        </div>
+
+        {/* Color */}
+        <div className="space-y-2">
+          <Label>Couleur</Label>
+          <Input type="color" value={config.color} onChange={(e) => onUpdate({ color: e.target.value })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// API Service Configuration
+// ============================================
+
+function ApiServiceConfig({ data, onUpdate }: { data: ApiServiceNodeData; onUpdate: (u: Partial<ApiServiceNodeData>) => void }) {
+  const config = { ...defaultApiServiceData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">API Service</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Nom du service</Label>
+          <Input value={config.serviceName} onChange={(e) => onUpdate({ serviceName: e.target.value })} placeholder="my-service" />
+        </div>
+        <div className="space-y-2">
+          <Label>Base Path</Label>
+          <Input value={config.basePath} onChange={(e) => onUpdate({ basePath: e.target.value })} placeholder="/api" />
+        </div>
+        <div className="space-y-2">
+          <Label>Protocole</Label>
+          <Select value={config.protocol} onValueChange={(v) => onUpdate({ protocol: v as ApiServiceProtocol })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="rest">REST</SelectItem>
+              <SelectItem value="grpc">gRPC</SelectItem>
+              <SelectItem value="graphql">GraphQL</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Temps de reponse (ms)</Label>
+          <Input type="number" value={config.responseTime} onChange={(e) => onUpdate({ responseTime: parseInt(e.target.value) || 50 })} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <Label>Taux d&apos;erreur</Label>
+            <span className="text-muted-foreground">{config.errorRate}%</span>
+          </div>
+          <Slider value={[config.errorRate]} onValueChange={([v]) => onUpdate({ errorRate: v })} max={100} step={1} />
+        </div>
+        <div className="space-y-2">
+          <Label>Max requetes concurrentes</Label>
+          <Input type="number" value={config.maxConcurrentRequests} onChange={(e) => onUpdate({ maxConcurrentRequests: parseInt(e.target.value) || 100 })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Background Job Configuration
+// ============================================
+
+function BackgroundJobConfig({ data, onUpdate }: { data: BackgroundJobNodeData; onUpdate: (u: Partial<BackgroundJobNodeData>) => void }) {
+  const config = { ...defaultBackgroundJobData, ...data };
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Background Job</span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Type de job</Label>
+          <Select value={config.jobType} onValueChange={(v) => onUpdate({ jobType: v as BackgroundJobType })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cron">Cron</SelectItem>
+              <SelectItem value="worker">Worker</SelectItem>
+              <SelectItem value="batch">Batch</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {config.jobType === 'cron' && (
+          <div className="space-y-2">
+            <Label>Schedule (cron)</Label>
+            <Input value={config.schedule || ''} onChange={(e) => onUpdate({ schedule: e.target.value })} placeholder="*/5 * * * *" />
+          </div>
+        )}
+        <div className="space-y-2">
+          <Label>Concurrence</Label>
+          <Input type="number" min="1" value={config.concurrency} onChange={(e) => onUpdate({ concurrency: parseInt(e.target.value) || 1 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Temps de traitement (ms)</Label>
+          <Input type="number" value={config.processingTimeMs} onChange={(e) => onUpdate({ processingTimeMs: parseInt(e.target.value) || 500 })} />
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <Label>Taux d&apos;erreur</Label>
+            <span className="text-muted-foreground">{config.errorRate}%</span>
+          </div>
+          <Slider value={[config.errorRate]} onValueChange={([v]) => onUpdate({ errorRate: v })} max={100} step={1} />
+        </div>
+        {config.jobType === 'batch' && (
+          <div className="space-y-2">
+            <Label>Taille du batch</Label>
+            <Input type="number" min="1" value={config.batchSize ?? 100} onChange={(e) => onUpdate({ batchSize: parseInt(e.target.value) || 100 })} />
+          </div>
+        )}
       </div>
     </div>
   );

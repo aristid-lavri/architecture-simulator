@@ -1,6 +1,6 @@
 import type { Node, Edge } from '@xyflow/react';
 import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
-import type { ApiGatewayNodeData, HttpServerNodeData } from '@/types';
+import type { ApiGatewayNodeData } from '@/types';
 
 /**
  * État runtime d'une API Gateway
@@ -137,8 +137,8 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     const serviceToEdge = new Map<string, Edge>();
     for (const edge of outgoingEdges) {
       const targetNode = allNodes.find((n) => n.id === edge.target);
-      if (targetNode && targetNode.type === 'http-server') {
-        const serverData = targetNode.data as HttpServerNodeData;
+      if (targetNode && (targetNode.type === 'http-server' || targetNode.type === 'api-service')) {
+        const serverData = targetNode.data as { serviceName?: string };
         if (serverData.serviceName) {
           serviceToEdge.set(serverData.serviceName, edge);
         }

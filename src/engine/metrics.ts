@@ -26,6 +26,9 @@ export class MetricsCollector {
   // Per-server metrics tracking
   private perServerMetrics: Map<string, { requests: number; errors: number; totalLatency: number; lastRpsUpdate: number; rps: number }> = new Map();
 
+  // Per-hierarchy metrics tracking (aggregated by parent)
+  private perHierarchyMetrics: Map<string, { cpu: number; memory: number; requests: number; errors: number }> = new Map();
+
   // Time-series snapshots
   private timeSeries: TimeSeriesSnapshot[] = [];
 
@@ -144,12 +147,19 @@ export class MetricsCollector {
       };
     }
 
-    const snapshot: TimeSeriesSnapshot = {
+    // Build perHierarchy data from recorded samples
+    const perHierarchy: Record<string, { cpu: number; memory: number; requests: number; errors: number }> = {};
+    for (const [parentId, data] of this.perHierarchyMetrics) {
+      perHierarchy[parentId] = { ...data };
+    }
+
+    const snapshot = {
       timestamp: Date.now(),
       elapsed,
       metrics: { ...this.metrics },
       perServer,
-    };
+      perHierarchy,
+    } as TimeSeriesSnapshot;
 
     this.timeSeries.push(snapshot);
     return snapshot;
@@ -172,6 +182,7 @@ export class MetricsCollector {
     };
     this.clientGroupStats.clear();
     this.perServerMetrics.clear();
+    this.perHierarchyMetrics.clear();
     this.timeSeries = [];
   }
 
@@ -236,6 +247,14 @@ export class MetricsCollector {
     }
 
     this.perServerMetrics.set(nodeId, existing);
+  }
+
+  /**
+   * Enregistre les metriques agregees d'un parent (host-server, network-zone).
+   * Appele par le SimulationEngine apres calcul de l'agregation hierarchique.
+   */
+  recordHierarchicalSample(parentId: string, aggregated: { cpu: number; memory: number; requests: number; errors: number }): void {
+    this.perHierarchyMetrics.set(parentId, { ...aggregated });
   }
 
   getServerMetrics(nodeId: string): { throughput: number; errorRate: number } {

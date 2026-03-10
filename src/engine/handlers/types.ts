@@ -12,6 +12,8 @@ export interface RequestContext {
   edgePath: string[];
   // Path HTTP de la requête (ex: "/api/orders", "/api/users")
   requestPath?: string;
+  // Port cible sur le nœud courant (provient de l'edge data targetPort)
+  targetPort?: number;
   // État spécifique au cache-aside pattern
   cacheHit?: boolean;
   cacheNodeId?: string;
@@ -101,6 +103,24 @@ export interface NodeRequestHandler {
    * @param nodeId ID du nœud à nettoyer
    */
   cleanup?(nodeId: string): void;
+
+  /**
+   * Calcule le délai de processing en tenant compte des latences hiérarchiques (optionnel)
+   * @param node Le nœud à traiter
+   * @param parentLatencies Latences cumulées des parents dans la hiérarchie
+   * @param speed Multiplicateur de vitesse de simulation
+   * @returns Délai ajusté en millisecondes
+   */
+  getHierarchicalProcessingDelay?(node: Node, parentLatencies: number[], speed: number): number;
+
+  /**
+   * Vérifie si le nœud peut accepter une requête au niveau du parent (optionnel)
+   * @param nodeId ID du nœud cible
+   * @param parentId ID du nœud parent
+   * @param utilization Utilisation courante du parent
+   * @returns true si la requête peut être acceptée
+   */
+  canAcceptAtParentLevel?(nodeId: string, parentId: string, utilization: import('@/types').ResourceUtilization): boolean;
 }
 
 /**

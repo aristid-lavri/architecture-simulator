@@ -1,9 +1,62 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Node, Edge } from '@xyflow/react';
+import type { ArchitectureSnapshot } from '@/types';
+
+const MAX_HISTORY = 50;
+
+/**
+ * Tri topologique des noeuds : les parents sont toujours avant leurs enfants.
+ * React Flow exige cet ordre pour le rendu correct des groupes.
+ */
+function ensureNodeOrdering(nodes: Node[]): Node[] {
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const visited = new Set<string>();
+  const result: Node[] = [];
+
+  function visit(node: Node) {
+    if (visited.has(node.id)) return;
+    if (node.parentId) {
+      const parent = nodeMap.get(node.parentId);
+      if (parent) visit(parent);
+    }
+    visited.add(node.id);
+    result.push(node);
+  }
+
+  for (const node of nodes) {
+    visit(node);
+  }
+
+  return result;
+}
+
+/**
+ * Trouve tous les descendants d'un noeud (enfants, petits-enfants, etc.) via parentId.
+ */
+function findAllDescendants(nodeId: string, nodes: Node[]): string[] {
+  const descendants: string[] = [];
+  const queue = [nodeId];
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    for (const node of nodes) {
+      if (node.parentId === currentId) {
+        descendants.push(node.id);
+        queue.push(node.id);
+      }
+    }
+  }
+  return descendants;
+}
+
+/** Genere un identifiant unique pour les snapshots. */
+function generateId(): string {
+  return `snap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 /**
  * Etat du graphe d'architecture (noeuds et aretes).
+ * Inclut undo/redo et snapshots nommes.
  * Persiste dans localStorage via le middleware Zustand persist.
  */
 interface ArchitectureState {
@@ -11,102 +64,301 @@ interface ArchitectureState {
   edges: Edge[];
   lastSaved: number | null;
 
+  // Undo/redo (non persiste)
+  past: ArchitectureSnapshot[];
+  future: ArchitectureSnapshot[];
+
+  // Snapshots nommes (persistes)
+  snapshots: ArchitectureSnapshot[];
+
   // Actions
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   updateNode: (nodeId: string, data: Partial<Node['data']>) => void;
   removeNode: (nodeId: string) => void;
+  reparentNode: (nodeId: string, newParentId: string | null) => void;
   addNode: (node: Node) => void;
   addEdge: (edge: Edge) => void;
   updateEdge: (edgeId: string, data: Partial<Edge['data']>) => void;
   removeEdge: (edgeId: string) => void;
   clear: () => void;
   save: () => void;
+
+  // Undo/Redo
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+
+  // Snapshots nommes
+  saveSnapshot: (name?: string) => void;
+  getSnapshots: () => ArchitectureSnapshot[];
+  restoreSnapshot: (id: string) => void;
+  deleteSnapshot: (id: string) => void;
 }
 
 /**
  * Store Zustand pour le graphe d'architecture.
- * Persiste automatiquement noeuds, aretes et timestamp dans localStorage
+ * Persiste automatiquement noeuds, aretes, snapshots et timestamp dans localStorage
  * sous la cle 'architecture-simulator-storage'.
  */
 export const useArchitectureStore = create<ArchitectureState>()(
   persist(
-    (set, get) => ({
-      nodes: [],
-      edges: [],
-      lastSaved: null,
+    (set, get) => {
+      /** Capture l'etat courant comme snapshot. */
+      function captureState(): ArchitectureSnapshot {
+        const { nodes, edges } = get();
+        return {
+          id: generateId(),
+          name: '',
+          timestamp: Date.now(),
+          nodes: structuredClone(nodes),
+          edges: structuredClone(edges),
+        };
+      }
 
-      setNodes: (nodes) => set({ nodes, lastSaved: Date.now() }),
+      /** Pousse l'etat courant dans past et vide future avant une mutation. */
+      function pushHistory() {
+        const snapshot = captureState();
+        const past = [...get().past, snapshot].slice(-MAX_HISTORY);
+        set({ past, future: [] });
+      }
 
-      setEdges: (edges) => set({ edges, lastSaved: Date.now() }),
+      return {
+        nodes: [],
+        edges: [],
+        lastSaved: null,
+        past: [],
+        future: [],
+        snapshots: [],
 
-      updateNode: (nodeId, data) =>
-        set((state) => ({
-          nodes: state.nodes.map((node) =>
-            node.id === nodeId
-              ? { ...node, data: { ...node.data, ...data } }
-              : node
-          ),
-          lastSaved: Date.now(),
-        })),
+        setNodes: (nodes) => {
+          pushHistory();
+          set({ nodes, lastSaved: Date.now() });
+        },
 
-      removeNode: (nodeId) =>
-        set((state) => ({
-          nodes: state.nodes.filter((node) => node.id !== nodeId),
-          edges: state.edges.filter(
-            (edge) => edge.source !== nodeId && edge.target !== nodeId
-          ),
-          lastSaved: Date.now(),
-        })),
+        setEdges: (edges) => {
+          pushHistory();
+          set({ edges, lastSaved: Date.now() });
+        },
 
-      addNode: (node) =>
-        set((state) => ({
-          nodes: [...state.nodes, node],
-          lastSaved: Date.now(),
-        })),
+        updateNode: (nodeId, data) => {
+          pushHistory();
+          set((state) => ({
+            nodes: state.nodes.map((node) =>
+              node.id === nodeId
+                ? { ...node, data: { ...node.data, ...data } }
+                : node
+            ),
+            lastSaved: Date.now(),
+          }));
+        },
 
-      addEdge: (edge) =>
-        set((state) => ({
-          edges: [...state.edges, edge],
-          lastSaved: Date.now(),
-        })),
+        removeNode: (nodeId) => {
+          pushHistory();
+          set((state) => {
+            // Suppression en cascade : trouver tous les descendants
+            const descendants = findAllDescendants(nodeId, state.nodes);
+            const idsToRemove = new Set([nodeId, ...descendants]);
+            return {
+              nodes: state.nodes.filter((node) => !idsToRemove.has(node.id)),
+              edges: state.edges.filter(
+                (edge) => !idsToRemove.has(edge.source) && !idsToRemove.has(edge.target)
+              ),
+              lastSaved: Date.now(),
+            };
+          });
+        },
 
-      updateEdge: (edgeId, data) =>
-        set((state) => ({
-          edges: state.edges.map((edge) =>
-            edge.id === edgeId
-              ? { ...edge, data: { ...edge.data, ...data } }
-              : edge
-          ),
-          lastSaved: Date.now(),
-        })),
+        reparentNode: (nodeId, newParentId) => {
+          pushHistory();
+          set((state) => {
+            const node = state.nodes.find((n) => n.id === nodeId);
+            if (!node) return state;
 
-      removeEdge: (edgeId) =>
-        set((state) => ({
-          edges: state.edges.filter((edge) => edge.id !== edgeId),
-          lastSaved: Date.now(),
-        })),
+            // Calculer la position absolue du noeud
+            function getAbsolutePos(n: Node): { x: number; y: number } {
+              let x = n.position.x;
+              let y = n.position.y;
+              let current = n;
+              while (current.parentId) {
+                const parent = state.nodes.find((p) => p.id === current.parentId);
+                if (!parent) break;
+                x += parent.position.x;
+                y += parent.position.y;
+                current = parent;
+              }
+              return { x, y };
+            }
 
-      clear: () =>
-        set({
-          nodes: [],
-          edges: [],
-          lastSaved: Date.now(),
-        }),
+            const absPos = getAbsolutePos(node);
 
-      save: () => set({ lastSaved: Date.now() }),
-    }),
+            const updatedNodes = state.nodes.map((n) => {
+              if (n.id !== nodeId) return n;
+
+              if (newParentId) {
+                const newParent = state.nodes.find((p) => p.id === newParentId);
+                if (!newParent) return n;
+                const parentAbsPos = getAbsolutePos(newParent);
+                return {
+                  ...n,
+                  position: {
+                    x: absPos.x - parentAbsPos.x,
+                    y: absPos.y - parentAbsPos.y,
+                  },
+                  parentId: newParentId,
+                  extent: 'parent' as const,
+                };
+              } else {
+                // Détacher du parent
+                return {
+                  ...n,
+                  position: absPos,
+                  parentId: undefined,
+                  extent: undefined,
+                };
+              }
+            });
+
+            return {
+              nodes: ensureNodeOrdering(updatedNodes),
+              lastSaved: Date.now(),
+            };
+          });
+        },
+
+        addNode: (node) => {
+          pushHistory();
+          set((state) => ({
+            nodes: [...state.nodes, node],
+            lastSaved: Date.now(),
+          }));
+        },
+
+        addEdge: (edge) => {
+          pushHistory();
+          set((state) => ({
+            edges: [...state.edges, edge],
+            lastSaved: Date.now(),
+          }));
+        },
+
+        updateEdge: (edgeId, data) => {
+          pushHistory();
+          set((state) => ({
+            edges: state.edges.map((edge) =>
+              edge.id === edgeId
+                ? { ...edge, data: { ...edge.data, ...data } }
+                : edge
+            ),
+            lastSaved: Date.now(),
+          }));
+        },
+
+        removeEdge: (edgeId) => {
+          pushHistory();
+          set((state) => ({
+            edges: state.edges.filter((edge) => edge.id !== edgeId),
+            lastSaved: Date.now(),
+          }));
+        },
+
+        clear: () => {
+          pushHistory();
+          set({
+            nodes: [],
+            edges: [],
+            lastSaved: Date.now(),
+          });
+        },
+
+        save: () => set({ lastSaved: Date.now() }),
+
+        // --- Undo/Redo ---
+
+        undo: () => {
+          const { past } = get();
+          if (past.length === 0) return;
+
+          const current = captureState();
+          const previous = past[past.length - 1];
+
+          set({
+            nodes: previous.nodes,
+            edges: previous.edges,
+            past: past.slice(0, -1),
+            future: [current, ...get().future].slice(0, MAX_HISTORY),
+            lastSaved: Date.now(),
+          });
+        },
+
+        redo: () => {
+          const { future } = get();
+          if (future.length === 0) return;
+
+          const current = captureState();
+          const next = future[0];
+
+          set({
+            nodes: next.nodes,
+            edges: next.edges,
+            past: [...get().past, current].slice(-MAX_HISTORY),
+            future: future.slice(1),
+            lastSaved: Date.now(),
+          });
+        },
+
+        canUndo: () => get().past.length > 0,
+        canRedo: () => get().future.length > 0,
+
+        // --- Snapshots nommes ---
+
+        saveSnapshot: (name?: string) => {
+          const snapshot = captureState();
+          snapshot.name = name || '';
+          set((state) => ({
+            snapshots: [...state.snapshots, snapshot],
+          }));
+        },
+
+        getSnapshots: () => get().snapshots,
+
+        restoreSnapshot: (id: string) => {
+          const snapshot = get().snapshots.find((s) => s.id === id);
+          if (!snapshot) return;
+
+          pushHistory();
+          set({
+            nodes: structuredClone(snapshot.nodes),
+            edges: structuredClone(snapshot.edges),
+            lastSaved: Date.now(),
+          });
+        },
+
+        deleteSnapshot: (id: string) => {
+          set((state) => ({
+            snapshots: state.snapshots.filter((s) => s.id !== id),
+          }));
+        },
+      };
+    },
     {
       name: 'architecture-simulator-storage',
-      version: 1,
+      version: 2,
       migrate: (persistedState, version) => {
-        // v0 → v1: no schema changes, just adding versioning
-        return persistedState as ArchitectureState;
+        const state = persistedState as Record<string, unknown>;
+        if (version < 2) {
+          // v1 → v2: ajout snapshots
+          state.snapshots = state.snapshots || [];
+        }
+        return state as unknown as ArchitectureState;
       },
       partialize: (state) => ({
         nodes: state.nodes,
         edges: state.edges,
         lastSaved: state.lastSaved,
+        snapshots: state.snapshots,
+        // past et future ne sont PAS persistes
       }),
       storage: {
         getItem: (name) => {

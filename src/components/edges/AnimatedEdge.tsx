@@ -33,6 +33,11 @@ export interface AnimatedEdgeData extends Record<string, unknown> {
   pathType?: 'bezier' | 'smoothstep' | 'straight';
   animated?: boolean;
   label?: string;
+  protocol?: import('@/types').ConnectionProtocol;
+  /** Port cible sur un host-server (pour le routage via port mapping) */
+  targetPort?: number;
+  /** Edge créé automatiquement par un port mapping */
+  autoCreated?: boolean;
 }
 
 export type AnimatedEdge = Edge<AnimatedEdgeData>;
@@ -162,8 +167,8 @@ function AnimatedEdgeComponent({
         );
       })}
 
-      {/* Edge label / particle count */}
-      {(particles.length > 0 || data?.label) && (
+      {/* Edge label / particle count / protocol badge */}
+      {(particles.length > 0 || data?.label || data?.protocol) && (
         <EdgeLabelRenderer>
           <div
             style={{
@@ -171,9 +176,18 @@ function AnimatedEdgeComponent({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: 'all',
             }}
-            className="nodrag nopan px-1.5 py-0.5 text-[10px] font-mono bg-background/90 border border-border rounded text-muted-foreground"
+            className="nodrag nopan flex items-center gap-1"
           >
-            {particles.length > 0 ? particles.length : data?.label}
+            {data?.protocol && (
+              <span className="px-1 py-0.5 text-[9px] font-mono font-semibold uppercase bg-background/90 border border-border rounded text-muted-foreground">
+                {data.protocol}
+              </span>
+            )}
+            {(particles.length > 0 || data?.label) && (
+              <span className="px-1.5 py-0.5 text-[10px] font-mono bg-background/90 border border-border rounded text-muted-foreground">
+                {particles.length > 0 ? particles.length : data?.label}
+              </span>
+            )}
           </div>
         </EdgeLabelRenderer>
       )}

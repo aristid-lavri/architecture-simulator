@@ -164,4 +164,77 @@ export class ResourceManager {
       queuedRequests: 0,
     };
   }
+
+  /**
+   * Calcule l'utilisation agregee d'un parent a partir des etats de ses enfants.
+   * Somme CPU/RAM/Network des enfants, rapportee aux capacites du parent.
+   */
+  static calculateAggregatedUtilization(
+    parentUtilization: ResourceUtilization,
+    childStates: ResourceUtilization[]
+  ): ResourceUtilization {
+    if (childStates.length === 0) return parentUtilization;
+
+    const totalCpu = childStates.reduce((sum, c) => sum + c.cpu, 0);
+    const totalMemory = childStates.reduce((sum, c) => sum + c.memory, 0);
+    const totalNetwork = childStates.reduce((sum, c) => sum + c.network, 0);
+    const totalConnections = childStates.reduce((sum, c) => sum + c.activeConnections, 0);
+    const totalQueued = childStates.reduce((sum, c) => sum + c.queuedRequests, 0);
+
+    // L'utilisation agregee prend le max entre le parent et la moyenne des enfants
+    const avgCpu = totalCpu / childStates.length;
+    const avgMemory = totalMemory / childStates.length;
+    const avgNetwork = totalNetwork / childStates.length;
+
+    return {
+      cpu: Math.min(100, Math.max(parentUtilization.cpu, avgCpu)),
+      memory: Math.min(100, Math.max(parentUtilization.memory, avgMemory)),
+      network: Math.min(100, Math.max(parentUtilization.network, avgNetwork)),
+      disk: parentUtilization.disk,
+      activeConnections: totalConnections,
+      queuedRequests: totalQueued,
+      saturation: Math.max(
+        parentUtilization.saturation ?? 0,
+        Math.max(avgCpu, avgMemory, avgNetwork)
+      ),
+      parentId: parentUtilization.parentId,
+      isAggregated: true,
+      childrenCount: childStates.length,
+    };
+  }
+
+  /**
+   * Calcule la latence degradee en tenant compte de la charge du parent.
+   * Si le parent est sous forte charge (>70%), ses enfants subissent une degradation supplementaire.
+   */
+  static calculateDegradedLatencyWithParent(
+    baseLatency: number,
+    nodeUtilization: ResourceUtilization,
+    parentUtilization: ResourceUtilization | null,
+    settings: DegradationSettings
+  ): number {
+    // D'abord appliquer la degradation du noeud lui-meme
+    let degradedLatency = this.calculateDegradedLatency(
+      baseLatency,
+      nodeUtilization,
+      settings
+    );
+
+    // Si le parent est sous charge, ajouter un facteur supplementaire
+    if (parentUtilization) {
+      const parentMaxUtil = Math.max(
+        parentUtilization.cpu,
+        parentUtilization.memory,
+        parentUtilization.network
+      ) / 100;
+
+      // Facteur multiplicatif base sur la charge du parent (1.0 a 1.5x)
+      if (parentMaxUtil > 0.7) {
+        const parentFactor = 1 + (parentMaxUtil - 0.7) * 1.67; // 0.7->1.0, 1.0->1.5
+        degradedLatency *= parentFactor;
+      }
+    }
+
+    return degradedLatency;
+  }
 }

@@ -29,3 +29,6 @@ export { ServiceDiscoveryHandler } from './ServiceDiscoveryHandler';
 export { DNSHandler } from './DNSHandler';
 export { CloudStorageHandler } from './CloudStorageHandler';
 export { CloudFunctionHandler } from './CloudFunctionHandler';
+export { HostServerHandler } from './HostServerHandler';
+export { ApiServiceHandler } from './ApiServiceHandler';
+export { BackgroundJobHandler } from './BackgroundJobHandler';

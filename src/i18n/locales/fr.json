@@ -66,6 +66,10 @@
       "name": "Zone Reseau",
       "description": "Regroupe les composants par domaine reseau"
     },
+    "hostServer": {
+      "name": "Serveur Hote",
+      "description": "Serveur physique hebergeant des conteneurs Docker"
+    },
     "circuitBreaker": {
       "name": "Circuit Breaker",
       "description": "Protege contre les defaillances en cascade"
@@ -97,6 +101,22 @@
     "cloudFunction": {
       "name": "Cloud Function",
       "description": "Fonction cloud managee (Lambda, Azure Function)"
+    },
+    "apiService": {
+      "name": "API Service",
+      "description": "Service API REST/gRPC heberge dans un serveur ou container"
+    },
+    "backgroundJob": {
+      "name": "Background Job",
+      "description": "Job en arriere-plan (cron, worker, batch)"
+    },
+    "firewall": {
+      "name": "Firewall",
+      "description": "Pare-feu reseau avec regles de filtrage"
+    },
+    "dns": {
+      "name": "DNS",
+      "description": "Resolution de noms de domaine"
     }
   },
   "properties": {
@@ -196,6 +216,41 @@
       "maxRetries": "Max réessais",
       "deadLetterEnabled": "File des messages morts"
     },
+    "apiService": {
+      "serviceName": "Nom du service",
+      "basePath": "Route de base",
+      "protocol": "Protocole",
+      "responseTime": "Temps de reponse (ms)",
+      "errorRate": "Taux d'erreur (%)",
+      "maxConcurrentRequests": "Requetes concurrentes max"
+    },
+    "backgroundJob": {
+      "jobType": "Type de job",
+      "jobTypeCron": "Cron (planifie)",
+      "jobTypeWorker": "Worker (consomme une queue)",
+      "jobTypeBatch": "Batch (traitement par lots)",
+      "schedule": "Expression cron",
+      "concurrency": "Concurrence",
+      "processingTime": "Temps de traitement (ms)",
+      "errorRate": "Taux d'erreur (%)",
+      "batchSize": "Taille du batch"
+    },
+    "container": {
+      "cpuLimitCores": "Limite CPU (cores)",
+      "memoryLimitMB": "Limite memoire (MB)"
+    },
+    "hostServer": {
+      "os": "Systeme d'exploitation",
+      "osLinux": "Linux",
+      "osWindows": "Windows",
+      "osMacos": "macOS"
+    },
+    "hierarchy": {
+      "sameContainer": "Meme container",
+      "sameServer": "Meme serveur",
+      "sameZone": "Meme zone",
+      "crossZone": "Inter-zone"
+    },
     "apiGateway": {
       "authentication": "Authentification",
       "authType": "Type d'auth",
@@ -289,6 +344,56 @@
       "name": "Event-Driven",
       "description": "Architecture event-driven avec Message Queue (Kafka)"
     },
+    "ecommerce": {
+      "name": "E-Commerce Microservices",
+      "description": "Plateforme e-commerce avec zones réseau, microservices et communication asynchrone"
+    },
     "confirmReplace": "Remplacer l'architecture actuelle?"
+  },
+  "chaos": {
+    "simulateFault": "Simuler une panne",
+    "degradeNode": "Dégrader (50% CPU)",
+    "restore": "Restaurer",
+    "isolateNetwork": "Isoler le réseau",
+    "nodeDown": "Nœud en panne",
+    "nodeDegraded": "Nœud dégradé"
+  },
+  "connectors": {
+    "protocol": "Protocole",
+    "rest": "REST",
+    "grpc": "gRPC",
+    "websocket": "WebSocket",
+    "graphql": "GraphQL",
+    "incompatible": "Connexion incompatible",
+    "suggestion": "Protocole suggéré",
+    "noProtocol": "Aucun (direct)"
+  },
+  "layout": {
+    "autoArrange": "Auto-arranger",
+    "layouting": "Arrangement en cours..."
+  },
+  "latency": {
+    "title": "Calculateur de latence",
+    "selectSource": "Cliquer pour sélectionner",
+    "selectTarget": "Cliquer pour sélectionner",
+    "compareProtocols": "Comparer les protocoles",
+    "noPath": "Aucun chemin trouvé entre ces nœuds",
+    "reset": "Réinitialiser"
+  },
+  "snapshots": {
+    "save": "Sauvegarder un snapshot",
+    "restore": "Restaurer",
+    "delete": "Supprimer",
+    "name": "Nom du snapshot",
+    "unnamed": "Sans nom",
+    "history": "Historique",
+    "undo": "Annuler",
+    "redo": "Rétablir"
+  },
+  "license": {
+    "community": "Community Edition",
+    "enterprise": "Enterprise Edition",
+    "upgradeRequired": "Fonctionnalité Enterprise",
+    "upgradeCta": "Passer à Enterprise"
   }
 }

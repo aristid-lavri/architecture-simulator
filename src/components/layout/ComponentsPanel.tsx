@@ -112,6 +112,14 @@ const COMPONENTS: ComponentItem[] = [
     signalColor: 'oklch(0.65 0.10 0)',
     category: 'zone',
   },
+  {
+    type: 'host-server',
+    nameKey: 'components.hostServer.name',
+    descriptionKey: 'components.hostServer.description',
+    icon: <Monitor className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.62 0.14 240)',
+    category: 'compute',
+  },
   // Resilience
   {
     type: 'circuit-breaker',
@@ -152,6 +160,22 @@ const COMPONENTS: ComponentItem[] = [
     nameKey: 'components.container.name',
     descriptionKey: 'components.container.description',
     icon: <Box className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.68 0.18 50)',
+    category: 'compute',
+  },
+  {
+    type: 'api-service',
+    nameKey: 'components.apiService.name',
+    descriptionKey: 'components.apiService.description',
+    icon: <Server className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.68 0.18 50)',
+    category: 'compute',
+  },
+  {
+    type: 'background-job',
+    nameKey: 'components.backgroundJob.name',
+    descriptionKey: 'components.backgroundJob.description',
+    icon: <Zap className="h-3.5 w-3.5" />,
     signalColor: 'oklch(0.68 0.18 50)',
     category: 'compute',
   },
@@ -308,7 +332,7 @@ export function ComponentsPanel() {
   const isSimMode = mode === 'simulation';
 
   const [openCategories, setOpenCategories] = useState<Set<string>>(
-    () => new Set(CATEGORY_ORDER.slice(0, 2).map((c) => c.key))
+    () => new Set(CATEGORY_ORDER.map((c) => c.key))
   );
 
   const toggleCategory = useCallback((key: string) => {

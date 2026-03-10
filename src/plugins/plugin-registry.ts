@@ -84,8 +84,8 @@ class PluginRegistryImpl {
   /**
    * Retourne les composants React Flow des plugins, à merger avec les nodeTypes built-in.
    */
-  getNodeTypes(): Record<string, ReactComponentType<any>> {
-    const types: Record<string, ReactComponentType<any>> = {};
+  getNodeTypes(): Record<string, ReactComponentType<Record<string, unknown>>> {
+    const types: Record<string, ReactComponentType<Record<string, unknown>>> = {};
     for (const [type, def] of this.nodeDefinitions) {
       types[type] = def.component;
     }
@@ -144,6 +144,51 @@ class PluginRegistryImpl {
     for (const listener of this.listeners) {
       listener();
     }
+  }
+
+  // ── Hiérarchie ──
+
+  /**
+   * Vérifie si un type de noeud plugin peut être enfant d'un type parent.
+   * Retourne undefined si le type n'est pas un plugin (laisser le built-in gérer).
+   */
+  canPluginBeChildOf(childType: string, parentType: string): boolean | undefined {
+    const def = this.nodeDefinitions.get(childType);
+    if (!def?.hierarchy) return undefined;
+    if (def.hierarchy.nonNestable) return false;
+    if (def.hierarchy.allowedParents) {
+      return def.hierarchy.allowedParents.includes(parentType);
+    }
+    return undefined;
+  }
+
+  /**
+   * Vérifie si un type de noeud plugin peut accepter un enfant d'un certain type.
+   * Retourne undefined si le type n'est pas un plugin conteneur.
+   */
+  canPluginAcceptChild(parentType: string, childType: string): boolean | undefined {
+    const def = this.nodeDefinitions.get(parentType);
+    if (!def?.hierarchy?.isContainer) return undefined;
+    if (def.hierarchy.allowedChildren) {
+      return def.hierarchy.allowedChildren.includes(childType);
+    }
+    return undefined;
+  }
+
+  /**
+   * Retourne les types de noeuds plugins qui sont des conteneurs.
+   */
+  getContainerTypes(): string[] {
+    return Array.from(this.nodeDefinitions.values())
+      .filter(def => def.hierarchy?.isContainer)
+      .map(def => def.type);
+  }
+
+  /**
+   * Retourne les protocoles supportés par un type de noeud plugin.
+   */
+  getProtocols(type: string): string[] | undefined {
+    return this.nodeDefinitions.get(type)?.protocols;
   }
 
   // ── Utilitaires ──

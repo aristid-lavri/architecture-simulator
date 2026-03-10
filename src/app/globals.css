@@ -351,6 +351,60 @@
   animation: signal-pulse-fast 0.5s ease-in-out infinite;
 }
 
+/* ═══════════════════════════════════════
+   CHAOS MODE — FAULT VISUAL OVERRIDES
+   Applied via className on React Flow node wrapper
+   ═══════════════════════════════════════ */
+
+@keyframes fault-blink-down {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes fault-blink-degraded {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+/* Down state — red ring + fast blink */
+.node-fault-down .node-instrument {
+  outline: 2px solid oklch(0.65 0.22 25 / 0.8);
+  outline-offset: -1px;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4), var(--node-shadow);
+  animation: fault-blink-down 0.8s ease-in-out infinite;
+}
+
+.node-fault-down .node-signal-bar {
+  background-color: oklch(0.65 0.22 25) !important;
+}
+
+/* Degraded state — orange ring + slow blink */
+.node-fault-degraded .node-instrument {
+  outline: 2px solid oklch(0.75 0.18 55 / 0.8);
+  outline-offset: -1px;
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.3), var(--node-shadow);
+  animation: fault-blink-degraded 1.5s ease-in-out infinite;
+}
+
+.node-fault-degraded .node-signal-bar {
+  background-color: oklch(0.75 0.18 55) !important;
+}
+
+/* ═══════════════════════════════════════
+   LATENCY PATH HIGHLIGHTING
+   ═══════════════════════════════════════ */
+
+.node-latency-highlight .node-instrument {
+  outline: 2px solid oklch(0.70 0.15 220 / 0.8);
+  outline-offset: -1px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3), var(--node-shadow);
+}
+
+.node-latency-dimmed {
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+
 /* Resource utilization bar (thin, inline) */
 .resource-bar {
   height: 2px;

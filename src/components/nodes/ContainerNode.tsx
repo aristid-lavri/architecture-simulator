@@ -1,12 +1,11 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
-import { motion } from 'framer-motion';
+import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { Box } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { NodeStatus, ContainerNodeData } from '@/types';
-import { defaultContainerData } from '@/types';
+import type { ContainerNodeData } from '@/types';
+import { defaultContainerData, containerColor } from '@/types';
 
 export type { ContainerNodeData };
 
@@ -15,7 +14,7 @@ interface ContainerNodeProps {
   selected?: boolean;
 }
 
-const SIGNAL_COMPUTE = 'oklch(0.68 0.18 50)';
+const SIGNAL_COMPUTE = containerColor;
 
 function ContainerNode({ data, selected }: ContainerNodeProps) {
   const {
@@ -25,26 +24,57 @@ function ContainerNode({ data, selected }: ContainerNodeProps) {
     replicas = defaultContainerData.replicas,
     cpuLimit = defaultContainerData.cpuLimit,
     memoryLimit = defaultContainerData.memoryLimit,
+    cpuLimitCores = defaultContainerData.cpuLimitCores,
+    memoryLimitMB = defaultContainerData.memoryLimitMB,
+    color = SIGNAL_COMPUTE,
   } = data;
 
   return (
-    <motion.div
-      className={cn('node-instrument relative min-w-44 max-w-56', selected && 'selected')}
-      animate={status === 'processing' ? { scale: [1, 1.01, 1] } : status === 'error' ? { x: [-2, 2, -2, 2, 0] } : {}}
-      transition={status === 'processing' ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
+    <div
+      className={cn(
+        'min-w-[200px] min-h-[150px] w-full h-full rounded-lg border-2',
+        selected && 'ring-2 ring-ring ring-offset-2'
+      )}
+      style={{
+        borderColor: `color-mix(in oklch, ${color}, transparent 30%)`,
+        borderStyle: 'dashed',
+        backgroundColor: `color-mix(in oklch, ${color}, transparent 94%)`,
+      }}
     >
-      <div
-        className={cn('node-signal-bar', status === 'processing' && 'signal-pulse', status === 'error' && 'signal-pulse-critical')}
-        style={{ backgroundColor: SIGNAL_COMPUTE }}
+      <NodeResizer
+        minWidth={200}
+        minHeight={150}
+        isVisible={selected}
+        lineClassName="!border-ring"
+        handleClassName="!bg-ring !w-2 !h-2"
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_COMPUTE }} />
+      {/* Input Handle */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ borderColor: color }}
+      />
 
-      <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex items-center gap-2">
-          <Box className="w-3.5 h-3.5" style={{ color: SIGNAL_COMPUTE }} />
-          <span className="text-instrument text-[10px] text-muted-foreground">{label}</span>
-        </div>
+      {/* Header */}
+      <div
+        className="flex items-center gap-2 px-3 py-1.5 rounded-t-md"
+        style={{ backgroundColor: `color-mix(in oklch, ${color}, transparent 75%)` }}
+      >
+        <Box className="w-3.5 h-3.5" style={{ color }} />
+        <span className="font-mono text-[11px] font-semibold" style={{ color }}>
+          {label}
+        </span>
+        <span className="font-mono text-[9px] text-muted-foreground">
+          {replicas}x {image}
+        </span>
+        <span className="font-mono text-[9px] text-muted-foreground ml-auto">
+          {cpuLimitCores != null ? `${cpuLimitCores} cores` : `cpu: ${cpuLimit}`}
+          {' | '}
+          {memoryLimitMB != null ? `${memoryLimitMB} MB` : `mem: ${memoryLimit}`}
+        </span>
+
+        {/* Status indicator */}
         <div
           className={cn(
             'w-1.5 h-1.5 rounded-full',
@@ -53,23 +83,20 @@ function ContainerNode({ data, selected }: ContainerNodeProps) {
             status === 'success' && 'bg-signal-healthy',
             status === 'error' && 'bg-signal-critical signal-pulse-critical'
           )}
-          style={status === 'processing' ? { backgroundColor: SIGNAL_COMPUTE } : undefined}
+          style={status === 'processing' ? { backgroundColor: color } : undefined}
         />
       </div>
 
-      <div className="px-3 pb-2.5 space-y-1">
-        <div className="flex items-center justify-between font-mono text-xs">
-          <span className="font-semibold" style={{ color: SIGNAL_COMPUTE }}>{replicas}x</span>
-          <span className="text-muted-foreground text-[10px]">{image}</span>
-        </div>
-        <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
-          <span>cpu: {cpuLimit}</span>
-          <span>mem: {memoryLimit}</span>
-        </div>
-      </div>
+      {/* Interior zone for child services — extra padding at bottom */}
+      <div className="px-2 pt-2 pb-8" />
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_COMPUTE }} />
-    </motion.div>
+      {/* Output Handle */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ borderColor: color }}
+      />
+    </div>
   );
 }
 

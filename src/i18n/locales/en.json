@@ -66,6 +66,10 @@
       "name": "Network Zone",
       "description": "Groups components by network domain"
     },
+    "hostServer": {
+      "name": "Host Server",
+      "description": "Physical server hosting Docker containers"
+    },
     "circuitBreaker": {
       "name": "Circuit Breaker",
       "description": "Protects against cascading failures"
@@ -97,12 +101,63 @@
     "cloudFunction": {
       "name": "Cloud Function",
       "description": "Managed cloud function (Lambda, Azure Function)"
+    },
+    "apiService": {
+      "name": "API Service",
+      "description": "REST/gRPC API service hosted in a server or container"
+    },
+    "backgroundJob": {
+      "name": "Background Job",
+      "description": "Background job (cron, worker, batch processor)"
+    },
+    "firewall": {
+      "name": "Firewall",
+      "description": "Network firewall with filtering rules"
+    },
+    "dns": {
+      "name": "DNS",
+      "description": "Domain name resolution"
     }
   },
   "properties": {
     "title": "Properties",
     "noSelection": "Select a component to view its properties",
     "name": "Name",
+    "apiService": {
+      "serviceName": "Service name",
+      "basePath": "Base path",
+      "protocol": "Protocol",
+      "responseTime": "Response time (ms)",
+      "errorRate": "Error rate (%)",
+      "maxConcurrentRequests": "Max concurrent requests"
+    },
+    "backgroundJob": {
+      "jobType": "Job type",
+      "jobTypeCron": "Cron (scheduled)",
+      "jobTypeWorker": "Worker (consumes queue)",
+      "jobTypeBatch": "Batch (bulk processing)",
+      "schedule": "Cron expression",
+      "concurrency": "Concurrency",
+      "processingTime": "Processing time (ms)",
+      "errorRate": "Error rate (%)",
+      "batchSize": "Batch size"
+    },
+    "container": {
+      "cpuLimitCores": "CPU limit (cores)",
+      "memoryLimitMB": "Memory limit (MB)"
+    },
+    "hostServer": {
+      "os": "Operating system",
+      "osLinux": "Linux",
+      "osWindows": "Windows",
+      "osMacos": "macOS"
+    },
+    "hierarchy": {
+      "sameContainer": "Same container",
+      "sameServer": "Same server",
+      "sameZone": "Same zone",
+      "crossZone": "Cross-zone"
+    },
     "httpClient": {
       "method": "Method",
       "path": "Path",
@@ -289,6 +344,56 @@
       "name": "Event-Driven",
       "description": "Event-driven architecture with Message Queue (Kafka)"
     },
+    "ecommerce": {
+      "name": "E-Commerce Microservices",
+      "description": "E-commerce platform with network zones, microservices and async communication"
+    },
     "confirmReplace": "Replace current architecture?"
+  },
+  "chaos": {
+    "simulateFault": "Simulate fault",
+    "degradeNode": "Degrade (50% CPU)",
+    "restore": "Restore",
+    "isolateNetwork": "Isolate network",
+    "nodeDown": "Node down",
+    "nodeDegraded": "Node degraded"
+  },
+  "connectors": {
+    "protocol": "Protocol",
+    "rest": "REST",
+    "grpc": "gRPC",
+    "websocket": "WebSocket",
+    "graphql": "GraphQL",
+    "incompatible": "Incompatible connection",
+    "suggestion": "Suggested protocol",
+    "noProtocol": "None (direct)"
+  },
+  "layout": {
+    "autoArrange": "Auto-arrange",
+    "layouting": "Arranging..."
+  },
+  "latency": {
+    "title": "Latency Calculator",
+    "selectSource": "Click to select",
+    "selectTarget": "Click to select",
+    "compareProtocols": "Compare protocols",
+    "noPath": "No path found between these nodes",
+    "reset": "Reset"
+  },
+  "snapshots": {
+    "save": "Save snapshot",
+    "restore": "Restore",
+    "delete": "Delete",
+    "name": "Snapshot name",
+    "unnamed": "Unnamed",
+    "history": "History",
+    "undo": "Undo",
+    "redo": "Redo"
+  },
+  "license": {
+    "community": "Community Edition",
+    "enterprise": "Enterprise Edition",
+    "upgradeRequired": "Enterprise feature",
+    "upgradeCta": "Upgrade to Enterprise"
   }
 }

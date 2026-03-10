@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ReactFlow,
   Background,
@@ -40,12 +40,18 @@ import ServiceDiscoveryNode from '@/components/nodes/ServiceDiscoveryNode';
 import DNSNode from '@/components/nodes/DNSNode';
 import CloudStorageNode from '@/components/nodes/CloudStorageNode';
 import FirewallNode from '@/components/nodes/FirewallNode';
+import HostServerNode from '@/components/nodes/HostServerNode';
+import ApiServiceNode from '@/components/nodes/ApiServiceNode';
+import BackgroundJobNode from '@/components/nodes/BackgroundJobNode';
 import AnimatedEdge from '@/components/edges/AnimatedEdge';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { cn } from '@/lib/utils';
-import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock, LayoutGrid } from 'lucide-react';
 import type { ComponentType } from '@/types';
-import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultNetworkZoneData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultServerlessData, defaultServiceDiscoveryData, defaultCloudStorageData, defaultCloudFunctionData, defaultFirewallData, defaultContainerData, defaultDNSNodeData } from '@/types';
+import { CONTAINER_TYPES, canBeChildOf } from '@/types';
+import { suggestProtocol } from '@/data/connector-compatibility';
+import { applyAutoLayout } from '@/lib/auto-layout';
+import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultNetworkZoneData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultServerlessData, defaultServiceDiscoveryData, defaultCloudStorageData, defaultCloudFunctionData, defaultFirewallData, defaultContainerData, defaultDNSNodeData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
@@ -54,7 +60,11 @@ import type { CacheNodeData } from '@/components/nodes/CacheNode';
 import type { LoadBalancerNodeData } from '@/components/nodes/LoadBalancerNode';
 import type { MessageQueueNodeData } from '@/components/nodes/MessageQueueNode';
 import type { ApiGatewayNodeData } from '@/components/nodes/ApiGatewayNode';
+import type { ApiServiceNodeData } from '@/components/nodes/ApiServiceNode';
+import type { BackgroundJobNodeData } from '@/components/nodes/BackgroundJobNode';
 import { pluginRegistry } from '@/plugins';
+import { LatencyPathPanel } from '@/components/simulation/LatencyPathPanel';
+import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
 
 // Built-in node types
 const builtinNodeTypes = {
@@ -77,6 +87,9 @@ const builtinNodeTypes = {
   'dns': DNSNode,
   'cloud-storage': CloudStorageNode,
   'firewall': FirewallNode,
+  'host-server': HostServerNode,
+  'api-service': ApiServiceNode,
+  'background-job': BackgroundJobNode,
 };
 
 // Custom edge types
@@ -160,6 +173,12 @@ function getDefaultNodeData(type: ComponentType): HttpClientNodeData | HttpServe
       return { ...defaultDNSNodeData, status: 'idle' };
     case 'cloud-storage':
       return { ...defaultCloudStorageData, status: 'idle' };
+    case 'host-server':
+      return { ...defaultHostServerData };
+    case 'api-service':
+      return { ...defaultApiServiceData, status: 'idle' } satisfies ApiServiceNodeData;
+    case 'background-job':
+      return { ...defaultBackgroundJobData, status: 'idle' } satisfies BackgroundJobNodeData;
     default: {
       // Chercher dans les plugins enregistrés
       const pluginData = pluginRegistry.getDefaultNodeData(type);
@@ -207,6 +226,119 @@ function ZoomControls({ isEditable }: { isEditable: boolean }) {
   );
 }
 
+/**
+ * Trouve le conteneur le plus profond à une position donnée qui accepte le type droppé.
+ * Priorise les conteneurs les plus imbriqués (profondeur maximale).
+ */
+function findContainerAtPosition(
+  nodes: Node[],
+  position: { x: number; y: number },
+  droppedType: ComponentType
+): Node | null {
+  // Calcule la profondeur d'un noeud (nombre de parents dans la chaîne parentId)
+  function getDepth(node: Node): number {
+    let depth = 0;
+    let current = node;
+    while (current.parentId) {
+      depth++;
+      const parent = nodes.find((n) => n.id === current.parentId);
+      if (!parent) break;
+      current = parent;
+    }
+    return depth;
+  }
+
+  // Calcule la position absolue d'un noeud (somme des positions de la chaîne parentId)
+  function getAbsolutePosition(node: Node): { x: number; y: number } {
+    let absX = node.position.x;
+    let absY = node.position.y;
+    let current = node;
+    while (current.parentId) {
+      const parent = nodes.find((n) => n.id === current.parentId);
+      if (!parent) break;
+      absX += parent.position.x;
+      absY += parent.position.y;
+      current = parent;
+    }
+    return { x: absX, y: absY };
+  }
+
+  const containerNodes = nodes.filter(
+    (n) => CONTAINER_TYPES.includes(n.type as ComponentType)
+  );
+
+  let bestMatch: Node | null = null;
+  let bestDepth = -1;
+
+  for (const container of containerNodes) {
+    const parentType = container.type as ComponentType;
+    if (!canBeChildOf(droppedType, parentType)) continue;
+
+    const absPos = getAbsolutePosition(container);
+    const width = container.measured?.width ?? container.style?.width as number ?? 400;
+    const height = container.measured?.height ?? container.style?.height as number ?? 250;
+
+    if (
+      position.x >= absPos.x &&
+      position.x <= absPos.x + width &&
+      position.y >= absPos.y &&
+      position.y <= absPos.y + height
+    ) {
+      const depth = getDepth(container);
+      if (depth > bestDepth) {
+        bestDepth = depth;
+        bestMatch = container;
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
+ * Tri topologique des noeuds : les parents sont toujours avant leurs enfants.
+ * React Flow exige cet ordre pour le rendu correct des groupes.
+ */
+function ensureNodeOrdering(nodes: Node[]): Node[] {
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const visited = new Set<string>();
+  const result: Node[] = [];
+
+  function visit(node: Node) {
+    if (visited.has(node.id)) return;
+    // Si le noeud a un parent, s'assurer que le parent est ajouté d'abord
+    if (node.parentId) {
+      const parent = nodeMap.get(node.parentId);
+      if (parent) visit(parent);
+    }
+    visited.add(node.id);
+    result.push(node);
+  }
+
+  for (const node of nodes) {
+    visit(node);
+  }
+
+  return result;
+}
+
+/**
+ * Calcule la position absolue d'un noeud en remontant la chaîne parentId.
+ */
+function getNodeAbsolutePosition(node: Node, nodes: Node[]): { x: number; y: number } {
+  let absX = node.position.x;
+  let absY = node.position.y;
+  let current = node;
+  while (current.parentId) {
+    const parent = nodes.find((n) => n.id === current.parentId);
+    if (!parent) break;
+    absX += parent.position.x;
+    absY += parent.position.y;
+    current = parent;
+  }
+  return { x: absX, y: absY };
+}
+
 export function FlowCanvas() {
   const { t } = useTranslation();
   const { mode, setSelectedNodeId, setSelectedEdgeId } = useAppStore();
@@ -237,6 +369,11 @@ export function FlowCanvas() {
   const updateClientGroupStats = useSimulationStore((s) => s.updateClientGroupStats);
   const addTimeSeriesSnapshot = useSimulationStore((s) => s.addTimeSeriesSnapshot);
   const stopSimulation = useSimulationStore((s) => s.stop);
+  const faultInjections = useSimulationStore((s) => s.faultInjections);
+  const isolatedNodes = useSimulationStore((s) => s.isolatedNodes);
+
+  // Chaos mode — context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
   const registerEngineMetricsProvider = useSimulationStore((s) => s.registerEngineMetricsProvider);
 
   // Get persisted nodes and edges from architecture store
@@ -411,8 +548,16 @@ export function FlowCanvas() {
       currentNodes.map((node) => {
         const nodeState = nodeStates.get(node.id);
         if (nodeState && node.data.status !== nodeState.status) {
+          // Set className on React Flow node wrapper for CSS-based fault visuals
+          const faultClass =
+            nodeState.status === 'down'
+              ? 'node-fault-down'
+              : nodeState.status === 'degraded'
+              ? 'node-fault-degraded'
+              : '';
           return {
             ...node,
+            className: faultClass,
             data: { ...node.data, status: nodeState.status },
           };
         }
@@ -534,6 +679,16 @@ export function FlowCanvas() {
     }
   }, [nodes, edges]);
 
+  // Chaos mode — keep fault provider synced with store
+  useEffect(() => {
+    if (engineRef.current) {
+      engineRef.current.setFaultProvider(() => ({
+        faults: useSimulationStore.getState().faultInjections,
+        isolated: useSimulationStore.getState().isolatedNodes,
+      }));
+    }
+  }, [faultInjections, isolatedNodes]);
+
   // Keep a ref of nodes/edges for the simulation effect
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -575,13 +730,21 @@ export function FlowCanvas() {
 
   const onConnect = useCallback(
     (params: Connection) => {
-      console.log('onConnect called:', params);
-      if (!params.source || !params.target) {
-        console.log('Missing source or target');
-        return;
+      if (!params.source || !params.target) return;
+
+      // Detect node types for protocol suggestion
+      const sourceNode = nodes.find((n) => n.id === params.source);
+      const targetNode = nodes.find((n) => n.id === params.target);
+      const sourceType = sourceNode?.type as ComponentType | undefined;
+      const targetType = targetNode?.type as ComponentType | undefined;
+
+      // Auto-assign protocol if both types support it
+      let protocol: import('@/types').ConnectionProtocol | undefined;
+      if (sourceType && targetType) {
+        const suggested = suggestProtocol(sourceType, targetType);
+        if (suggested) protocol = suggested;
       }
 
-      // Use animated edge type for particle animations
       const newEdge: Edge = {
         id: `edge-${params.source}-${params.target}-${Date.now()}`,
         source: params.source,
@@ -589,14 +752,11 @@ export function FlowCanvas() {
         sourceHandle: params.sourceHandle ?? undefined,
         targetHandle: params.targetHandle ?? undefined,
         type: 'animated',
+        ...(protocol ? { data: { protocol } } : {}),
       };
-      console.log('Creating edge:', newEdge);
-      setEdges((eds) => {
-        console.log('Current edges:', eds);
-        return [...eds, newEdge];
-      });
+      setEdges((eds) => [...eds, newEdge]);
     },
-    [setEdges]
+    [setEdges, nodes]
   );
 
   // Handle edge reconnection - allows dragging edge endpoints to new nodes
@@ -640,23 +800,96 @@ export function FlowCanvas() {
       // Use the component type directly as node type (all types are registered in nodeTypes)
       const nodeType = type in nodeTypes ? type : 'default';
 
+      // Chercher un conteneur parent à la position de drop
+      const parent = findContainerAtPosition(nodes, position, type);
+
+      let finalPosition = position;
+      const parentProps: { parentId?: string; extent?: 'parent' } = {};
+
+      if (parent) {
+        // Convertir la position en relative au parent
+        const parentAbsPos = getNodeAbsolutePosition(parent, nodes);
+        finalPosition = {
+          x: position.x - parentAbsPos.x,
+          y: position.y - parentAbsPos.y,
+        };
+        parentProps.parentId = parent.id;
+        parentProps.extent = 'parent';
+      }
+
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type: nodeType,
-        position,
+        position: finalPosition,
         data: getDefaultNodeData(type),
-        ...(type === 'network-zone' ? { style: { width: 400, height: 250 } } : {}),
+        ...parentProps,
+        ...((type === 'network-zone' || type === 'host-server') ? { style: { width: type === 'host-server' ? 450 : 400, height: type === 'host-server' ? 300 : 250 } } : {}),
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      setNodes((nds) => ensureNodeOrdering(nds.concat(newNode)));
     },
-    [setNodes]
+    [setNodes, nodes]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
+
+  const { reparentNode } = useArchitectureStore();
+
+  const onNodeDragStop = useCallback(
+    (_: React.MouseEvent, draggedNode: Node) => {
+      const nodeType = draggedNode.type as ComponentType;
+
+      // Calculer la position absolue du noeud draggé
+      const absPos = getNodeAbsolutePosition(draggedNode, nodes);
+
+      // Chercher un conteneur à cette position (exclure le noeud lui-même)
+      const otherNodes = nodes.filter((n) => n.id !== draggedNode.id);
+      const newParent = findContainerAtPosition(otherNodes, absPos, nodeType);
+
+      const currentParentId = draggedNode.parentId ?? null;
+      const newParentId = newParent?.id ?? null;
+
+      // Rien à faire si le parent n'a pas changé
+      if (currentParentId === newParentId) return;
+
+      // Reparenter via le store
+      reparentNode(draggedNode.id, newParentId);
+
+      // Mettre à jour aussi l'état local React Flow
+      setNodes((nds) => {
+        const updatedNodes = nds.map((n) => {
+          if (n.id !== draggedNode.id) return n;
+
+          if (newParentId && newParent) {
+            // Convertir position absolue en relative au nouveau parent
+            const parentAbsPos = getNodeAbsolutePosition(newParent, nds);
+            return {
+              ...n,
+              position: {
+                x: absPos.x - parentAbsPos.x,
+                y: absPos.y - parentAbsPos.y,
+              },
+              parentId: newParentId,
+              extent: 'parent' as const,
+            };
+          } else {
+            // Détacher : utiliser la position absolue, retirer parentId et extent
+            return {
+              ...n,
+              position: absPos,
+              parentId: undefined,
+              extent: undefined,
+            };
+          }
+        });
+        return ensureNodeOrdering(updatedNodes);
+      });
+    },
+    [nodes, setNodes, reparentNode]
+  );
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -675,15 +908,76 @@ export function FlowCanvas() {
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setContextMenu(null);
   }, [setSelectedNodeId, setSelectedEdgeId]);
+
+  // Chaos mode — right-click on nodes in simulation mode
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      if (mode !== 'simulation') return;
+      event.preventDefault();
+      setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+    },
+    [mode]
+  );
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  // Auto-layout via ELK
+  const [isLayouting, setIsLayouting] = useState(false);
+  const handleAutoLayout = useCallback(async () => {
+    if (nodes.length === 0 || isLayouting) return;
+    setIsLayouting(true);
+    try {
+      const layoutedNodes = await applyAutoLayout(nodes, edges);
+      setNodes(layoutedNodes);
+    } catch (err) {
+      console.error('Auto-layout failed:', err);
+    } finally {
+      setIsLayouting(false);
+    }
+  }, [nodes, edges, setNodes, isLayouting]);
+
+  // Latency path highlighting
+  const [highlightedPath, setHighlightedPath] = useState<{ nodeIds: Set<string>; edgeIds: Set<string> } | null>(null);
+
+  const handleHighlightPath = useCallback((nodeIds: string[], edgeIds: string[]) => {
+    setHighlightedPath({ nodeIds: new Set(nodeIds), edgeIds: new Set(edgeIds) });
+  }, []);
+
+  const handleClearHighlight = useCallback(() => {
+    setHighlightedPath(null);
+  }, []);
+
+  // Apply highlight styles to nodes/edges
+  const displayNodes = useMemo(() => {
+    if (!highlightedPath) return nodes;
+    return nodes.map((node) => ({
+      ...node,
+      className: [
+        node.className || '',
+        highlightedPath.nodeIds.has(node.id) ? 'node-latency-highlight' : 'node-latency-dimmed',
+      ].filter(Boolean).join(' '),
+    }));
+  }, [nodes, highlightedPath]);
+
+  const displayEdges = useMemo(() => {
+    if (!highlightedPath) return edges;
+    return edges.map((edge) => ({
+      ...edge,
+      style: highlightedPath.edgeIds.has(edge.id)
+        ? { ...edge.style, stroke: 'oklch(0.70 0.15 220)', strokeWidth: 3 }
+        : { ...edge.style, opacity: 0.2 },
+    }));
+  }, [edges, highlightedPath]);
 
   const isEditable = mode === 'edit';
 
   return (
     <div className="flex-1 h-full relative">
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={displayNodes}
+        edges={displayEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={isEditable ? onNodesChange : undefined}
@@ -695,8 +989,10 @@ export function FlowCanvas() {
         onDrop={isEditable ? onDrop : undefined}
         onDragOver={isEditable ? onDragOver : undefined}
         onNodeClick={onNodeClick}
+        onNodeDragStop={isEditable ? onNodeDragStop : undefined}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onNodeContextMenu={onNodeContextMenu}
         nodesDraggable={isEditable}
         nodesConnectable={isEditable}
         elementsSelectable={true}
@@ -747,18 +1043,35 @@ export function FlowCanvas() {
         {/* Custom Controls Panel with working zoom buttons */}
         <ZoomControls isEditable={isEditable} />
 
-        {/* Mode Indicator */}
+        {/* Mode Indicator + Auto-layout */}
         <Panel position="top-left">
-          <div
-            className={cn(
-              'px-2 py-1 font-mono text-[10px] font-semibold border',
-              mode === 'edit'
-                ? 'text-signal-flux border-signal-flux/30 bg-signal-flux/10'
-                : 'text-signal-active border-signal-active/30 bg-signal-active/10'
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                'px-2 py-1 font-mono text-[10px] font-semibold border',
+                mode === 'edit'
+                  ? 'text-signal-flux border-signal-flux/30 bg-signal-flux/10'
+                  : 'text-signal-active border-signal-active/30 bg-signal-active/10'
+              )}
+              style={{ borderRadius: '2px' }}
+            >
+              {mode === 'edit' ? 'MODE:EDIT' : 'MODE:SIM'}
+            </div>
+            {isEditable && nodes.length > 1 && (
+              <button
+                onClick={handleAutoLayout}
+                disabled={isLayouting}
+                className={cn(
+                  'flex items-center gap-1 px-2 py-1 font-mono text-[10px] font-semibold border rounded-sm cursor-pointer transition-colors',
+                  'text-muted-foreground border-border hover:bg-muted/50',
+                  isLayouting && 'opacity-50 cursor-wait'
+                )}
+                title="Auto-arranger (ELK)"
+              >
+                <LayoutGrid className="w-3 h-3" />
+                {isLayouting ? '...' : 'LAYOUT'}
+              </button>
             )}
-            style={{ borderRadius: '2px' }}
-          >
-            {mode === 'edit' ? 'MODE:EDIT' : 'MODE:SIM'}
           </div>
         </Panel>
 
@@ -777,6 +1090,19 @@ export function FlowCanvas() {
 
       {/* Metrics Panel */}
       <MetricsPanel />
+
+      {/* Latency Calculator */}
+      {isEditable && nodes.length > 1 && (
+        <div className="absolute top-3 right-3 z-10">
+          <LatencyPathPanel
+            onHighlightPath={handleHighlightPath}
+            onClearHighlight={handleClearHighlight}
+          />
+        </div>
+      )}
+
+      {/* Chaos Mode Context Menu */}
+      <NodeContextMenu position={contextMenu} onClose={closeContextMenu} />
     </div>
   );
 }

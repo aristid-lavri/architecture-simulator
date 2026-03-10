@@ -54,9 +54,13 @@ import {
   DNSHandler,
   CloudStorageHandler,
   CloudFunctionHandler,
+  HostServerHandler,
+  ApiServiceHandler,
+  BackgroundJobHandler,
   type RequestContext,
   type RequestDecision,
 } from './handlers';
+import { HierarchicalResourceManager } from './HierarchicalResourceManager';
 import { pluginRegistry } from '@/plugins';
 
 /**
@@ -68,11 +72,12 @@ interface SimulationCallbacks {
   onAddParticle: (particle: Particle) => void;
   onRemoveParticle: (particleId: string) => void;
   onUpdateParticle: (particleId: string, updates: Partial<Particle>) => void;
-  onNodeStatusChange: (nodeId: string, status: 'idle' | 'processing' | 'success' | 'error') => void;
+  onNodeStatusChange: (nodeId: string, status: import('@/types').NodeStatus) => void;
   onMetricsUpdate: (metrics: ReturnType<MetricsCollector['getMetrics']>) => void;
   onResourceUpdate?: (nodeId: string, utilization: ResourceUtilization) => void;
   onClientGroupUpdate?: (groupId: string, activeClients: number, requestsSent: number) => void;
   onMessageQueueUpdate?: (nodeId: string, utilization: MessageQueueUtilization) => void;
+  onHierarchicalResourceUpdate?(parentId: string, aggregated: ResourceUtilization, children: { childId: string; utilization: ResourceUtilization }[]): void;
   onError?: (error: Error) => void;
   onTimeSeriesSnapshot?: (snapshot: import('@/types').TimeSeriesSnapshot) => void;
   onSimulationComplete?: () => void;
@@ -169,6 +174,12 @@ export class SimulationEngine {
   private httpServerHandler: HttpServerHandler;
   private messageQueueHandler: MessageQueueHandler;
 
+  // Hierarchical resource management
+  private hierarchicalResourceManager: HierarchicalResourceManager;
+
+  // Chaos mode — fault provider callback
+  private faultProvider: (() => { faults: Map<string, 'down' | 'degraded'>; isolated: Set<string> }) | null = null;
+
   constructor(callbacks: SimulationCallbacks) {
     this.callbacks = callbacks;
     this.metrics = new MetricsCollector();
@@ -182,6 +193,7 @@ export class SimulationEngine {
     this.loadBalancerManager = new LoadBalancerManager();
     this.cacheManager = new CacheManager();
     this.databaseManager = new DatabaseManager();
+    this.hierarchicalResourceManager = new HierarchicalResourceManager();
 
     // Initialize handlers
     this.loadBalancerHandler = new LoadBalancerHandler(this.loadBalancerManager);
@@ -209,6 +221,9 @@ export class SimulationEngine {
       new DNSHandler(),
       new CloudStorageHandler(),
       new CloudFunctionHandler(),
+      new HostServerHandler(),
+      new ApiServiceHandler(),
+      new BackgroundJobHandler(),
     ]);
 
     // Register plugin handlers
@@ -257,6 +272,74 @@ export class SimulationEngine {
     };
   }
 
+  /** Configure le provider de fault injections (lit depuis le store via callback). */
+  setFaultProvider(provider: (() => { faults: Map<string, 'down' | 'degraded'>; isolated: Set<string> }) | null): void {
+    this.faultProvider = provider;
+  }
+
+  /** Retourne le fault actif pour un noeud, ou null si aucun. */
+  private getNodeFault(nodeId: string): 'down' | 'degraded' | null {
+    if (!this.faultProvider) return null;
+    const { faults } = this.faultProvider();
+    return faults.get(nodeId) ?? null;
+  }
+
+  /** Verifie si un noeud est isole du reseau (directement ou via un parent isolé). */
+  private isNodeIsolated(nodeId: string): boolean {
+    if (!this.faultProvider) return false;
+    const { isolated } = this.faultProvider();
+    if (isolated.has(nodeId)) return true;
+
+    // Check if any ancestor is isolated
+    const node = this.nodes.find((n) => n.id === nodeId);
+    if (!node) return false;
+    let currentId: string | undefined = node.parentId;
+    while (currentId) {
+      if (isolated.has(currentId)) return true;
+      const parent = this.nodes.find((n) => n.id === currentId);
+      if (!parent) return false;
+      currentId = parent.parentId;
+    }
+    return false;
+  }
+
+  /**
+   * Remonte la chaîne parentId et vérifie si un ancêtre est down, dégradé ou isolé.
+   * Retourne le fault du premier ancêtre faulté, ou null si aucun.
+   */
+  private isParentFaulted(nodeId: string): 'down' | 'degraded' | null {
+    const node = this.nodes.find((n) => n.id === nodeId);
+    if (!node) return null;
+
+    let currentId: string | undefined = node.parentId;
+    while (currentId) {
+      // Check if parent is faulted
+      const fault = this.getNodeFault(currentId);
+      if (fault) return fault;
+
+      // Check if parent is isolated
+      if (this.isNodeIsolated(currentId)) return 'down';
+
+      // Move up the chain
+      const parent = this.nodes.find((n) => n.id === currentId);
+      if (!parent) return null;
+      currentId = parent.parentId;
+    }
+    return null;
+  }
+
+  /** Retourne les edges filtrees (exclut les edges vers/depuis des noeuds isoles). */
+  private getActiveEdges(nodeId: string): Edge[] {
+    return this.edges.filter((e) => {
+      if (e.source === nodeId || e.target === nodeId) {
+        // If source or target is isolated, exclude the edge
+        const otherId = e.source === nodeId ? e.target : e.source;
+        if (this.isNodeIsolated(otherId)) return false;
+      }
+      return e.source === nodeId;
+    });
+  }
+
   /** Met a jour le graphe de noeuds et aretes utilise par la simulation. */
   setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
     this.nodes = nodes;
@@ -284,6 +367,9 @@ export class SimulationEngine {
     this.state = 'running';
     this.callbacks.onStateChange('running');
     this.metrics.start();
+
+    // Initialize hierarchical resource manager
+    this.hierarchicalResourceManager.initialize(this.nodes);
 
     // Initialize handlers for all nodes
     this.handlerRegistry.initializeAll(this.nodes);
@@ -542,7 +628,22 @@ export class SimulationEngine {
 
     // Update statuses
     this.callbacks.onNodeStatusChange(client.id, 'idle');
-    this.callbacks.onNodeStatusChange(server.id, 'processing');
+
+    // --- Chaos mode: check fault on server and its parent chain ---
+    const serverFault = this.getNodeFault(server.id);
+    const parentFault = this.isParentFaulted(server.id);
+    if (serverFault === 'down' || this.isNodeIsolated(server.id) || parentFault === 'down') {
+      this.callbacks.onNodeStatusChange(server.id, 'down');
+      this.metrics.recordRejection();
+      this.metrics.recordResponse(false, Date.now() - chain.startTime);
+      this.pushMetricsUpdate();
+      simulationEvents.emit(createErrorEvent(server.id, 'node-down', chainId));
+      this.sendChainResponse(chainId, server);
+      return;
+    }
+
+    const effectiveFault = serverFault === 'degraded' ? 'degraded' : parentFault === 'degraded' ? 'degraded' : null;
+    this.callbacks.onNodeStatusChange(server.id, effectiveFault === 'degraded' ? 'degraded' : 'processing');
 
     // Emit REQUEST_RECEIVED event
     const clientData = client.data as HttpClientNodeData;
@@ -551,10 +652,12 @@ export class SimulationEngine {
     ));
 
     // Use handler pattern for consistent behavior
-    const processingDelay = this.getNodeProcessingDelay(server);
+    let processingDelay = this.getNodeProcessingDelay(server);
+    if (effectiveFault === 'degraded') processingDelay *= 3;
     const outgoingEdges = this.edges.filter((e) => e.source === server.id);
 
     // Build request context for the handler
+    const edgeData = edge.data as Record<string, unknown> | undefined;
     const context: RequestContext = {
       chainId,
       originNodeId: chain.originNodeId,
@@ -563,6 +666,7 @@ export class SimulationEngine {
       currentPath: chain.currentPath,
       edgePath: chain.edgePath,
       requestPath: chain.requestPath,
+      targetPort: (edgeData?.targetPort as number) ?? undefined,
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
@@ -574,7 +678,12 @@ export class SimulationEngine {
     // Get handler and decision
     const nodeType = server.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
-    const decision = handler.handleRequestArrival(server, context, outgoingEdges, this.nodes);
+    let decision = handler.handleRequestArrival(server, context, outgoingEdges, this.nodes);
+
+    // Chaos: degraded nodes have 50% chance of error
+    if (serverFault === 'degraded' && Math.random() < 0.5) {
+      decision = { action: 'respond', isError: true };
+    }
 
     // Execute decision after processing delay
     setTimeout(() => {
@@ -599,20 +708,86 @@ export class SimulationEngine {
 
   /**
    * Calcule la latence inter-zone entre deux noeuds.
-   * Si les noeuds sont dans des zones differentes, ajoute la latence de la zone source.
+   * Remonte la chaîne parentId pour trouver la zone réseau contenante.
+   * Containers sur le même host-server : latence ~0ms (loopback).
    */
   private getInterZoneLatency(sourceNode: Node, targetNode: Node): number {
-    const sourceParentId = (sourceNode as Node & { parentId?: string }).parentId;
-    const targetParentId = (targetNode as Node & { parentId?: string }).parentId;
+    // Deleguer au calcul hierarchique
+    return this.getHierarchicalLatency(sourceNode.id, targetNode.id);
+  }
 
-    // Same zone or no zone → no extra latency
-    if (!sourceParentId || sourceParentId === targetParentId) return 0;
+  /**
+   * Remonte la chaîne parentId pour trouver la network-zone ancêtre.
+   */
+  private findContainingZone(node: Node): string | undefined {
+    return this.hierarchicalResourceManager.findContainingZone(node.id);
+  }
 
-    const sourceZone = this.nodes.find((n) => n.id === sourceParentId);
-    if (!sourceZone || sourceZone.type !== 'network-zone') return 0;
+  /**
+   * Remonte la chaîne parentId pour trouver le host-server ancêtre.
+   */
+  private findContainingServer(nodeId: string): string | undefined {
+    return this.hierarchicalResourceManager.findContainingServer(nodeId);
+  }
 
-    const zoneData = sourceZone.data as { interZoneLatency?: number };
-    return (zoneData.interZoneLatency || 0) / this.speed;
+  /**
+   * Calcule la latence hierarchique entre deux noeuds.
+   *
+   * Regles de latence :
+   * - Meme container → ~0.05ms
+   * - Meme server, containers differents → ~0.1ms
+   * - Meme server, bare-metal → ~0.1ms
+   * - Meme zone, servers differents → 1-5ms
+   * - Zones differentes → interZoneLatency (config de la zone)
+   * - Pas de zone → 5ms par defaut
+   */
+  private getHierarchicalLatency(sourceId: string, targetId: string): number {
+    // Meme noeud → pas de latence
+    if (sourceId === targetId) return 0;
+
+    // Verifier le container parent
+    const sourceContainer = this.hierarchicalResourceManager.findContainingContainer(sourceId);
+    const targetContainer = this.hierarchicalResourceManager.findContainingContainer(targetId);
+
+    // Meme container → latence tres faible (loopback)
+    if (sourceContainer && sourceContainer === targetContainer) {
+      return 0.05 / this.speed;
+    }
+
+    // Verifier le host-server parent
+    const sourceServer = this.findContainingServer(sourceId);
+    const targetServer = this.findContainingServer(targetId);
+
+    // Meme server (containers differents ou bare-metal) → latence locale
+    if (sourceServer && sourceServer === targetServer) {
+      return 0.1 / this.speed;
+    }
+
+    // Verifier la zone reseau
+    const sourceZoneId = this.hierarchicalResourceManager.findContainingZone(sourceId);
+    const targetZoneId = this.hierarchicalResourceManager.findContainingZone(targetId);
+
+    // Meme zone, servers differents → latence LAN (1-5ms)
+    if (sourceZoneId && sourceZoneId === targetZoneId) {
+      return (1 + Math.random() * 4) / this.speed;
+    }
+
+    // Zones differentes → utiliser la latence inter-zone configuree
+    if (sourceZoneId && targetZoneId && sourceZoneId !== targetZoneId) {
+      const sourceZone = this.nodes.find((n) => n.id === sourceZoneId);
+      if (sourceZone) {
+        const zoneData = sourceZone.data as { interZoneLatency?: number };
+        return (zoneData.interZoneLatency || 10) / this.speed;
+      }
+    }
+
+    // Pas de zone → latence par defaut de 5ms
+    if (!sourceZoneId && !targetZoneId) {
+      return 5 / this.speed;
+    }
+
+    // Un des deux n'a pas de zone → latence inter-zone par defaut
+    return 5 / this.speed;
   }
 
   /**
@@ -876,16 +1051,39 @@ export class SimulationEngine {
 
     // Update statuses
     this.callbacks.onNodeStatusChange(sourceNode.id, 'idle');
-    this.callbacks.onNodeStatusChange(targetNode.id, 'processing');
+
+    // --- Chaos mode: check fault before processing (including parent chain) ---
+    const targetFault = this.getNodeFault(targetNode.id);
+    const targetParentFault = this.isParentFaulted(targetNode.id);
+    if (targetFault === 'down' || this.isNodeIsolated(targetNode.id) || targetParentFault === 'down') {
+      // Node is down, isolated, or parent is down — reject 100%
+      this.callbacks.onNodeStatusChange(targetNode.id, 'down');
+      this.metrics.recordRejection();
+      this.metrics.recordResponse(false, Date.now() - chain.startTime);
+      this.pushMetricsUpdate();
+      simulationEvents.emit(createErrorEvent(targetNode.id, 'node-down', chainId));
+      this.sendChainResponse(chainId, targetNode);
+      return;
+    }
+
+    const effectiveTargetFault = targetFault === 'degraded' ? 'degraded' : targetParentFault === 'degraded' ? 'degraded' : null;
+    this.callbacks.onNodeStatusChange(targetNode.id, effectiveTargetFault === 'degraded' ? 'degraded' : 'processing');
 
     // Emit REQUEST_RECEIVED event
     simulationEvents.emit(createRequestReceivedEvent(
       sourceNode.id, targetNode.id, 'GET', chain.requestPath || '/', chainId
     ));
 
-    const processingDelay = this.getNodeProcessingDelay(targetNode);
+    let processingDelay = this.getNodeProcessingDelay(targetNode);
+
+    // Chaos: degraded nodes (or with degraded parent) have 3x latency and 50% error injection
+    if (effectiveTargetFault === 'degraded') {
+      processingDelay *= 3;
+    }
 
     // Build request context for the handler
+    const fullEdge = this.edges.find((e) => e.id === edge.id);
+    const chainEdgeData = fullEdge?.data as Record<string, unknown> | undefined;
     const context: RequestContext = {
       chainId,
       originNodeId: chain.originNodeId,
@@ -894,6 +1092,7 @@ export class SimulationEngine {
       currentPath: chain.currentPath,
       edgePath: chain.edgePath,
       requestPath: chain.requestPath,
+      targetPort: (chainEdgeData?.targetPort as number) ?? undefined,
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
@@ -902,13 +1101,20 @@ export class SimulationEngine {
     // Emit PROCESSING_START event
     simulationEvents.emit(createProcessingStartEvent(targetNode.id, chainId));
 
-    // Get outgoing edges for this node
-    const outgoingEdges = this.edges.filter((e) => e.source === targetNode.id);
+    // Get outgoing edges for this node (filtered by isolation)
+    const outgoingEdges = this.isNodeIsolated(targetNode.id)
+      ? []
+      : this.edges.filter((e) => e.source === targetNode.id);
 
     // Get handler and decision
     const nodeType = targetNode.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
-    const decision = handler.handleRequestArrival(targetNode, context, outgoingEdges, this.nodes);
+    let decision = handler.handleRequestArrival(targetNode, context, outgoingEdges, this.nodes);
+
+    // Chaos: degraded nodes have 50% chance of error
+    if (targetFault === 'degraded' && Math.random() < 0.5) {
+      decision = { action: 'respond', isError: true };
+    }
 
     // Execute decision after processing delay
     setTimeout(() => {
@@ -1041,8 +1247,9 @@ export class SimulationEngine {
 
     if (!currentNode || !previousNode) return;
 
-    // Create response particle
-    const responseDuration = 1500 / this.speed;
+    // Create response particle with hierarchical latency
+    const hierarchicalLatency = this.getHierarchicalLatency(currentNodeId, previousNodeId);
+    const responseDuration = 1500 / this.speed + hierarchicalLatency;
     const particleType: ParticleType = isError ? 'response-error' : 'response-success';
 
     const particle: Particle = {
@@ -1106,7 +1313,7 @@ export class SimulationEngine {
    * Initialize server states with resource configuration
    */
   private initializeServerStates(): void {
-    const servers = this.nodes.filter((n) => n.type === 'http-server');
+    const servers = this.nodes.filter((n) => n.type === 'http-server' || n.type === 'host-server');
 
     servers.forEach((server) => {
       const data = server.data as HttpServerNodeDataExtended;

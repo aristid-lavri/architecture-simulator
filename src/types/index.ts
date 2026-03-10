@@ -22,7 +22,69 @@ export type ComponentType =
   | 'service-discovery'
   | 'dns'
   | 'cloud-storage'
-  | 'cloud-function';
+  | 'cloud-function'
+  | 'host-server'
+  | 'api-service'
+  | 'background-job';
+
+// ============================================
+// Hierarchy System
+// ============================================
+
+/** Niveau dans la hierarchie de nesting. */
+export type HierarchyLevel = 'zone' | 'server' | 'container' | 'service';
+
+/** Types de noeuds pouvant contenir des enfants. */
+export const CONTAINER_TYPES: ComponentType[] = ['network-zone', 'host-server', 'container'];
+
+/** Types de noeuds ne pouvant jamais etre enfants d'un autre noeud. */
+export const NON_NESTABLE_TYPES: ComponentType[] = ['network-zone', 'host-server', 'http-server', 'http-client', 'client-group'];
+
+/** Types consideres comme des services (peuvent etre heberges dans un server ou container). */
+export const SERVICE_TYPES: ComponentType[] = [
+  'api-service', 'background-job', 'database', 'cache', 'message-queue',
+  'service-discovery', 'load-balancer', 'api-gateway', 'cdn', 'waf',
+  'firewall', 'dns', 'circuit-breaker', 'serverless', 'cloud-function',
+  'cloud-storage',
+];
+
+/** Retourne le niveau hierarchique d'un type de composant. */
+export function getHierarchyLevel(type: ComponentType): HierarchyLevel {
+  switch (type) {
+    case 'network-zone': return 'zone';
+    case 'host-server':
+    case 'http-server': return 'server';
+    case 'container': return 'container';
+    default: return 'service';
+  }
+}
+
+/**
+ * Verifie si un type enfant peut etre place dans un type parent.
+ * Regles :
+ * - network-zone accepte : host-server + tous services
+ * - host-server accepte : container + tous services (bare-metal)
+ * - container accepte : services uniquement
+ * - container ne peut etre enfant que d'un host-server
+ * - NON_NESTABLE_TYPES ne peuvent jamais etre enfants (sauf host-server dans une zone)
+ */
+export function canBeChildOf(childType: ComponentType, parentType: ComponentType): boolean {
+  // host-server peut aller dans une zone
+  if (childType === 'host-server' && parentType === 'network-zone') return true;
+
+  // Les non-nestables ne peuvent pas etre enfants (sauf host-server dans zone, traite ci-dessus)
+  if (NON_NESTABLE_TYPES.includes(childType)) return false;
+
+  // container ne peut etre que dans un host-server
+  if (childType === 'container') return parentType === 'host-server';
+
+  // Services dans network-zone, host-server, ou container
+  if (SERVICE_TYPES.includes(childType)) {
+    return parentType === 'network-zone' || parentType === 'host-server' || parentType === 'container';
+  }
+
+  return false;
+}
 
 /** Configuration d'un composant dans le catalogue (panneau lateral). */
 export interface ComponentConfig {
@@ -154,7 +216,7 @@ export function getParticleChainId(particle: Particle): string | undefined {
 // ============================================
 
 /** Statut visuel d'un noeud pendant la simulation. */
-export type NodeStatus = 'idle' | 'processing' | 'success' | 'error';
+export type NodeStatus = 'idle' | 'processing' | 'success' | 'error' | 'down' | 'degraded';
 
 /** Etat courant d'un noeud avec horodatage de la derniere mise a jour. */
 export interface NodeState {
@@ -316,6 +378,9 @@ export interface ResourceUtilization {
   saturation?: number;                // Max de cpu/memory/network (0-100)
   throughput?: number;                // Requetes traitees/sec pour ce serveur
   errorRate?: number;                 // Taux d'erreur pour ce serveur (0-100%)
+  parentId?: string;                  // ID du noeud parent (pour aggregation hierarchique)
+  isAggregated?: boolean;             // True si les valeurs incluent les enfants
+  childrenCount?: number;             // Nombre d'enfants contribuant a l'utilisation
 }
 
 // ============================================
@@ -995,6 +1060,59 @@ export const defaultNetworkZoneData: NetworkZoneNodeData = {
 };
 
 // ============================================
+// Host Server Configuration
+// ============================================
+
+/** Mapping de port entre le host et un container interne (style Docker -p). */
+export interface HostPortMapping {
+  id: string;
+  hostPort: number;
+  containerNodeId: string;
+  containerPort: number;
+  protocol: 'tcp' | 'udp';
+}
+
+/** Données d'un nœud Host Server : serveur physique/VM hébergeant des containers Docker. */
+export interface HostServerNodeData {
+  label: string;
+  status?: NodeStatus;
+
+  /** Adresse IP du serveur (ex: "192.168.1.10") */
+  ipAddress: string;
+  /** Nom d'hôte optionnel (ex: "web-server-01") */
+  hostname?: string;
+
+  /** Systeme d'exploitation (indicateur visuel) */
+  os?: 'linux' | 'windows' | 'macos';
+
+  /** Mappings de ports host → container (Docker -p) */
+  portMappings: HostPortMapping[];
+
+  /** Ressources physiques partagées entre tous les containers */
+  resources: ServerResources;
+  /** Utilisation courante (runtime, calculée par le moteur) */
+  utilization?: ResourceUtilization;
+  /** Paramètres de dégradation sous charge */
+  degradation: DegradationSettings;
+
+  /** Couleur du nœud */
+  color: string;
+
+  [key: string]: unknown;
+}
+
+export const hostServerColor = 'oklch(0.62 0.14 240)';
+
+export const defaultHostServerData: HostServerNodeData = {
+  label: 'Host Server',
+  ipAddress: '192.168.1.10',
+  portMappings: [],
+  resources: defaultServerResources,
+  degradation: defaultDegradation,
+  color: hostServerColor,
+};
+
+// ============================================
 // Circuit Breaker Configuration
 // ============================================
 
@@ -1158,6 +1276,10 @@ export interface ContainerNodeData {
   replicas: number;
   cpuLimit: string;
   memoryLimit: string;
+  /** Limite CPU numerique en nombre de cores (ex: 2 = 2 cores). Pour Docker --cpus. */
+  cpuLimitCores?: number;
+  /** Limite memoire numerique en MB (ex: 512). Pour Docker --memory. */
+  memoryLimitMB?: number;
   autoScaling: {
     enabled: boolean;
     minReplicas: number;
@@ -1170,8 +1292,12 @@ export interface ContainerNodeData {
     timeoutMs: number;
   };
   responseDelayMs: number;
+  /** Couleur du noeud conteneur */
+  color?: string;
   [key: string]: unknown;
 }
+
+export const containerColor = 'oklch(0.68 0.18 50)';
 
 export const defaultContainerData: ContainerNodeData = {
   label: 'Container',
@@ -1179,6 +1305,8 @@ export const defaultContainerData: ContainerNodeData = {
   replicas: 2,
   cpuLimit: '500m',
   memoryLimit: '512Mi',
+  cpuLimitCores: 2,
+  memoryLimitMB: 512,
   autoScaling: {
     enabled: true,
     minReplicas: 1,
@@ -1191,6 +1319,7 @@ export const defaultContainerData: ContainerNodeData = {
     timeoutMs: 3000,
   },
   responseDelayMs: 20,
+  color: containerColor,
 };
 
 // ============================================
@@ -1302,3 +1431,100 @@ export const defaultApiGatewayNodeData: ApiGatewayNodeData = {
   loggingEnabled: true,
   compressionEnabled: true,
 };
+
+// ============================================
+// API Service Configuration
+// ============================================
+
+/** Protocole de communication du service API. */
+export type ApiServiceProtocol = 'rest' | 'grpc' | 'graphql';
+
+/** Donnees d'un noeud API Service heberge dans un server ou container. */
+export interface ApiServiceNodeData {
+  label: string;
+  status?: NodeStatus;
+
+  /** Nom du service (ex: "users-service", "orders-service") */
+  serviceName: string;
+  /** Route de base (ex: "/api/users") */
+  basePath: string;
+  /** Protocole de communication */
+  protocol: ApiServiceProtocol;
+
+  /** Temps de reponse en ms */
+  responseTime: number;
+  /** Taux d'erreur 0-100% */
+  errorRate: number;
+  /** Nombre max de requetes concurrentes */
+  maxConcurrentRequests: number;
+
+  [key: string]: unknown;
+}
+
+export const defaultApiServiceData: ApiServiceNodeData = {
+  label: 'API Service',
+  serviceName: 'my-service',
+  basePath: '/api',
+  protocol: 'rest',
+  responseTime: 50,
+  errorRate: 0,
+  maxConcurrentRequests: 100,
+};
+
+// ============================================
+// Background Job Configuration
+// ============================================
+
+/** Type de job en arriere-plan. */
+export type BackgroundJobType = 'cron' | 'worker' | 'batch';
+
+/** Donnees d'un noeud Background Job (cron, worker, batch processor). */
+export interface BackgroundJobNodeData {
+  label: string;
+  status?: NodeStatus;
+
+  /** Type de job */
+  jobType: BackgroundJobType;
+  /** Expression cron (pour type cron, ex: "0/5 * * * *") */
+  schedule?: string;
+  /** Nombre d'executions concurrentes max */
+  concurrency: number;
+  /** Duree moyenne d'execution en ms */
+  processingTimeMs: number;
+  /** Taux d'erreur 0-100% */
+  errorRate: number;
+  /** Taille du batch (pour type batch) */
+  batchSize?: number;
+
+  [key: string]: unknown;
+}
+
+export const defaultBackgroundJobData: BackgroundJobNodeData = {
+  label: 'Background Job',
+  jobType: 'worker',
+  concurrency: 1,
+  processingTimeMs: 500,
+  errorRate: 0,
+};
+
+// ============================================
+// Community Edition — Foundation Types
+// ============================================
+
+/** Protocole de communication sur un edge. */
+export type ConnectionProtocol = 'rest' | 'grpc' | 'websocket' | 'graphql';
+
+/** Snapshot d'une architecture pour undo/redo et versioning. */
+export interface ArchitectureSnapshot {
+  id: string;
+  name: string;
+  timestamp: number;
+  nodes: import('@xyflow/react').Node[];
+  edges: import('@xyflow/react').Edge[];
+}
+
+/** Mapping type de noeud vers protocoles supportes. */
+export type ConnectorCompatibility = Record<ComponentType, ConnectionProtocol[]>;
+
+/** Tier de licence pour le feature gating. */
+export type LicenseTier = 'community' | 'enterprise';

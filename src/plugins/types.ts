@@ -1,5 +1,6 @@
 import type { ComponentType as ReactComponentType } from 'react';
 import type { NodeRequestHandler } from '@/engine/handlers/types';
+import type { HierarchyLevel, ConnectionProtocol } from '@/types';
 
 /**
  * Définition d'un composant de nœud apporté par un plugin.
@@ -9,12 +10,13 @@ import type { NodeRequestHandler } from '@/engine/handlers/types';
  *  - le handler pour le moteur de simulation
  *  - les données par défaut à la création
  *  - les métadonnées pour le panneau de composants (sidebar)
+ *  - les règles de hiérarchie (nesting parent-enfant)
  */
 export interface PluginNodeDefinition {
   /** Identifiant unique du type de nœud (ex: 'custom-auth-server') */
   type: string;
   /** Composant React Flow pour le rendu du nœud */
-  component: ReactComponentType<any>;
+  component: ReactComponentType<Record<string, unknown>>;
   /** Handler du moteur de simulation */
   handler: NodeRequestHandler;
   /** Données par défaut lors de la création du nœud */
@@ -32,6 +34,21 @@ export interface PluginNodeDefinition {
     /** Catégorie dans le panneau */
     category: string;
   };
+  /** Règles de hiérarchie pour le nesting parent-enfant */
+  hierarchy?: {
+    /** Niveau dans la hiérarchie (zone, server, container, service) */
+    level: HierarchyLevel;
+    /** Ce noeud est un conteneur qui peut avoir des enfants */
+    isContainer?: boolean;
+    /** Types de parents acceptés (ex: ['host-server', 'container']) */
+    allowedParents?: string[];
+    /** Types d'enfants acceptés (ex: ['api-service', 'database']) */
+    allowedChildren?: string[];
+    /** Ce noeud ne peut jamais être enfant d'un autre noeud */
+    nonNestable?: boolean;
+  };
+  /** Protocoles de connexion supportés */
+  protocols?: ConnectionProtocol[];
 }
 
 /**
@@ -45,7 +62,7 @@ export interface PluginPanel {
   /** Position dans l'interface */
   position: 'sidebar' | 'toolbar' | 'bottom';
   /** Composant React du panneau */
-  component: ReactComponentType<any>;
+  component: ReactComponentType<Record<string, unknown>>;
 }
 
 /**

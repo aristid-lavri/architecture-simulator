@@ -60,6 +60,13 @@ interface SimulationStore {
   // Time-series metrics snapshots
   metricsTimeSeries: TimeSeriesSnapshot[];
 
+  // Hierarchical resource utilization (parent → aggregated + children)
+  hierarchicalUtilizations: Record<string, { aggregated: ResourceUtilization; children: { childId: string; utilization: ResourceUtilization }[] }>;
+
+  // Chaos mode — fault injections
+  faultInjections: Map<string, 'down' | 'degraded'>;
+  isolatedNodes: Set<string>;
+
   // Report
   report: SimulationReport | null;
   showReport: boolean;
@@ -110,6 +117,16 @@ interface SimulationStore {
 
   // Actions - Time series
   addTimeSeriesSnapshot: (snapshot: TimeSeriesSnapshot) => void;
+
+  // Actions - Hierarchical utilization
+  setHierarchicalUtilization: (parentId: string, data: { aggregated: ResourceUtilization; children: { childId: string; utilization: ResourceUtilization }[] }) => void;
+
+  // Actions - Chaos mode
+  injectFault: (nodeId: string, fault: 'down' | 'degraded') => void;
+  clearFault: (nodeId: string) => void;
+  clearAllFaults: () => void;
+  isolateNode: (nodeId: string) => void;
+  restoreNode: (nodeId: string) => void;
 }
 
 const initialMetrics: SimulationMetrics = {
@@ -141,6 +158,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   resourceHistory: [],
   clientGroupStats: new Map(),
   metricsTimeSeries: [],
+  hierarchicalUtilizations: {},
+  faultInjections: new Map(),
+  isolatedNodes: new Set(),
   report: null,
   showReport: false,
   _engineMetricsProvider: null,
@@ -194,6 +214,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
       state: 'idle',
       particles: [],
       nodeStates: new Map(),
+      faultInjections: new Map(),
+      isolatedNodes: new Set(),
       report,
       showReport: true,
     });
@@ -209,6 +231,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     resourceHistory: [],
     clientGroupStats: new Map(),
     metricsTimeSeries: [],
+    hierarchicalUtilizations: {},
+    faultInjections: new Map(),
+    isolatedNodes: new Set(),
   }),
 
   setSpeed: (speed) => set({ speed: Math.max(0.5, Math.min(4, speed)) }),
@@ -241,6 +266,10 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
   // Node states
   setNodeStatus: (nodeId, status) => set((state) => {
+    // Ne pas écraser le statut d'un noeud en panne — seuls clearFault/restoreNode peuvent le faire
+    if (state.faultInjections.has(nodeId) || state.isolatedNodes.has(nodeId)) {
+      return state;
+    }
     const newNodeStates = new Map(state.nodeStates);
     newNodeStates.set(nodeId, {
       nodeId,
@@ -344,6 +373,64 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   addTimeSeriesSnapshot: (snapshot) => set((state) => ({
     metricsTimeSeries: [...state.metricsTimeSeries, snapshot],
   })),
+
+  // Hierarchical utilization
+  setHierarchicalUtilization: (parentId, data) => set((state) => ({
+    hierarchicalUtilizations: {
+      ...state.hierarchicalUtilizations,
+      [parentId]: data,
+    },
+  })),
+
+  // Chaos mode
+  injectFault: (nodeId, fault) => set((state) => {
+    const newFaults = new Map(state.faultInjections);
+    newFaults.set(nodeId, fault);
+    const newNodeStates = new Map(state.nodeStates);
+    newNodeStates.set(nodeId, { nodeId, status: fault, lastUpdated: Date.now() });
+    return { faultInjections: newFaults, nodeStates: newNodeStates };
+  }),
+
+  clearFault: (nodeId) => set((state) => {
+    const newFaults = new Map(state.faultInjections);
+    newFaults.delete(nodeId);
+    const newIsolated = new Set(state.isolatedNodes);
+    newIsolated.delete(nodeId);
+    const newNodeStates = new Map(state.nodeStates);
+    newNodeStates.set(nodeId, { nodeId, status: 'idle', lastUpdated: Date.now() });
+    return { faultInjections: newFaults, isolatedNodes: newIsolated, nodeStates: newNodeStates };
+  }),
+
+  clearAllFaults: () => set((state) => {
+    const newNodeStates = new Map(state.nodeStates);
+    for (const nodeId of state.faultInjections.keys()) {
+      newNodeStates.set(nodeId, { nodeId, status: 'idle', lastUpdated: Date.now() });
+    }
+    for (const nodeId of state.isolatedNodes) {
+      newNodeStates.set(nodeId, { nodeId, status: 'idle', lastUpdated: Date.now() });
+    }
+    return { faultInjections: new Map(), isolatedNodes: new Set(), nodeStates: newNodeStates };
+  }),
+
+  isolateNode: (nodeId) => set((state) => {
+    const newIsolated = new Set(state.isolatedNodes);
+    newIsolated.add(nodeId);
+    const newFaults = new Map(state.faultInjections);
+    newFaults.set(nodeId, 'down');
+    const newNodeStates = new Map(state.nodeStates);
+    newNodeStates.set(nodeId, { nodeId, status: 'down', lastUpdated: Date.now() });
+    return { isolatedNodes: newIsolated, faultInjections: newFaults, nodeStates: newNodeStates };
+  }),
+
+  restoreNode: (nodeId) => set((state) => {
+    const newFaults = new Map(state.faultInjections);
+    newFaults.delete(nodeId);
+    const newIsolated = new Set(state.isolatedNodes);
+    newIsolated.delete(nodeId);
+    const newNodeStates = new Map(state.nodeStates);
+    newNodeStates.set(nodeId, { nodeId, status: 'idle', lastUpdated: Date.now() });
+    return { faultInjections: newFaults, isolatedNodes: newIsolated, nodeStates: newNodeStates };
+  }),
 }));
 
 /**
