@@ -12,18 +12,22 @@ export class FirewallHandler implements NodeRequestHandler {
 
   handleRequestArrival(
     node: Node,
-    _context: RequestContext,
+    context: RequestContext,
     outgoingEdges: Edge[],
     _allNodes: Node[]
   ): RequestDecision {
     const data = node.data as FirewallNodeData;
+    const requestPort = context.targetPort;
 
-    // Simulate firewall rules: deny if default is deny and no explicit allow
     if (data.defaultAction === 'deny') {
-      // Small chance the request is allowed (simulating port matching)
-      const allowed = data.allowedPorts.length > 0;
-      if (!allowed) {
-        return { action: 'reject', reason: 'rate-limit' };
+      // Default deny: only allow if request port is explicitly in allowedPorts
+      if (requestPort == null || !data.allowedPorts.includes(requestPort)) {
+        return { action: 'reject', reason: 'blocked' };
+      }
+    } else {
+      // Default allow: block only if a port is specified and not in allowedPorts
+      if (requestPort != null && data.allowedPorts.length > 0 && !data.allowedPorts.includes(requestPort)) {
+        return { action: 'reject', reason: 'blocked' };
       }
     }
 

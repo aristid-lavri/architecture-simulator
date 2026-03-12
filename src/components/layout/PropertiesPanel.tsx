@@ -224,6 +224,32 @@ export function PropertiesPanel() {
               </div>
             </div>
 
+            {/* Target Port */}
+            <div className="space-y-3">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                Port cible
+              </span>
+              <Separator />
+              <div className="space-y-2">
+                <Label htmlFor="edge-target-port">Port</Label>
+                <Input
+                  id="edge-target-port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={edgeData.targetPort ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateEdgeData({ targetPort: val ? parseInt(val, 10) : undefined });
+                  }}
+                  placeholder="Ex: 80, 443, 8080"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Port de destination utilisé par le firewall et le host-server pour le routage.
+                </p>
+              </div>
+            </div>
+
             {/* Edge Style */}
             <div className="space-y-3">
               <span className="text-xs text-muted-foreground uppercase tracking-wide">
