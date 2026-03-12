@@ -35,7 +35,7 @@ export interface ForwardTarget {
 export type RequestDecision =
   | { action: 'forward'; targets: ForwardTarget[] }
   | { action: 'respond'; isError: boolean; delay?: number }
-  | { action: 'reject'; reason: 'rate-limit' | 'auth-failure' | 'capacity' }
+  | { action: 'reject'; reason: 'rate-limit' | 'auth-failure' | 'capacity' | 'blocked' }
   | { action: 'queue'; priority?: number }
   | { action: 'cache-miss'; dbTarget: ForwardTarget; cacheNodeId: string }
   | { action: 'notify'; targets: ForwardTarget[] }; // Fire-and-forget: répond immédiatement, notifie les consumers async
