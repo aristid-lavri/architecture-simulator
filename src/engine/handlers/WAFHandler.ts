@@ -22,7 +22,7 @@ export class WAFHandler implements NodeRequestHandler {
     const isBlocked = Math.random() * 100 < data.blockRate;
 
     if (isBlocked) {
-      return { action: 'reject', reason: 'rate-limit' };
+      return { action: 'reject', reason: 'waf-blocked' };
     }
 
     if (outgoingEdges.length === 0) {
