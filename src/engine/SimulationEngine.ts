@@ -1313,7 +1313,10 @@ export class SimulationEngine {
    * Initialize server states with resource configuration
    */
   private initializeServerStates(): void {
-    const servers = this.nodes.filter((n) => n.type === 'http-server' || n.type === 'host-server');
+    // Types that should NOT be tracked as resource-consuming servers
+    const excludedTypes = new Set(['http-client', 'client-group', 'network-zone']);
+
+    const servers = this.nodes.filter((n) => n.type && !excludedTypes.has(n.type as string));
 
     servers.forEach((server) => {
       const data = server.data as HttpServerNodeDataExtended;

@@ -34,11 +34,12 @@ function MetricsContent() {
   const nodes = useArchitectureStore((s) => s.nodes);
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
 
-  // Node label map
+  // Node label map (with type suffix for disambiguation)
   const labelMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const node of nodes) {
-      map.set(node.id, (node.data as { label?: string }).label || node.id.split('-')[0]);
+      const label = (node.data as { label?: string }).label || node.id.split('-')[0];
+      map.set(node.id, label);
     }
     return map;
   }, [nodes]);
@@ -319,8 +320,8 @@ function MetricsContent() {
 }
 
 const MIN_PANEL_HEIGHT = 120;
-const MAX_PANEL_HEIGHT = 600;
-const DEFAULT_PANEL_HEIGHT = 220;
+const MAX_PANEL_HEIGHT = 900;
+const DEFAULT_PANEL_HEIGHT = 280;
 
 export function MetricsPanel() {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -488,9 +489,9 @@ export function MetricsPanel() {
                 {/* Resize handle */}
                 <div
                   onMouseDown={handleResizeStart}
-                  className="absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize z-10 group flex items-center justify-center"
+                  className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize z-10 group flex items-center justify-center"
                 >
-                  <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-muted-foreground transition-colors" />
+                  <div className="w-12 h-1 rounded-full bg-muted-foreground/40 group-hover:bg-muted-foreground group-active:bg-foreground transition-colors" />
                 </div>
                 <div className="h-full overflow-y-auto">
                   {activeTab === 'metrics' ? (

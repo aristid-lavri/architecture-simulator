@@ -393,7 +393,7 @@ export function ComponentsPanel() {
 
   return (
     <div
-      className={`border-r border-border bg-card transition-all duration-300 flex flex-col ${
+      className={`border-r border-border bg-card transition-all duration-300 flex flex-col h-full ${
         isComponentsPanelOpen ? 'w-56' : 'w-8'
       }`}
     >
@@ -417,7 +417,7 @@ export function ComponentsPanel() {
 
       {/* Components List */}
       {isComponentsPanelOpen && (
-        <ScrollArea className="flex-1 overflow-auto">
+        <ScrollArea className="flex-1 overflow-hidden">
           <div className="py-1">
             {categories.map((category) => (
               <CategoryAccordion
