@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { useArchitectureStore } from '@/store/architecture-store';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -72,6 +72,39 @@ export function PropertiesPanel() {
     setPropertiesPanelOpen(false);
   }, [selectedEdgeId, removeEdge, setSelectedEdgeId, setPropertiesPanelOpen]);
 
+  // Resizable panel state
+  const [panelWidth, setPanelWidth] = useState(320);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = panelWidth;
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = dragStartX.current - ev.clientX;
+      const newWidth = Math.min(600, Math.max(280, dragStartWidth.current + delta));
+      setPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelWidth]);
+
   // Show edge properties panel
   if (isPropertiesPanelOpen && selectedEdge) {
     const sourceNode = nodes.find((n) => n.id === selectedEdge.source);
@@ -79,7 +112,14 @@ export function PropertiesPanel() {
     const edgeData = (selectedEdge.data || {}) as AnimatedEdgeData;
 
     return (
-      <div className="w-80 border-l bg-background flex flex-col h-full overflow-hidden">
+      <div className="border-l bg-background flex flex-col h-full overflow-hidden relative" style={{ width: panelWidth }}>
+        {/* Resize handle */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute top-0 left-0 w-1.5 h-full cursor-ew-resize z-10 group flex items-center justify-center"
+        >
+          <div className="w-0.5 h-8 rounded-full bg-muted-foreground/30 group-hover:bg-muted-foreground group-active:bg-foreground transition-colors" />
+        </div>
         {/* Header */}
         <div className="h-12 border-b flex items-center justify-between px-4 shrink-0">
           <div className="flex items-center gap-2">
@@ -305,7 +345,14 @@ export function PropertiesPanel() {
   const isBackgroundJob = selectedNode.type === 'background-job';
 
   return (
-    <div className="w-80 border-l bg-background flex flex-col h-full overflow-hidden">
+    <div className="border-l bg-background flex flex-col h-full overflow-hidden relative" style={{ width: panelWidth }}>
+      {/* Resize handle */}
+      <div
+        onMouseDown={handleResizeStart}
+        className="absolute top-0 left-0 w-1.5 h-full cursor-ew-resize z-10 group flex items-center justify-center"
+      >
+        <div className="w-0.5 h-8 rounded-full bg-muted-foreground/30 group-hover:bg-muted-foreground group-active:bg-foreground transition-colors" />
+      </div>
       {/* Header */}
       <div className="h-12 border-b flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-2">
@@ -3494,59 +3541,75 @@ function HostServerConfig({ data, onUpdate, childNodes }: { data: HostServerNode
           {mappings.length === 0 && (
             <p className="text-xs text-muted-foreground">Aucun mapping configure. Ajoutez un mapping pour router le trafic vers les containers.</p>
           )}
-          {mappings.map((mapping) => (
-            <div key={mapping.id} className="flex items-center gap-1.5 p-2 rounded-md border bg-muted/30">
-              <Input
-                type="number"
-                value={mapping.hostPort}
-                onChange={(e) => updateMapping(mapping.id, { hostPort: parseInt(e.target.value) || 0 })}
-                className="w-16 h-7 text-xs"
-                placeholder="8080"
-              />
-              <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-              <Select
-                value={mapping.containerNodeId || '_none'}
-                onValueChange={(v) => updateMapping(mapping.id, { containerNodeId: v === '_none' ? '' : v })}
-              >
-                <SelectTrigger className="h-7 text-xs flex-1">
-                  <SelectValue placeholder="Container..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">-- Aucun --</SelectItem>
-                  {containerChildren.map((child) => (
-                    <SelectItem key={child.id} value={child.id}>
-                      {(child.data as { label?: string }).label || child.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                type="number"
-                value={mapping.containerPort}
-                onChange={(e) => updateMapping(mapping.id, { containerPort: parseInt(e.target.value) || 0 })}
-                className="w-16 h-7 text-xs"
-                placeholder="3000"
-              />
-              <Select
-                value={mapping.protocol}
-                onValueChange={(v) => updateMapping(mapping.id, { protocol: v as 'tcp' | 'udp' })}
-              >
-                <SelectTrigger className="h-7 text-xs w-16">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="tcp">TCP</SelectItem>
-                  <SelectItem value="udp">UDP</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => removeMapping(mapping.id)}
-                className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
+          {mappings.map((mapping, idx) => (
+            <div key={mapping.id} className="p-2 rounded-md border bg-muted/30 space-y-1.5">
+              {idx === 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="w-16 text-[10px] text-muted-foreground font-medium">Port hôte</span>
+                  <span className="w-3" />
+                  <span className="flex-1 text-[10px] text-muted-foreground font-medium">Container</span>
+                  <span className="w-16 text-[10px] text-muted-foreground font-medium">Port ctn.</span>
+                  <span className="w-16 text-[10px] text-muted-foreground font-medium">Protocole</span>
+                  <span className="w-7" />
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  value={mapping.hostPort}
+                  onChange={(e) => updateMapping(mapping.id, { hostPort: parseInt(e.target.value) || 0 })}
+                  className="w-16 h-7 text-xs"
+                  placeholder="8080"
+                />
+                <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                <Select
+                  value={mapping.containerNodeId || '_none'}
+                  onValueChange={(v) => updateMapping(mapping.id, { containerNodeId: v === '_none' ? '' : v })}
+                >
+                  <SelectTrigger className="h-7 text-xs flex-1">
+                    <SelectValue placeholder="Container..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">-- Aucun --</SelectItem>
+                    {containerChildren.map((child, i) => {
+                      const childLabel = (child.data as { label?: string }).label || child.id;
+                      const isDuplicate = containerChildren.some((c, j) => j !== i && ((c.data as { label?: string }).label || c.id) === childLabel);
+                      return (
+                        <SelectItem key={child.id} value={child.id}>
+                          {isDuplicate ? `${childLabel} (#${i + 1})` : childLabel}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  value={mapping.containerPort}
+                  onChange={(e) => updateMapping(mapping.id, { containerPort: parseInt(e.target.value) || 0 })}
+                  className="w-16 h-7 text-xs"
+                  placeholder="3000"
+                />
+                <Select
+                  value={mapping.protocol}
+                  onValueChange={(v) => updateMapping(mapping.id, { protocol: v as 'tcp' | 'udp' })}
+                >
+                  <SelectTrigger className="h-7 text-xs w-16">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tcp">TCP</SelectItem>
+                    <SelectItem value="udp">UDP</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeMapping(mapping.id)}
+                  className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
           ))}
           {containerChildren.length === 0 && mappings.length > 0 && (
