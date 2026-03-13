@@ -14,6 +14,13 @@ export interface RequestContext {
   requestPath?: string;
   // Port cible sur le nœud courant (provient de l'edge data targetPort)
   targetPort?: number;
+  // Enriched context fields (Issue #4)
+  httpMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  queryType?: 'read' | 'write' | 'transaction';
+  contentType?: 'static' | 'dynamic' | 'user-specific';
+  payloadSizeBytes?: number;
+  sourceIP?: string;
+
   // État spécifique au cache-aside pattern
   cacheHit?: boolean;
   cacheNodeId?: string;

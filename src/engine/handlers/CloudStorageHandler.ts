@@ -9,7 +9,6 @@ export class CloudStorageHandler implements NodeRequestHandler {
 
   getProcessingDelay(node: Node, speed: number): number {
     const data = node.data as CloudStorageNodeData;
-    // Average of read/write latency
     return data.readLatencyMs / speed;
   }
 
@@ -23,11 +22,12 @@ export class CloudStorageHandler implements NodeRequestHandler {
 
   handleRequestArrival(
     node: Node,
-    _context: RequestContext,
+    context: RequestContext,
     outgoingEdges: Edge[],
     _allNodes: Node[]
   ): RequestDecision {
     const data = node.data as CloudStorageNodeData;
+    const method = context.httpMethod || 'GET';
 
     // Rate limiting
     const count = this.requestCounts.get(node.id) || 0;
@@ -41,15 +41,22 @@ export class CloudStorageHandler implements NodeRequestHandler {
       setTimeout(() => this.requestCounts.set(node.id, 0), 1000);
     }
 
+    // Differentiate latency based on HTTP method
+    const delay = (method === 'POST' || method === 'PUT')
+      ? data.writeLatencyMs
+      : method === 'DELETE'
+        ? data.writeLatencyMs * 0.5
+        : data.readLatencyMs;
+
     // Storage is typically a terminal node (no outgoing)
     if (outgoingEdges.length === 0) {
-      return { action: 'respond', isError: false };
+      return { action: 'respond', isError: false, delay };
     }
 
     const edge = outgoingEdges[0];
     return {
       action: 'forward',
-      targets: [{ nodeId: edge.target, edgeId: edge.id }],
+      targets: [{ nodeId: edge.target, edgeId: edge.id, delay }],
     };
   }
 }

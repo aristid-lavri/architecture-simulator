@@ -48,8 +48,9 @@ export class DatabaseHandler implements NodeRequestHandler {
     // Générer un ID de requête unique
     const queryId = `${context.chainId}-${this.queryCounter++}`;
 
-    // Exécuter la requête
-    const { accepted } = this.manager.executeQuery(node.id, queryId, 'read');
+    // Exécuter la requête avec le type dérivé du contexte
+    const queryType = context.queryType || 'read';
+    const { accepted } = this.manager.executeQuery(node.id, queryId, queryType);
 
     if (!accepted) {
       return { action: 'reject', reason: 'capacity' };
