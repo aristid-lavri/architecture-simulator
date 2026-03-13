@@ -157,7 +157,45 @@ export type SimulationEventType =
   | 'PROCESSING_END'
   | 'RESPONSE_SENT'
   | 'RESPONSE_RECEIVED'
-  | 'ERROR';
+  | 'ERROR'
+  | 'SPAN_START'
+  | 'SPAN_END';
+
+// ============================================
+// Distributed Tracing Types (Critical Path Analyzer)
+// ============================================
+
+/** Un span represente le temps passe dans un noeud pour une chaine de requete donnee. */
+export interface TraceSpan {
+  id: string;
+  chainId: string;
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  parentSpanId?: string;
+  startTime: number;
+  endTime?: number;
+  duration?: number;
+  status: 'active' | 'completed' | 'error';
+}
+
+/** Trace complete regroupant tous les spans d'une chaine de requete. */
+export interface RequestTrace {
+  chainId: string;
+  spans: TraceSpan[];
+  totalDuration: number;
+  startTime: number;
+  endTime: number;
+  status: 'active' | 'completed' | 'error';
+}
+
+/** Analyse du chemin critique d'une trace. */
+export interface CriticalPathAnalysis {
+  bottleneckSpan: TraceSpan | null;
+  timePerComponent: Map<string, { nodeId: string; nodeName: string; nodeType: string; totalTime: number; percentage: number }>;
+  nPlusOnePatterns: { nodeId: string; nodeName: string; count: number }[];
+  totalDuration: number;
+}
 
 /** Evenement de simulation avec source, cible et donnees contextuelles. */
 export interface SimulationEvent {
@@ -175,6 +213,11 @@ export interface SimulationEvent {
     body?: string;
     error?: string;
     latency?: number;
+    // Span tracing fields
+    spanId?: string;
+    nodeType?: string;
+    parentSpanId?: string;
+    isError?: boolean;
   };
 }
 

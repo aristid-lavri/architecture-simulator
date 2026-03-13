@@ -15,6 +15,8 @@ const EVENT_TYPE_CONFIG: Record<SimulationEventType, { label: string; color: str
   RESPONSE_SENT: { label: 'RES→', color: 'text-signal-healthy' },
   RESPONSE_RECEIVED: { label: 'RES←', color: 'text-signal-healthy' },
   ERROR: { label: 'ERR', color: 'text-signal-critical' },
+  SPAN_START: { label: 'SPAN→', color: 'text-purple-400' },
+  SPAN_END: { label: 'SPAN←', color: 'text-purple-300' },
 };
 
 type SortMode = 'time' | 'latency' | 'status';

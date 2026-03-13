@@ -79,6 +79,8 @@ const EVENT_TYPE_STYLES: Record<SimulationEventType, { label: string; color: str
   RESPONSE_SENT: { label: 'RES→', color: 'text-green-500' },
   RESPONSE_RECEIVED: { label: 'RES←', color: 'text-green-500' },
   ERROR: { label: 'ERR', color: 'text-red-500' },
+  SPAN_START: { label: 'SPAN→', color: 'text-purple-400' },
+  SPAN_END: { label: 'SPAN←', color: 'text-purple-300' },
 };
 
 interface ChainSummary {
