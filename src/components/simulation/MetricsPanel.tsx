@@ -9,10 +9,11 @@ import { useSimulationEvents } from '@/hooks/useSimulationEvents';
 import { useArchitectureStore } from '@/store/architecture-store';
 import { OutputPanel } from './OutputPanel';
 import { ValidationPanel } from './ValidationPanel';
+import { WaterfallView } from './WaterfallView';
 import { MetricSparkline } from './MetricSparkline';
 import { cn } from '@/lib/utils';
 
-type BottomTab = 'metrics' | 'output' | 'validation';
+type BottomTab = 'metrics' | 'output' | 'validation' | 'waterfall';
 
 function SaturationBadge({ saturation }: { saturation: number }) {
   if (saturation >= 90) {
@@ -509,7 +510,6 @@ export function MetricsPanel() {
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground/70'
                   )}
-                  style={{ borderRadius: '0 2px 2px 0' }}
                   onClick={(e) => { e.stopPropagation(); setActiveTab('validation'); setIsExpanded(true); }}
                 >
                   Valid
@@ -519,6 +519,18 @@ export function MetricsPanel() {
                   {validationResult && validationResult.errorCount === 0 && validationResult.warningCount > 0 && (
                     <span className="text-signal-warning ml-1">({validationResult.warningCount})</span>
                   )}
+                </button>
+                <button
+                  className={cn(
+                    'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors border-l border-border/30',
+                    activeTab === 'waterfall'
+                      ? 'text-foreground bg-muted/50'
+                      : 'text-muted-foreground hover:text-foreground/70'
+                  )}
+                  style={{ borderRadius: '0 2px 2px 0' }}
+                  onClick={(e) => { e.stopPropagation(); setActiveTab('waterfall'); setIsExpanded(true); }}
+                >
+                  Traces
                 </button>
               </div>
 
@@ -549,6 +561,7 @@ export function MetricsPanel() {
                   {activeTab === 'metrics' && <MetricsContent />}
                   {activeTab === 'output' && <OutputPanel eventCount={events.length} panelHeight={panelHeight} />}
                   {activeTab === 'validation' && <ValidationPanel panelHeight={panelHeight} />}
+                  {activeTab === 'waterfall' && <WaterfallView panelHeight={panelHeight} />}
                 </div>
               </motion.div>
             )}

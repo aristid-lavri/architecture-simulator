@@ -144,6 +144,46 @@ export function createErrorEvent(
   };
 }
 
+export function createSpanStartEvent(
+  nodeId: string,
+  nodeType: string,
+  chainId: string,
+  spanId: string,
+  parentSpanId?: string
+): SimulationEvent {
+  return {
+    id: generateEventId(),
+    type: 'SPAN_START',
+    sourceNodeId: nodeId,
+    chainId,
+    timestamp: Date.now(),
+    data: {
+      spanId,
+      nodeType,
+      parentSpanId,
+    },
+  };
+}
+
+export function createSpanEndEvent(
+  nodeId: string,
+  chainId: string,
+  spanId: string,
+  isError: boolean = false
+): SimulationEvent {
+  return {
+    id: generateEventId(),
+    type: 'SPAN_END',
+    sourceNodeId: nodeId,
+    chainId,
+    timestamp: Date.now(),
+    data: {
+      spanId,
+      isError,
+    },
+  };
+}
+
 // Simple event emitter for simulation events
 type EventHandler = (event: SimulationEvent) => void;
 

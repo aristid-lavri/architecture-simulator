@@ -25,6 +25,8 @@ import {
   createResponseSentEvent,
   createResponseReceivedEvent,
   createErrorEvent,
+  createSpanStartEvent,
+  createSpanEndEvent,
   simulationEvents,
 } from './events';
 import { MetricsCollector } from './metrics';
@@ -61,6 +63,7 @@ import {
   type RequestDecision,
 } from './handlers';
 import { HierarchicalResourceManager } from './HierarchicalResourceManager';
+import { criticalPathAnalyzer } from './CriticalPathAnalyzer';
 import { pluginRegistry } from '@/plugins';
 
 /**
@@ -205,6 +208,9 @@ export class SimulationEngine {
   // Request chain tracking
   private activeChains: Map<string, RequestChain> = new Map();
 
+  // Span tracking for distributed tracing (chainId:nodeId → spanId)
+  private activeSpans: Map<string, string> = new Map();
+
   // Time-series snapshot interval
   private timeSeriesInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -278,6 +284,29 @@ export class SimulationEngine {
     for (const { handler } of pluginRegistry.getNodeHandlers()) {
       this.handlerRegistry.register(handler);
     }
+  }
+
+  /** Emet un SPAN_START pour un noeud dans une chaine et retourne le spanId. */
+  private emitSpanStart(nodeId: string, nodeType: string, chainId: string, parentSpanId?: string): string {
+    const spanId = `span_${chainId}_${nodeId}_${Date.now()}`;
+    this.activeSpans.set(`${chainId}:${nodeId}`, spanId);
+    simulationEvents.emit(createSpanStartEvent(nodeId, nodeType, chainId, spanId, parentSpanId));
+    return spanId;
+  }
+
+  /** Emet un SPAN_END pour un noeud dans une chaine. */
+  private emitSpanEnd(nodeId: string, chainId: string, isError: boolean = false): void {
+    const key = `${chainId}:${nodeId}`;
+    const spanId = this.activeSpans.get(key);
+    if (spanId) {
+      simulationEvents.emit(createSpanEndEvent(nodeId, chainId, spanId, isError));
+      this.activeSpans.delete(key);
+    }
+  }
+
+  /** Retourne le spanId actif pour un noeud dans une chaine (pour lier parent-enfant). */
+  private getActiveSpanId(nodeId: string, chainId: string): string | undefined {
+    return this.activeSpans.get(`${chainId}:${nodeId}`);
   }
 
   /** Pousse les metriques vers le callback avec throttle (200ms max). */
@@ -419,6 +448,14 @@ export class SimulationEngine {
     // Initialize hierarchical resource manager
     this.hierarchicalResourceManager.initialize(this.nodes);
 
+    // Initialize critical path analyzer with node labels
+    const nodeLabels = new Map<string, string>();
+    for (const node of this.nodes) {
+      const label = (node.data as { label?: string }).label || node.id.split('-')[0];
+      nodeLabels.set(node.id, label);
+    }
+    criticalPathAnalyzer.start(nodeLabels);
+
     // Initialize handlers for all nodes
     this.handlerRegistry.initializeAll(this.nodes);
 
@@ -499,10 +536,14 @@ export class SimulationEngine {
       this.timeSeriesInterval = null;
     }
 
-    // Clear request queues and chains
+    // Clear request queues, chains and spans
     this.requestQueues.clear();
     this.serverStates.clear();
     this.activeChains.clear();
+    this.activeSpans.clear();
+
+    // Stop critical path analyzer
+    criticalPathAnalyzer.stop();
 
     // Cleanup handlers
     const nodeIds = this.nodes.map((n) => n.id);
@@ -692,6 +733,9 @@ export class SimulationEngine {
       this.metrics.recordResponse(false, Date.now() - chain.startTime);
       this.pushMetricsUpdate();
       simulationEvents.emit(createErrorEvent(server.id, 'node-down', chainId));
+      // Emit error span for tracing
+      this.emitSpanStart(server.id, server.type ?? 'default', chainId);
+      this.emitSpanEnd(server.id, chainId, true);
       this.sendChainResponse(chainId, server);
       return;
     }
@@ -734,8 +778,11 @@ export class SimulationEngine {
     // Emit PROCESSING_START event
     simulationEvents.emit(createProcessingStartEvent(server.id, chainId));
 
-    // Get handler and decision
+    // Emit SPAN_START for distributed tracing
     const nodeType = server.type ?? 'default';
+    this.emitSpanStart(server.id, nodeType, chainId);
+
+    // Get handler and decision
     const handler = this.handlerRegistry.getHandler(nodeType);
     let decision = handler.handleRequestArrival(server, context, outgoingEdges, this.nodes);
 
@@ -947,6 +994,10 @@ export class SimulationEngine {
     // Emit PROCESSING_END event
     simulationEvents.emit(createProcessingEndEvent(sourceNode.id, chainId));
 
+    // Emit SPAN_END for distributed tracing
+    const isErrorDecision = decision.action === 'reject' || (decision.action === 'respond' && decision.isError);
+    this.emitSpanEnd(sourceNode.id, chainId, isErrorDecision);
+
     switch (decision.action) {
       case 'forward':
         // Forward to the targets
@@ -1136,6 +1187,9 @@ export class SimulationEngine {
       this.metrics.recordResponse(false, Date.now() - chain.startTime);
       this.pushMetricsUpdate();
       simulationEvents.emit(createErrorEvent(targetNode.id, 'node-down', chainId));
+      // Emit error span for tracing
+      this.emitSpanStart(targetNode.id, targetNode.type ?? 'default', chainId);
+      this.emitSpanEnd(targetNode.id, chainId, true);
       this.sendChainResponse(chainId, targetNode);
       return;
     }
@@ -1180,13 +1234,18 @@ export class SimulationEngine {
     // Emit PROCESSING_START event
     simulationEvents.emit(createProcessingStartEvent(targetNode.id, chainId));
 
+    // Emit SPAN_START for distributed tracing (parent span = previous node in chain)
+    const nodeType = targetNode.type ?? 'default';
+    const previousNodeId = chain.currentPath.length >= 2 ? chain.currentPath[chain.currentPath.length - 2] : undefined;
+    const parentSpanId = previousNodeId ? this.getActiveSpanId(previousNodeId, chainId) : undefined;
+    this.emitSpanStart(targetNode.id, nodeType, chainId, parentSpanId);
+
     // Get outgoing edges for this node (filtered by isolation)
     const outgoingEdges = this.isNodeIsolated(targetNode.id)
       ? []
       : this.edges.filter((e) => e.source === targetNode.id);
 
     // Get handler and decision
-    const nodeType = targetNode.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
     let decision = handler.handleRequestArrival(targetNode, context, outgoingEdges, this.nodes);
 

@@ -396,6 +396,17 @@
     "upgradeRequired": "Enterprise feature",
     "upgradeCta": "Upgrade to Enterprise"
   },
+  "waterfall": {
+    "noTraces": "No traces captured. Start the simulation.",
+    "selectTrace": "Select a trace",
+    "search": "Search...",
+    "trace": "Trace",
+    "timeBreakdown": "Time per component",
+    "nPlusOne": "N+1 pattern detected",
+    "calledPrefix": "called",
+    "bottleneck": "Bottleneck",
+    "clickToLocate": "Click to locate"
+  },
   "validation": {
     "title": "Validation",
     "tooltip": "Check configuration",
