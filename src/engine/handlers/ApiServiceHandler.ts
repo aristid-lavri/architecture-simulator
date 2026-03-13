@@ -23,7 +23,13 @@ export class ApiServiceHandler implements NodeRequestHandler {
 
   getProcessingDelay(node: Node, speed: number): number {
     const data = node.data as ApiServiceNodeData;
-    return data.responseTime / speed;
+    const state = this.getOrCreateState(node.id);
+    const loadFactor = data.maxConcurrentRequests > 0
+      ? state.activeRequests / data.maxConcurrentRequests
+      : 0;
+    // Quadratic degradation: latency doubles at ~70% load, 4x at 100%
+    const degradedLatency = data.responseTime * (1 + loadFactor * loadFactor * 3);
+    return degradedLatency / speed;
   }
 
   initialize(node: Node): void {
@@ -55,8 +61,12 @@ export class ApiServiceHandler implements NodeRequestHandler {
     state.activeRequests++;
     state.totalRequests++;
 
-    // Simuler le taux d'erreur
-    const isError = Math.random() * 100 < data.errorRate;
+    // Simuler le taux d'erreur avec degradation sous charge
+    const loadFactor = data.maxConcurrentRequests > 0
+      ? state.activeRequests / data.maxConcurrentRequests
+      : 0;
+    const dynamicErrorRate = data.errorRate + (loadFactor > 0.8 ? (loadFactor - 0.8) * 50 : 0);
+    const isError = Math.random() * 100 < dynamicErrorRate;
 
     // Si erreur ou pas d'edges sortants, repondre directement
     if (isError || outgoingEdges.length === 0) {
