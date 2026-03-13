@@ -43,6 +43,7 @@ import FirewallNode from '@/components/nodes/FirewallNode';
 import HostServerNode from '@/components/nodes/HostServerNode';
 import ApiServiceNode from '@/components/nodes/ApiServiceNode';
 import BackgroundJobNode from '@/components/nodes/BackgroundJobNode';
+import IdentityProviderNode from '@/components/nodes/IdentityProviderNode';
 import AnimatedEdge from '@/components/edges/AnimatedEdge';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { cn } from '@/lib/utils';
@@ -51,7 +52,7 @@ import type { ComponentType } from '@/types';
 import { CONTAINER_TYPES, canBeChildOf } from '@/types';
 import { suggestProtocol } from '@/data/connector-compatibility';
 import { applyAutoLayout } from '@/lib/auto-layout';
-import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultNetworkZoneData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultServerlessData, defaultServiceDiscoveryData, defaultCloudStorageData, defaultCloudFunctionData, defaultFirewallData, defaultContainerData, defaultDNSNodeData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
+import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultNetworkZoneData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultServerlessData, defaultServiceDiscoveryData, defaultCloudStorageData, defaultCloudFunctionData, defaultFirewallData, defaultContainerData, defaultDNSNodeData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData, defaultIdentityProviderData } from '@/types';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
@@ -90,6 +91,7 @@ const builtinNodeTypes = {
   'host-server': HostServerNode,
   'api-service': ApiServiceNode,
   'background-job': BackgroundJobNode,
+  'identity-provider': IdentityProviderNode,
 };
 
 // Custom edge types
@@ -179,6 +181,8 @@ function getDefaultNodeData(type: ComponentType): HttpClientNodeData | HttpServe
       return { ...defaultApiServiceData, status: 'idle' } satisfies ApiServiceNodeData;
     case 'background-job':
       return { ...defaultBackgroundJobData, status: 'idle' } satisfies BackgroundJobNodeData;
+    case 'identity-provider':
+      return { ...defaultIdentityProviderData, status: 'idle' };
     default: {
       // Chercher dans les plugins enregistrés
       const pluginData = pluginRegistry.getDefaultNodeData(type);

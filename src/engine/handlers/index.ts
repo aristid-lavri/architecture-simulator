@@ -32,3 +32,4 @@ export { CloudFunctionHandler } from './CloudFunctionHandler';
 export { HostServerHandler } from './HostServerHandler';
 export { ApiServiceHandler } from './ApiServiceHandler';
 export { BackgroundJobHandler } from './BackgroundJobHandler';
+export { IdentityProviderHandler } from './IdentityProviderHandler';

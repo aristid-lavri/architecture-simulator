@@ -24,6 +24,7 @@ import {
   defaultHostServerData,
   defaultApiServiceData,
   defaultBackgroundJobData,
+  defaultIdentityProviderData,
   zoneColors,
 } from '@/types';
 
@@ -99,6 +100,7 @@ const defaultDataByType: Record<string, Record<string, unknown>> = {
   'cloud-storage': { ...defaultCloudStorageData },
   'api-service': { ...defaultApiServiceData },
   'background-job': { ...defaultBackgroundJobData },
+  'identity-provider': { ...defaultIdentityProviderData },
 };
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {

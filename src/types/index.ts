@@ -25,7 +25,8 @@ export type ComponentType =
   | 'cloud-function'
   | 'host-server'
   | 'api-service'
-  | 'background-job';
+  | 'background-job'
+  | 'identity-provider';
 
 // ============================================
 // Hierarchy System
@@ -45,7 +46,7 @@ export const SERVICE_TYPES: ComponentType[] = [
   'api-service', 'background-job', 'database', 'cache', 'message-queue',
   'service-discovery', 'load-balancer', 'api-gateway', 'cdn', 'waf',
   'firewall', 'dns', 'circuit-breaker', 'serverless', 'cloud-function',
-  'cloud-storage',
+  'cloud-storage', 'identity-provider',
 ];
 
 /** Retourne le niveau hierarchique d'un type de composant. */
@@ -1556,6 +1557,99 @@ export const defaultBackgroundJobData: BackgroundJobNodeData = {
   jobType: 'worker',
   concurrency: 1,
   processingTimeMs: 500,
+  errorRate: 0,
+};
+
+// ============================================
+// Identity Provider Configuration
+// ============================================
+
+/** Type de fournisseur d'identite. */
+export type IdentityProviderType = 'keycloak' | 'auth0' | 'cognito' | 'okta';
+
+/** Protocole d'authentification supporte par un IdP. */
+export type IdPProtocol = 'oidc' | 'saml' | 'ldap' | 'oauth2';
+
+/** Format de token emis par un IdP. */
+export type IdPTokenFormat = 'jwt' | 'opaque' | 'saml-assertion';
+
+/** Protocoles et formats supportes par chaque provider. */
+export const IDP_PROVIDER_CAPABILITIES: Record<IdentityProviderType, {
+  protocols: IdPProtocol[];
+  tokenFormats: IdPTokenFormat[];
+  defaultProtocol: IdPProtocol;
+  defaultTokenFormat: IdPTokenFormat;
+}> = {
+  keycloak: {
+    protocols: ['oidc', 'saml', 'ldap', 'oauth2'],
+    tokenFormats: ['jwt', 'opaque'],
+    defaultProtocol: 'oidc',
+    defaultTokenFormat: 'jwt',
+  },
+  auth0: {
+    protocols: ['oidc', 'saml', 'oauth2'],
+    tokenFormats: ['jwt', 'opaque'],
+    defaultProtocol: 'oidc',
+    defaultTokenFormat: 'jwt',
+  },
+  cognito: {
+    protocols: ['oidc', 'oauth2'],
+    tokenFormats: ['jwt', 'opaque'],
+    defaultProtocol: 'oidc',
+    defaultTokenFormat: 'jwt',
+  },
+  okta: {
+    protocols: ['oidc', 'saml', 'oauth2'],
+    tokenFormats: ['jwt', 'opaque'],
+    defaultProtocol: 'oidc',
+    defaultTokenFormat: 'jwt',
+  },
+};
+
+/** Configuration d'un fournisseur d'identite (OAuth2, SAML, JWT). */
+export interface IdentityProviderNodeData {
+  label: string;
+  status?: NodeStatus;
+  /** Type de fournisseur */
+  providerType: IdentityProviderType;
+  /** Protocole d'authentification */
+  protocol: IdPProtocol;
+  /** Format de token emis */
+  tokenFormat: IdPTokenFormat;
+  /** Latence de validation d'un token (ms) */
+  tokenValidationLatencyMs: number;
+  /** Latence de generation d'un token (ms) */
+  tokenGenerationLatencyMs: number;
+  /** Cache de sessions actif */
+  sessionCacheEnabled: boolean;
+  /** TTL du cache de sessions (secondes) */
+  sessionCacheTTLSeconds: number;
+  /** MFA active */
+  mfaEnabled: boolean;
+  /** Latence MFA (ms, interaction utilisateur) */
+  mfaLatencyMs: number;
+  /** Limite de tentatives de login par minute */
+  loginRateLimitPerMinute: number;
+  /** TTL des tokens (secondes) */
+  tokenTTLSeconds: number;
+  /** Taux d'erreur (0-100%) */
+  errorRate: number;
+  [key: string]: unknown;
+}
+
+export const defaultIdentityProviderData: IdentityProviderNodeData = {
+  label: 'Identity Provider',
+  providerType: 'keycloak',
+  protocol: 'oidc',
+  tokenFormat: 'jwt',
+  tokenValidationLatencyMs: 5,
+  tokenGenerationLatencyMs: 100,
+  sessionCacheEnabled: true,
+  sessionCacheTTLSeconds: 3600,
+  mfaEnabled: false,
+  mfaLatencyMs: 3000,
+  loginRateLimitPerMinute: 60,
+  tokenTTLSeconds: 3600,
   errorRate: 0,
 };
 

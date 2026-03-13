@@ -110,6 +110,10 @@
       "name": "Background Job",
       "description": "Background job (cron, worker, batch processor)"
     },
+    "identityProvider": {
+      "name": "Identity Provider",
+      "description": "Centralized identity provider (Keycloak, Auth0, Cognito, Okta)"
+    },
     "firewall": {
       "name": "Firewall",
       "description": "Network firewall with filtering rules"
