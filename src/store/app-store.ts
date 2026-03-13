@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AppMode } from '@/types';
+import type { ValidationResult } from '@/lib/simulation-validator';
 
 type Theme = 'dark' | 'light';
 
@@ -27,6 +28,10 @@ interface AppState {
   // Selected edge
   selectedEdgeId: string | null;
   setSelectedEdgeId: (id: string | null) => void;
+
+  // Validation
+  validationResult: ValidationResult | null;
+  setValidationResult: (result: ValidationResult | null) => void;
 }
 
 function getInitialTheme(): Theme {
@@ -90,5 +95,9 @@ export const useAppStore = create<AppState>((set) => {
         selectedNodeId: null,
         isPropertiesPanelOpen: id !== null,
       }),
+
+    // Validation
+    validationResult: null,
+    setValidationResult: (result) => set({ validationResult: result }),
   };
 });

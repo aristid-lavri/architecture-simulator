@@ -37,6 +37,7 @@ import {
   Moon,
   BookOpen,
   Code,
+  ShieldCheck,
 } from 'lucide-react';
 import Link from 'next/link';
 import { architectureTemplates, type ArchitectureTemplate } from '@/data/architecture-templates';
@@ -44,6 +45,7 @@ import { exportToYaml } from '@/lib/yaml-exporter';
 import type { AppMode } from '@/types';
 import { cn } from '@/lib/utils';
 import { YamlEditor } from '@/components/YamlEditor';
+import { validateArchitecture } from '@/lib/simulation-validator';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -53,7 +55,7 @@ function formatTime(seconds: number): string {
 
 export function Header() {
   const { t } = useTranslation();
-  const { mode, setMode, toggleComponentsPanel, theme, toggleTheme } =
+  const { mode, setMode, toggleComponentsPanel, theme, toggleTheme, validationResult, setValidationResult } =
     useAppStore();
   const {
     state: simulationState,
@@ -300,7 +302,17 @@ export function Header() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    onClick={start}
+                    onClick={() => {
+                      if (simulationState === 'paused') {
+                        start();
+                        return;
+                      }
+                      // Run validation before starting
+                      const result = validateArchitecture(nodes, edges);
+                      setValidationResult(result);
+                      if (!result.isValid) return;
+                      start();
+                    }}
                     disabled={simulationState === 'idle' && edges.length === 0}
                     className={cn(
                       "flex items-center gap-1 px-2 py-0.5 transition-opacity",
@@ -318,6 +330,8 @@ export function Header() {
                 <TooltipContent side="bottom">
                   {simulationState === 'idle' && edges.length === 0
                     ? 'Connectez au moins 2 composants'
+                    : validationResult && !validationResult.isValid
+                    ? t('validation.blockingErrors')
                     : simulationState === 'paused' ? 'Reprendre la simulation' : 'Démarrer la simulation'}
                 </TooltipContent>
               </Tooltip>
@@ -406,6 +420,34 @@ export function Header() {
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Definir l&apos;architecture en YAML</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => {
+                const result = validateArchitecture(nodes, edges);
+                setValidationResult(result);
+              }}
+              disabled={simulationState === 'running' || simulationState === 'paused' || nodes.length === 0}
+              className={cn(
+                "flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed",
+                validationResult && !validationResult.isValid && 'text-signal-critical',
+                validationResult && validationResult.isValid && validationResult.issues.length === 0 && 'text-signal-healthy',
+              )}
+              aria-label={t('validation.title')}
+            >
+              <ShieldCheck className="w-3 h-3" />
+              VALID
+              {validationResult && validationResult.errorCount > 0 && (
+                <span className="text-signal-critical text-[9px]">{validationResult.errorCount}</span>
+              )}
+              {validationResult && validationResult.errorCount === 0 && validationResult.warningCount > 0 && (
+                <span className="text-signal-warning text-[9px]">{validationResult.warningCount}</span>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('validation.tooltip')}</TooltipContent>
         </Tooltip>
 
         <span className="text-border">|</span>

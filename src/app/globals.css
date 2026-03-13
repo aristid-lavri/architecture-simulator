@@ -405,6 +405,22 @@
   transition: opacity 0.2s ease;
 }
 
+/* ═══════════════════════════════════════
+   VALIDATION — Pre-simulation error/warning highlighting
+   ═══════════════════════════════════════ */
+
+.validation-error .node-instrument {
+  outline: 2px solid oklch(0.65 0.25 25 / 0.8);
+  outline-offset: -1px;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3), var(--node-shadow);
+}
+
+.validation-warning .node-instrument {
+  outline: 2px solid oklch(0.75 0.18 75 / 0.8);
+  outline-offset: -1px;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.2), var(--node-shadow);
+}
+
 /* Resource utilization bar (thin, inline) */
 .resource-bar {
   height: 2px;
