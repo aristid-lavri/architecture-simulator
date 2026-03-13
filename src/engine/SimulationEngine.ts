@@ -13,6 +13,7 @@ import type {
   ApiGatewayNodeData,
   MessageQueueNodeData,
   MessageQueueUtilization,
+  IdentityProviderNodeData,
 } from '@/types';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
@@ -64,6 +65,7 @@ import {
   type RequestDecision,
 } from './handlers';
 import { HierarchicalResourceManager } from './HierarchicalResourceManager';
+import { TokenStore, type SimulatedToken } from './TokenStore';
 import { criticalPathAnalyzer } from './CriticalPathAnalyzer';
 import { pluginRegistry } from '@/plugins';
 
@@ -176,6 +178,14 @@ interface RequestChain {
   cacheHit?: boolean;             // True si cache hit, false si miss
   cacheNodeId?: string;           // ID du cache pour stockage après DB
   waitingForDb?: boolean;         // True si on attend la réponse DB après cache miss
+  // Token d'authentification (Issue #52)
+  authToken?: {
+    tokenId: string;
+    format: 'jwt' | 'opaque' | 'saml-assertion';
+    issuerId: string;
+    issuedAt: number;
+    expiresAt: number;
+  };
 }
 
 /**
@@ -231,6 +241,9 @@ export class SimulationEngine {
 
   // Hierarchical resource management
   private hierarchicalResourceManager: HierarchicalResourceManager;
+
+  // Token store for authentication flow (Issue #52)
+  private tokenStore: TokenStore = new TokenStore();
 
   // Chaos mode — fault provider callback
   private faultProvider: (() => { faults: Map<string, 'down' | 'degraded'>; isolated: Set<string> }) | null = null;
@@ -538,11 +551,12 @@ export class SimulationEngine {
       this.timeSeriesInterval = null;
     }
 
-    // Clear request queues, chains and spans
+    // Clear request queues, chains, spans and tokens
     this.requestQueues.clear();
     this.serverStates.clear();
     this.activeChains.clear();
     this.activeSpans.clear();
+    this.tokenStore.clear();
 
     // Stop critical path analyzer
     criticalPathAnalyzer.stop();
@@ -632,12 +646,287 @@ export class SimulationEngine {
     });
   }
 
-  private sendRequest(client: Node, edge: Edge): void {
+  /**
+   * Trouve un Identity Provider connecté à un nœud (via edge sortant).
+   */
+  private findConnectedIdP(nodeId: string): { node: Node; edge: Edge } | null {
+    const edges = this.edges.filter((e) => e.source === nodeId);
+    for (const edge of edges) {
+      const target = this.nodes.find((n) => n.id === edge.target);
+      if (target && target.type === 'identity-provider') {
+        return { node: target, edge };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Crée un token auto-généré (quand pas d'IdP connecté au client).
+   */
+  private createAutoToken(clientId: string): SimulatedToken {
+    const token: SimulatedToken = {
+      tokenId: `auto_${generateParticleId()}`,
+      clientId,
+      idpId: 'auto',
+      format: 'jwt',
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 3600_000, // 1h
+    };
+    this.tokenStore.storeToken(token);
+    return token;
+  }
+
+  /**
+   * Acquiert un token auprès d'un Identity Provider via une particule visible,
+   * puis exécute le callback avec le token obtenu.
+   */
+  private acquireToken(
+    client: Node,
+    idpEdge: Edge,
+    idpNode: Node,
+    virtualClientId: number | undefined,
+    callback: (token: SimulatedToken) => void
+  ): void {
+    const idpData = idpNode.data as IdentityProviderNodeData;
+
+    // Particule token-request : client → IdP (couleur dorée)
+    const duration = 2000 / this.speed;
+    const tokenChainId = generateParticleId();
+    const particle: Particle = {
+      id: generateParticleId(),
+      edgeId: idpEdge.id,
+      type: 'token-request',
+      direction: 'forward',
+      progress: 0,
+      duration,
+      startTime: Date.now(),
+      data: { chainId: tokenChainId },
+    };
+    this.particleManager.add(particle);
+
+    setTimeout(() => {
+      if (this.state !== 'running') return;
+      this.particleManager.remove(particle.id);
+
+      // Appeler le handler IdP pour vérifier rate-limit, erreur, etc.
+      const handler = this.handlerRegistry.getHandler('identity-provider');
+      const context: RequestContext = {
+        chainId: tokenChainId,
+        originNodeId: client.id,
+        virtualClientId,
+        startTime: Date.now(),
+        currentPath: [client.id, idpNode.id],
+        edgePath: [idpEdge.id],
+      };
+      const processingDelay = handler.getProcessingDelay(idpNode, this.speed, context);
+
+      this.callbacks.onNodeStatusChange(idpNode.id, 'processing');
+
+      setTimeout(() => {
+        if (this.state !== 'running') return;
+
+        const outgoing = this.edges.filter((e) => e.source === idpNode.id);
+        const decision = handler.handleRequestArrival(idpNode, context, outgoing, this.nodes);
+
+        this.callbacks.onNodeStatusChange(idpNode.id, 'idle');
+
+        if (decision.action === 'reject') {
+          // Token refusé — envoyer particule d'erreur retour
+          const errParticle: Particle = {
+            id: generateParticleId(),
+            edgeId: idpEdge.id,
+            type: 'response-error',
+            direction: 'backward',
+            progress: 0,
+            duration: 1500 / this.speed,
+            startTime: Date.now(),
+            data: { chainId: tokenChainId },
+          };
+          this.particleManager.add(errParticle);
+          setTimeout(() => {
+            this.particleManager.remove(errParticle.id);
+          }, errParticle.duration);
+          // Pas de callback — la requête n'est pas envoyée
+          this.metrics.recordRejection();
+          this.metrics.recordResponse(false, Date.now() - context.startTime);
+          this.pushMetricsUpdate();
+          return;
+        }
+
+        // Token accordé — stocker et envoyer particule token-response retour
+        const token: SimulatedToken = {
+          tokenId: `tok_${generateParticleId()}`,
+          clientId: client.id,
+          idpId: idpNode.id,
+          format: idpData.tokenFormat as 'jwt' | 'opaque' | 'saml-assertion',
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + idpData.tokenTTLSeconds * 1000,
+          virtualClientId,
+        };
+        this.tokenStore.storeToken(token);
+
+        const respParticle: Particle = {
+          id: generateParticleId(),
+          edgeId: idpEdge.id,
+          type: 'token-response',
+          direction: 'backward',
+          progress: 0,
+          duration: 1500 / this.speed,
+          startTime: Date.now(),
+          data: { chainId: tokenChainId },
+        };
+        this.particleManager.add(respParticle);
+
+        setTimeout(() => {
+          if (this.state !== 'running') return;
+          this.particleManager.remove(respParticle.id);
+          callback(token);
+        }, respParticle.duration);
+      }, processingDelay);
+    }, duration);
+  }
+
+  /**
+   * Vérifie si la cible nécessite un token et prépare l'authentification.
+   * Retourne true si la requête est prise en charge (acquireToken en cours), false sinon.
+   */
+  private prepareAuthAndSend(
+    client: Node,
+    edge: Edge,
+    targetNode: Node,
+    virtualClientId: number | undefined,
+    doSend: (token?: SimulatedToken) => void
+  ): boolean {
+    // Vérifier si la cible est un API Gateway avec auth activée
+    if (targetNode.type !== 'api-gateway') {
+      doSend();
+      return false;
+    }
+    const gwData = targetNode.data as ApiGatewayNodeData;
+    if (gwData.authType === 'none') {
+      doSend();
+      return false;
+    }
+
+    // Auth requise — chercher un IdP connecté au client
+    const idp = this.findConnectedIdP(client.id);
+    if (!idp) {
+      // Pas d'IdP — auto-générer un token
+      const token = this.tokenStore.getValidToken(client.id, 'auto', virtualClientId)
+        || this.createAutoToken(client.id);
+      doSend(token);
+      return false;
+    }
+
+    // Vérifier si un token valide existe déjà
+    const existingToken = this.tokenStore.getValidToken(client.id, idp.node.id, virtualClientId);
+    if (existingToken) {
+      doSend(existingToken);
+      return false;
+    }
+
+    // Acquérir un token via l'IdP (async avec particule visible)
+    this.acquireToken(client, idp.edge, idp.node, virtualClientId, (token) => {
+      doSend(token);
+    });
+    return true;
+  }
+
+  /**
+   * Valide un token auprès de l'IdP avec des particules visibles.
+   * Gateway → IdP (bleue + cadenas), puis IdP → Gateway (verte/rouge + cadenas).
+   */
+  private validateTokenViaIdP(
+    gateway: Node,
+    idpNode: Node,
+    idpEdge: Edge,
+    chainId: string,
+    context: RequestContext,
+    onValid: () => void,
+    onInvalid: () => void
+  ): void {
+    // Vérifier si ce token a déjà été validé par cette gateway (pas de re-validation pendant la durée de vie)
+    if (context.authToken && this.tokenStore.isValidated(gateway.id, context.authToken.tokenId)) {
+      onValid();
+      return;
+    }
+
+    // 1. Particule bleue + cadenas : Gateway → IdP
+    const duration = 1500 / this.speed;
+    const validationParticle: Particle = {
+      id: generateParticleId(),
+      edgeId: idpEdge.id,
+      type: 'request',
+      direction: 'forward',
+      progress: 0,
+      duration,
+      startTime: Date.now(),
+      data: { chainId, authenticated: true },
+    };
+    this.particleManager.add(validationParticle);
+
+    setTimeout(() => {
+      if (this.state !== 'running') return;
+      this.particleManager.remove(validationParticle.id);
+
+      // 2. IdP traite la validation
+      const idpHandler = this.handlerRegistry.getHandler('identity-provider');
+      const processingDelay = idpHandler.getProcessingDelay(idpNode, this.speed, context);
+      this.callbacks.onNodeStatusChange(idpNode.id, 'processing');
+
+      setTimeout(() => {
+        if (this.state !== 'running') return;
+
+        const idpDecision = idpHandler.handleRequestArrival(idpNode, context, [], this.nodes);
+        const isValid = idpDecision.action !== 'reject';
+        this.callbacks.onNodeStatusChange(idpNode.id, 'idle');
+
+        // 3. Particule retour : IdP → Gateway (verte + cadenas si valide, rouge + cadenas si invalide)
+        const responseDuration = 1500 / this.speed;
+        const responseParticle: Particle = {
+          id: generateParticleId(),
+          edgeId: idpEdge.id,
+          type: isValid ? 'response-success' : 'response-error',
+          direction: 'backward',
+          progress: 0,
+          duration: responseDuration,
+          startTime: Date.now(),
+          data: { chainId, authenticated: true },
+        };
+        this.particleManager.add(responseParticle);
+
+        setTimeout(() => {
+          if (this.state !== 'running') return;
+          this.particleManager.remove(responseParticle.id);
+
+          if (isValid) {
+            // Marquer le token comme validé pour ne pas revalider pendant sa durée de vie
+            if (context.authToken) {
+              this.tokenStore.markValidated(gateway.id, context.authToken.tokenId, context.authToken.expiresAt);
+            }
+            onValid();
+          } else {
+            onInvalid();
+          }
+        }, responseDuration);
+      }, processingDelay);
+    }, duration);
+  }
+
+  private sendRequest(client: Node, edge: Edge, preAcquiredToken?: SimulatedToken): void {
     const data = client.data as HttpClientNodeData;
     const targetNode = this.nodes.find((n) => n.id === edge.target);
 
     if (!targetNode) {
       return;
+    }
+
+    // Si pas de token pré-acquis, vérifier si auth requise (peut déclencher acquireToken async)
+    if (!preAcquiredToken) {
+      const handled = this.prepareAuthAndSend(client, edge, targetNode, undefined, (token) => {
+        this.sendRequest(client, edge, token);
+      });
+      if (handled) return; // acquireToken en cours, sendRequest sera rappelé
     }
 
     // Update client status
@@ -672,8 +961,33 @@ export class SimulationEngine {
       progress: 0,
       duration: requestDuration,
       startTime: Date.now(),
-      data: { chainId },
+      data: { chainId, authenticated: !!preAcquiredToken },
     };
+
+    // Pré-créer la chain avec le token si disponible
+    if (preAcquiredToken) {
+      const chain: RequestChain = {
+        id: chainId,
+        originNodeId: client.id,
+        currentPath: [client.id],
+        edgePath: [],
+        startTime: Date.now(),
+        requestPath: data.path,
+        httpMethod: data.method,
+        queryType: deriveQueryType(data.method),
+        contentType: inferContentType(data.path),
+        payloadSizeBytes: estimatePayloadSize(data.method),
+        sourceIP: generateSourceIP(),
+        authToken: {
+          tokenId: preAcquiredToken.tokenId,
+          format: preAcquiredToken.format,
+          issuerId: preAcquiredToken.idpId,
+          issuedAt: preAcquiredToken.issuedAt,
+          expiresAt: preAcquiredToken.expiresAt,
+        },
+      };
+      this.activeChains.set(chainId, chain);
+    }
 
     this.particleManager.add(particle);
 
@@ -771,38 +1085,64 @@ export class SimulationEngine {
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
+      authToken: chain.authToken,
     };
 
     // Use handler pattern for consistent behavior
     let processingDelay = this.getNodeProcessingDelay(server, context);
     if (effectiveFault === 'degraded') processingDelay *= 3;
 
-    // Emit PROCESSING_START event
-    simulationEvents.emit(createProcessingStartEvent(server.id, chainId));
-
-    // Emit SPAN_START for distributed tracing
-    const nodeType = server.type ?? 'default';
-    this.emitSpanStart(server.id, nodeType, chainId);
-
-    // Get handler and decision
-    const handler = this.handlerRegistry.getHandler(nodeType);
-    let decision = handler.handleRequestArrival(server, context, outgoingEdges, this.nodes);
-
-    // Track database query type metrics
-    if (nodeType === 'database') {
-      this.metrics.recordDatabaseQuery(context.queryType || 'read');
-    }
-
-    // Chaos: degraded nodes have 50% chance of error
-    if (serverFault === 'degraded' && Math.random() < 0.5) {
-      decision = { action: 'respond', isError: true };
-    }
-
-    // Execute decision after processing delay
-    setTimeout(() => {
+    // Callback pour continuer le flow normal après validation (ou sans validation)
+    const continueGatewayFlow = () => {
       if (this.state !== 'running') return;
-      this.executeDecision(decision, server, chainId, context);
-    }, processingDelay);
+
+      // Emit PROCESSING_START event
+      simulationEvents.emit(createProcessingStartEvent(server.id, chainId));
+
+      // Emit SPAN_START for distributed tracing
+      const nodeType = server.type ?? 'default';
+      this.emitSpanStart(server.id, nodeType, chainId);
+
+      // Get handler and decision
+      const handler = this.handlerRegistry.getHandler(nodeType);
+      let decision = handler.handleRequestArrival(server, context, outgoingEdges, this.nodes);
+
+      // Track database query type metrics
+      if (nodeType === 'database') {
+        this.metrics.recordDatabaseQuery(context.queryType || 'read');
+      }
+
+      // Chaos: degraded nodes have 50% chance of error
+      if (serverFault === 'degraded' && Math.random() < 0.5) {
+        decision = { action: 'respond', isError: true };
+      }
+
+      // Execute decision after processing delay
+      setTimeout(() => {
+        if (this.state !== 'running') return;
+        this.executeDecision(decision, server, chainId, context);
+      }, processingDelay);
+    };
+
+    // Validation du token via IdP connecté à la gateway (Issue #52)
+    if (server.type === 'api-gateway' && context.authToken) {
+      const gwData = server.data as ApiGatewayNodeData;
+      if (gwData.authType !== 'none') {
+        const gwIdp = this.findConnectedIdP(server.id);
+        if (gwIdp) {
+          this.validateTokenViaIdP(server, gwIdp.node, gwIdp.edge, chainId, context,
+            continueGatewayFlow,
+            () => {
+              this.executeDecision({ action: 'reject', reason: 'token-invalid' }, server, chainId, context);
+            }
+          );
+          return;
+        }
+      }
+    }
+
+    // Pas de validation IdP nécessaire — continuer directement
+    continueGatewayFlow();
     } catch (error) {
       console.error('[SimulationEngine] Error in handleRequestArrival:', error);
       this.callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
@@ -966,6 +1306,7 @@ export class SimulationEngine {
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
+      authToken: chain.authToken,
     };
 
     // Get handler decision
@@ -1544,10 +1885,19 @@ export class SimulationEngine {
     group: Node,
     edge: Edge,
     data: ClientGroupNodeData,
-    virtualClientId: number
+    virtualClientId: number,
+    preAcquiredToken?: SimulatedToken
   ): void {
     const targetNode = this.nodes.find((n) => n.id === edge.target);
     if (!targetNode) return;
+
+    // Si pas de token pré-acquis, vérifier si auth requise
+    if (!preAcquiredToken) {
+      const handled = this.prepareAuthAndSend(group, edge, targetNode, virtualClientId, (token) => {
+        this.sendClientGroupRequest(group, edge, data, virtualClientId, token);
+      });
+      if (handled) return;
+    }
 
     // Check server capacity
     const serverState = this.serverStates.get(targetNode.id);
@@ -1621,6 +1971,16 @@ export class SimulationEngine {
       payloadSizeBytes: estimatePayloadSize(reqType.method),
       sourceIP: generateSourceIP(virtualClientId),
     };
+    // Attacher le token si disponible
+    if (preAcquiredToken) {
+      chain.authToken = {
+        tokenId: preAcquiredToken.tokenId,
+        format: preAcquiredToken.format,
+        issuerId: preAcquiredToken.idpId,
+        issuedAt: preAcquiredToken.issuedAt,
+        expiresAt: preAcquiredToken.expiresAt,
+      };
+    }
     this.activeChains.set(chainId, chain);
 
     // Create request particle with client group info and chain
@@ -1637,6 +1997,7 @@ export class SimulationEngine {
         clientGroupId: group.id,
         virtualClientId,
         chainId,
+        authenticated: !!preAcquiredToken,
       },
     };
 
@@ -1703,44 +2064,77 @@ export class SimulationEngine {
       contentType: chain?.contentType,
       payloadSizeBytes: chain?.payloadSizeBytes,
       sourceIP: chain?.sourceIP,
+      authToken: chain?.authToken,
     };
 
     // Calculate processing delay
     let processingDelay = this.getNodeProcessingDelay(server, context);
 
-    if (serverState && server.type === 'http-server') {
-      const serverData = server.data as HttpServerNodeData;
-      const extendedData = server.data as HttpServerNodeDataExtended;
-      const degradation = extendedData.degradation || defaultDegradation;
-
-      processingDelay = ResourceManager.calculateDegradedLatency(
-        serverData.responseDelay || 100,
-        serverState.utilization,
-        degradation
-      ) / this.speed;
-    }
-
-    // Check if this node has outgoing edges
-    const outgoingEdges = this.edges.filter((e) => e.source === server.id);
-
-    setTimeout(() => {
+    // Callback pour continuer le flow normal après validation (ou sans validation)
+    const continueClientGroupFlow = () => {
       if (this.state !== 'running') return;
 
-      // Remove from active requests
-      if (serverState) {
-        serverState.activeRequests.delete(requestParticle.id);
-        serverState.utilization.activeConnections = serverState.activeRequests.size;
-        this.processQueuedRequest(server.id);
+      if (serverState && server.type === 'http-server') {
+        const serverData = server.data as HttpServerNodeData;
+        const extendedData = server.data as HttpServerNodeDataExtended;
+        const degradation = extendedData.degradation || defaultDegradation;
+
+        processingDelay = ResourceManager.calculateDegradedLatency(
+          serverData.responseDelay || 100,
+          serverState.utilization,
+          degradation
+        ) / this.speed;
       }
 
-      if (outgoingEdges.length > 0) {
-        // Forward to downstream nodes
-        this.forwardRequest(server, outgoingEdges, chainId);
-      } else {
-        // Terminal node - send response back
-        this.sendChainResponseWithVirtualClient(chainId, server, virtualClientId);
+      // Check if this node has outgoing edges
+      const outgoingEdges = this.edges.filter((e) => e.source === server.id);
+
+      setTimeout(() => {
+        if (this.state !== 'running') return;
+
+        // Remove from active requests
+        if (serverState) {
+          serverState.activeRequests.delete(requestParticle.id);
+          serverState.utilization.activeConnections = serverState.activeRequests.size;
+          this.processQueuedRequest(server.id);
+        }
+
+        if (outgoingEdges.length > 0) {
+          // Forward to downstream nodes
+          this.forwardRequest(server, outgoingEdges, chainId);
+        } else {
+          // Terminal node - send response back
+          this.sendChainResponseWithVirtualClient(chainId, server, virtualClientId);
+        }
+      }, processingDelay);
+    };
+
+    // Validation du token via IdP connecté à la gateway (Issue #52)
+    if (server.type === 'api-gateway' && context.authToken) {
+      const gwData = server.data as ApiGatewayNodeData;
+      if (gwData.authType !== 'none') {
+        const gwIdp = this.findConnectedIdP(server.id);
+        if (gwIdp) {
+          this.validateTokenViaIdP(server, gwIdp.node, gwIdp.edge, chainId, context,
+            continueClientGroupFlow,
+            () => {
+              if (serverState) {
+                serverState.activeRequests.delete(requestParticle.id);
+                serverState.utilization.activeConnections = serverState.activeRequests.size;
+              }
+              this.metrics.recordRejection();
+              this.metrics.recordResponse(false, Date.now() - (chain?.startTime || Date.now()));
+              this.pushMetricsUpdate();
+              this.sendChainResponseWithVirtualClient(chainId, server, virtualClientId);
+            }
+          );
+          return;
+        }
       }
-    }, processingDelay);
+    }
+
+    // Pas de validation IdP nécessaire — continuer directement
+    continueClientGroupFlow();
   }
 
   /**

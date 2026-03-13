@@ -51,9 +51,24 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
     state.totalRequests++;
 
-    // Vérifier l'authentification (simulée via authFailureRate)
-    if (data.authType !== 'none' && data.authFailureRate > 0) {
-      if (Math.random() * 100 < data.authFailureRate) {
+    // Vérifier l'authentification (Issue #52 — vrai contrôle de token)
+    if (data.authType !== 'none') {
+      // 1. Vérifier la présence du token
+      if (!context.authToken) {
+        state.authFailures++;
+        state.blockedRequests++;
+        return { action: 'reject', reason: 'no-token' };
+      }
+
+      // 2. Vérifier l'expiration du token
+      if (context.authToken.expiresAt < Date.now()) {
+        state.authFailures++;
+        state.blockedRequests++;
+        return { action: 'reject', reason: 'token-expired' };
+      }
+
+      // 3. authFailureRate reste comme couche additionnelle (simule des erreurs aléatoires)
+      if (data.authFailureRate > 0 && Math.random() * 100 < data.authFailureRate) {
         state.authFailures++;
         state.blockedRequests++;
         return { action: 'reject', reason: 'auth-failure' };

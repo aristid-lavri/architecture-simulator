@@ -18,12 +18,16 @@ const particleColors: Record<ParticleType, string> = {
   request: 'oklch(0.70 0.15 220)',
   'response-success': 'oklch(0.72 0.19 155)',
   'response-error': 'oklch(0.65 0.22 25)',
+  'token-request': 'oklch(0.75 0.18 55)',
+  'token-response': 'oklch(0.78 0.16 90)',
 };
 
 const particleGlowClass: Record<ParticleType, string> = {
   request: 'particle-glow-request',
   'response-success': 'particle-glow-success',
   'response-error': 'particle-glow-error',
+  'token-request': 'particle-glow-request',
+  'token-response': 'particle-glow-success',
 };
 
 export interface AnimatedEdgeData extends Record<string, unknown> {
@@ -150,6 +154,9 @@ function AnimatedEdgeComponent({
         const color = particleColors[particle.type];
         const glowClass = particleGlowClass[particle.type];
 
+        const isAuthenticated = particle.data?.authenticated === true;
+        const isTokenParticle = particle.type === 'token-request' || particle.type === 'token-response';
+
         return (
           <g key={particle.id} className={glowClass} aria-hidden="true">
             {/* Streak particle */}
@@ -163,6 +170,17 @@ function AnimatedEdgeComponent({
               opacity={0.9}
               transform={`rotate(${angle}, ${point.x}, ${point.y})`}
             />
+            {/* Lock indicator for authenticated requests */}
+            {isAuthenticated && !isTokenParticle && (
+              <g transform={`translate(${point.x + 6}, ${point.y - 8})`}>
+                <rect x={-3} y={2} width={6} height={5} rx={0.5} fill={color} opacity={0.8} />
+                <path d={`M-1.5,2 V0.5 A1.5,1.5 0 0,1 1.5,0.5 V2`} fill="none" stroke={color} strokeWidth={1} opacity={0.8} />
+              </g>
+            )}
+            {/* Key indicator for token particles */}
+            {isTokenParticle && (
+              <circle cx={point.x} cy={point.y} r={3} fill={color} opacity={0.5} />
+            )}
           </g>
         );
       })}

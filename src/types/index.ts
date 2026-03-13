@@ -227,7 +227,7 @@ export interface SimulationEvent {
 // ============================================
 
 /** Type visuel de la particule animee sur une arete. */
-export type ParticleType = 'request' | 'response-success' | 'response-error';
+export type ParticleType = 'request' | 'response-success' | 'response-error' | 'token-request' | 'token-response';
 
 /** Sens de deplacement de la particule sur l'arete. */
 export type ParticleDirection = 'forward' | 'backward';

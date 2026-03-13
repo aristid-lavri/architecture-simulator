@@ -25,6 +25,15 @@ export interface RequestContext {
   cacheHit?: boolean;
   cacheNodeId?: string;
   waitingForDb?: boolean;
+
+  // Token d'authentification attaché à la requête (Issue #52)
+  authToken?: {
+    tokenId: string;
+    format: 'jwt' | 'opaque' | 'saml-assertion';
+    issuerId: string;
+    issuedAt: number;
+    expiresAt: number;
+  };
 }
 
 /**
@@ -49,7 +58,10 @@ export type RejectionReason =
   | 'circuit-open'
   | 'oom-killed'
   | 'dns-failure'
-  | 'queue-full';
+  | 'queue-full'
+  | 'no-token'
+  | 'token-expired'
+  | 'token-invalid';
 
 /**
  * Décision retournée par un handler après traitement
