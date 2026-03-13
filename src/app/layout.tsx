@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import { SwRegister } from "@/components/layout/SwRegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,6 +22,16 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "ARCH.SIM — Architecture Simulator",
   description: "Testez votre architecture avant de la construire. Simulez la charge, visualisez les flux, identifiez les ruptures.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "ARCH.SIM",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#c8930a",
 };
 
 export default function RootLayout({
@@ -34,6 +45,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased`}
       >
         {children}
+        <SwRegister />
       </body>
     </html>
   );

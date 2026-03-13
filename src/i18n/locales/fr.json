@@ -390,6 +390,11 @@
     "undo": "Annuler",
     "redo": "Rétablir"
   },
+  "pwa": {
+    "offline": "Vous êtes hors-ligne. L'application fonctionne en mode local.",
+    "installMessage": "Installer ARCH.SIM sur votre appareil pour un accès rapide hors-ligne.",
+    "install": "Installer"
+  },
   "license": {
     "community": "Community Edition",
     "enterprise": "Enterprise Edition",
@@ -474,7 +479,11 @@
     },
     "headerTools": {
       "title": "Outils de la barre d'outils",
-      "description": "**TPL** — charger une architecture prédéfinie\n**YAML** — définir l'architecture en code YAML\n**VALID** — valider la cohérence de l'architecture\n**Corbeille** — supprimer tous les composants du canevas"
+      "description": "**TPL** — charger une architecture prédéfinie\n**YAML** — définir l'architecture en code YAML\n**VALID** — valider la cohérence de l'architecture\n**Corbeille** — supprimer tous les composants du canevas\n**DOCS** — accéder à la documentation"
+    },
+    "undoRedoSnapshots": {
+      "title": "Undo / Redo & Snapshots",
+      "description": "**Undo** (Ctrl+Z) — annuler la dernière modification\n**Redo** (Ctrl+Y) — rétablir la modification annulée\n**SNAP** — sauvegarder un instantané de l'architecture actuelle\n**Historique** (⏱) — restaurer ou supprimer un instantané précédent"
     },
     "flowCanvasIntro": {
       "title": "Canevas de travail",
@@ -551,6 +560,10 @@
     "viewReport": {
       "title": "Rapport de simulation",
       "description": "Ce rapport résume les performances de votre architecture : durée totale, taux de succès, latence moyenne, nombre de clients actifs et saturation des ressources serveur. Vous pouvez l'utiliser pour identifier les goulots d'étranglement."
+    },
+    "installPwa": {
+      "title": "Installer l'application",
+      "description": "ARCH.SIM est une Progressive Web App : vous pouvez l'installer sur votre appareil pour un accès rapide hors-ligne. Si une bannière d'installation apparaît en bas de l'écran, cliquez « Installer » pour ajouter l'application à votre bureau."
     },
     "next": "Suivant",
     "start": "Commencer",

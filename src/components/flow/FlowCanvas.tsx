@@ -380,60 +380,89 @@ export function FlowCanvas() {
   const {
     nodes: storedNodes,
     edges: storedEdges,
-    setNodes: saveNodes,
-    setEdges: saveEdges,
+    setNodesAndEdges: saveNodesAndEdges,
+    undo,
+    redo,
+    _syncVersion,
   } = useArchitectureStore();
+
+  // Keyboard shortcuts: Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (mode !== 'edit') return;
+      // Ignore when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if (
+        ((e.ctrlKey || e.metaKey) && e.key === 'y') ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')
+      ) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mode, undo, redo]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initializedRef = useRef(false);
 
-  // Track if we're syncing from store to avoid loops
-  const syncingFromStoreRef = useRef(false);
-
-  // Track previous store state to detect template loads
-  const prevStoredNodesRef = useRef<Node[]>([]);
-  const prevStoredEdgesRef = useRef<Edge[]>([]);
+  // Tracks the last _syncVersion we processed (undo/redo/restore/clear/template)
+  const lastSyncVersionRef = useRef(_syncVersion);
+  // Counts how many store-to-local syncs are pending (save effect skips while > 0)
+  const pendingSyncsRef = useRef(0);
 
   // Initialize from store only once after hydration
   useEffect(() => {
     if (!initializedRef.current && (storedNodes.length > 0 || storedEdges.length > 0)) {
       setNodes(storedNodes);
       setEdges(storedEdges);
-      prevStoredNodesRef.current = storedNodes;
-      prevStoredEdgesRef.current = storedEdges;
       initializedRef.current = true;
+      pendingSyncsRef.current++;
     } else if (!initializedRef.current) {
-      // Mark as initialized even if empty
       initializedRef.current = true;
     }
   }, [storedNodes, storedEdges, setNodes, setEdges]);
 
-  // Detect when a template is loaded (complete replacement of nodes/edges)
+  // Full replacement when store changes via undo/redo/restore/clear (_syncVersion changes)
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    if (_syncVersion === lastSyncVersionRef.current) return;
+
+    lastSyncVersionRef.current = _syncVersion;
+    pendingSyncsRef.current++;
+    setNodes(storedNodes);
+    setEdges(storedEdges);
+  }, [_syncVersion, storedNodes, storedEdges, setNodes, setEdges]);
+
+  // Detect template loads (all IDs change at once, without _syncVersion bump)
+  const prevStoredNodesRef = useRef<Node[]>([]);
   useEffect(() => {
     if (!initializedRef.current) return;
 
-    // Check if the stored nodes have completely changed (template load)
     const storedNodeIds = new Set(storedNodes.map(n => n.id));
     const prevNodeIds = new Set(prevStoredNodesRef.current.map(n => n.id));
-
-    // If the node IDs are completely different, it's a template load
     const isTemplateLoad = storedNodes.length > 0 && (
       prevStoredNodesRef.current.length === 0 ||
       ![...storedNodeIds].some(id => prevNodeIds.has(id))
     );
 
     if (isTemplateLoad) {
-      syncingFromStoreRef.current = true;
+      pendingSyncsRef.current++;
       setNodes(storedNodes);
       setEdges(storedEdges);
     }
 
     prevStoredNodesRef.current = storedNodes;
-    prevStoredEdgesRef.current = storedEdges;
   }, [storedNodes, storedEdges, setNodes, setEdges]);
 
-  // Sync node changes from store to local state (for PropertiesPanel updates and deletions)
+  // Sync node data changes from store to local (PropertiesPanel updates, deletions)
   useEffect(() => {
     if (!initializedRef.current) return;
 
@@ -460,7 +489,6 @@ export function FlowCanvas() {
       updatedNodes = updatedNodes.map((node) => {
         const storedNode = storedNodes.find((n) => n.id === node.id);
         if (storedNode) {
-          // Shallow compare data keys (excluding status which is managed by simulation)
           const dataChanged = Object.keys(storedNode.data).some((key) => {
             if (key === 'status') return false;
             return node.data[key] !== storedNode.data[key];
@@ -478,14 +506,14 @@ export function FlowCanvas() {
       });
 
       if (hasChanges) {
-        syncingFromStoreRef.current = true;
+        pendingSyncsRef.current++;
         return updatedNodes;
       }
       return currentNodes;
     });
   }, [storedNodes, setNodes]);
 
-  // Sync edge changes from store to local state (for PropertiesPanel updates and deletions)
+  // Sync edge data changes from store to local (PropertiesPanel updates, deletions)
   useEffect(() => {
     if (!initializedRef.current) return;
 
@@ -494,51 +522,47 @@ export function FlowCanvas() {
       const currentEdgeIds = new Set(currentEdges.map((e) => e.id));
       let hasChanges = false;
 
-      // Remove edges that no longer exist in the store
       let updatedEdges = currentEdges;
       if (currentEdges.some((e) => !storedEdgeIds.has(e.id))) {
         updatedEdges = currentEdges.filter((e) => storedEdgeIds.has(e.id));
         hasChanges = true;
       }
 
-      // Add edges that exist in store but not locally
       const newEdges = storedEdges.filter((e) => !currentEdgeIds.has(e.id));
       if (newEdges.length > 0) {
         updatedEdges = [...updatedEdges, ...newEdges];
         hasChanges = true;
       }
 
-      // Update data for existing edges
       updatedEdges = updatedEdges.map((edge) => {
         const storedEdge = storedEdges.find((e) => e.id === edge.id);
         if (storedEdge) {
           if (JSON.stringify(edge.data) !== JSON.stringify(storedEdge.data)) {
             hasChanges = true;
-            return {
-              ...edge,
-              data: storedEdge.data,
-            };
+            return { ...edge, data: storedEdge.data };
           }
         }
         return edge;
       });
 
       if (hasChanges) {
-        syncingFromStoreRef.current = true;
+        pendingSyncsRef.current++;
         return updatedEdges;
       }
       return currentEdges;
     });
   }, [storedEdges, setEdges]);
 
-  // Sync nodes and edges to localStorage whenever they change (only after initialization)
+  // Persist local changes to store (uses single setNodesAndEdges to push history once)
   useEffect(() => {
-    if (initializedRef.current && !syncingFromStoreRef.current) {
-      saveNodes(nodes);
-      saveEdges(edges);
+    if (!initializedRef.current) return;
+    // Skip save-back when we're processing a store-initiated sync
+    if (pendingSyncsRef.current > 0) {
+      pendingSyncsRef.current--;
+      return;
     }
-    syncingFromStoreRef.current = false;
-  }, [nodes, edges, saveNodes, saveEdges]);
+    saveNodesAndEdges(nodes, edges);
+  }, [nodes, edges, saveNodesAndEdges]);
 
   // Sync node statuses from simulation store to node data
   useEffect(() => {
