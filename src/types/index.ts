@@ -886,6 +886,7 @@ export interface MessageQueueConfiguration {
   maxQueueSize: number;           // Max messages in queue
   messageRetentionMs: number;     // Message retention time
   deliveryDelayMs: number;        // Delivery delay
+  visibilityTimeoutMs: number;    // Time before unACKed message reappears (ms)
 }
 
 /** Latences et debit de la file de messages en ms. */
@@ -903,6 +904,8 @@ export interface MessageQueueUtilization {
   messagesDeadLettered: number;   // Failed messages
   avgProcessingTime: number;      // Average processing time
   throughput: number;             // Current msgs/sec
+  messagesInFlight: number;       // Messages delivered but not yet ACKed
+  messagesRetried: number;        // Total redeliveries due to visibility timeout
 }
 
 /**
@@ -942,6 +945,7 @@ export const defaultMessageQueueNodeData: MessageQueueNodeData = {
     maxQueueSize: 10000,
     messageRetentionMs: 86400000, // 24h
     deliveryDelayMs: 0,
+    visibilityTimeoutMs: 30000,   // 30s default
   },
   performance: {
     publishLatencyMs: 2,

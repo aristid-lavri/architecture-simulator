@@ -1809,12 +1809,14 @@ export class SimulationEngine {
         });
       });
 
-      // Sample Message Queue stats
+      // Sample Message Queue stats (tick visibility timeouts + collect metrics)
       const messageQueueNodes = this.nodes.filter((n) => n.type === 'message-queue');
       messageQueueNodes.forEach((node) => {
+        // Tick: check visibility timeouts, handle retries and DLQ
+        this.messageQueueHandler.tick(node.id);
+
         const stats = this.messageQueueHandler.getStats(node.id);
         if (stats && this.callbacks.onMessageQueueUpdate) {
-          const data = node.data as MessageQueueNodeData;
           const metrics = this.metrics.getMetrics();
           const elapsedSeconds = metrics.startTime ? (Date.now() - metrics.startTime) / 1000 : 1;
           const throughput = elapsedSeconds > 0 ? stats.messagesConsumed / elapsedSeconds : 0;
@@ -1824,8 +1826,10 @@ export class SimulationEngine {
             messagesPublished: stats.messagesPublished,
             messagesConsumed: stats.messagesConsumed,
             messagesDeadLettered: stats.messagesDeadLettered,
-            avgProcessingTime: data.performance.publishLatencyMs + data.performance.consumeLatencyMs,
+            avgProcessingTime: stats.avgProcessingTime,
             throughput,
+            messagesInFlight: stats.messagesInFlight,
+            messagesRetried: stats.messagesRetried,
           };
 
           this.callbacks.onMessageQueueUpdate(node.id, utilization);
