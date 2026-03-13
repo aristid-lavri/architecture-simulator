@@ -47,8 +47,11 @@ function DatabaseGauges({ utilization, maxConnections }: { utilization: Database
         <span>conn {activeConnections}/{maxConnections}</span>
         <span>{Math.round(queriesPerSecond)} q/s</span>
       </div>
-      <div className="font-mono text-[9px] text-muted-foreground">
-        latency {avgQueryTime.toFixed(1)}ms
+      <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+        <span>latency {avgQueryTime.toFixed(1)}ms</span>
+        {utilization.queriesByType && (
+          <span>R:{utilization.queriesByType.read} W:{utilization.queriesByType.write} T:{utilization.queriesByType.transaction}</span>
+        )}
       </div>
     </div>
   );

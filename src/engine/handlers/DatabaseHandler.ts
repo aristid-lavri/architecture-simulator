@@ -17,10 +17,18 @@ export class DatabaseHandler implements NodeRequestHandler {
     this.manager = manager;
   }
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: Node, speed: number, context?: RequestContext): number {
     const data = node.data as DatabaseNodeData;
-    // Utiliser la latence de lecture par défaut
-    return data.performance.readLatencyMs / speed;
+    const queryType = context?.queryType || 'read';
+    switch (queryType) {
+      case 'write':
+        return data.performance.writeLatencyMs / speed;
+      case 'transaction':
+        return data.performance.transactionLatencyMs / speed;
+      case 'read':
+      default:
+        return data.performance.readLatencyMs / speed;
+    }
   }
 
   initialize(node: Node): void {

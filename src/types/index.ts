@@ -476,6 +476,9 @@ export interface ExtendedSimulationMetrics extends SimulationMetrics {
 
   // Stats par groupe de clients
   clientGroupStats: Map<string, ClientGroupMetrics>;
+
+  // Stats par type de requête DB
+  databaseQueryCounts: { read: number; write: number; transaction: number };
 }
 
 /** Snapshot temporel des metriques pour analyse par intervalle de temps. */
@@ -630,6 +633,7 @@ export interface DatabaseUtilization {
   queriesPerSecond: number;
   connectionPoolUsage: number;  // 0-100%
   avgQueryTime: number;
+  queriesByType: { read: number; write: number; transaction: number };
 }
 
 /** Donnees d'un noeud Database avec pool de connexions, performance et capacite. */
