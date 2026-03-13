@@ -50,7 +50,7 @@ describe('FirewallHandler', () => {
       const decision = handler.handleRequestArrival(node, createContext(), [createEdge('s-1')], []);
       expect(decision.action).toBe('reject');
       if (decision.action === 'reject') {
-        expect(decision.reason).toBe('blocked');
+        expect(decision.reason).toBe('firewall-blocked');
       }
     });
 
@@ -59,7 +59,7 @@ describe('FirewallHandler', () => {
       const decision = handler.handleRequestArrival(node, createContext(3000), [createEdge('s-1')], []);
       expect(decision.action).toBe('reject');
       if (decision.action === 'reject') {
-        expect(decision.reason).toBe('blocked');
+        expect(decision.reason).toBe('firewall-blocked');
       }
     });
 
@@ -94,7 +94,7 @@ describe('FirewallHandler', () => {
       const decision = handler.handleRequestArrival(node, createContext(3000), [createEdge('s-1')], []);
       expect(decision.action).toBe('reject');
       if (decision.action === 'reject') {
-        expect(decision.reason).toBe('blocked');
+        expect(decision.reason).toBe('firewall-blocked');
       }
     });
 

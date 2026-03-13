@@ -22,12 +22,12 @@ export class FirewallHandler implements NodeRequestHandler {
     if (data.defaultAction === 'deny') {
       // Default deny: only allow if request port is explicitly in allowedPorts
       if (requestPort == null || !data.allowedPorts.includes(requestPort)) {
-        return { action: 'reject', reason: 'blocked' };
+        return { action: 'reject', reason: 'firewall-blocked' };
       }
     } else {
       // Default allow: block only if a port is specified and not in allowedPorts
       if (requestPort != null && data.allowedPorts.length > 0 && !data.allowedPorts.includes(requestPort)) {
-        return { action: 'reject', reason: 'blocked' };
+        return { action: 'reject', reason: 'firewall-blocked' };
       }
     }
 

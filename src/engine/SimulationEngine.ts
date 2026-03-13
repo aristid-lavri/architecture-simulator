@@ -936,7 +936,7 @@ export class SimulationEngine {
 
       case 'reject':
         // Record rejection and send error response
-        this.metrics.recordRejection();
+        this.metrics.recordRejection(decision.reason);
         this.pushMetricsUpdate();
         this.callbacks.onNodeStatusChange(sourceNode.id, 'error');
         simulationEvents.emit(createErrorEvent(sourceNode.id, decision.reason || 'rejected', chainId));
