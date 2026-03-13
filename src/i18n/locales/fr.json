@@ -110,6 +110,10 @@
       "name": "Background Job",
       "description": "Job en arriere-plan (cron, worker, batch)"
     },
+    "identityProvider": {
+      "name": "Identity Provider",
+      "description": "Fournisseur d'identite centralise (Keycloak, Auth0, Cognito, Okta)"
+    },
     "firewall": {
       "name": "Firewall",
       "description": "Pare-feu reseau avec regles de filtrage"

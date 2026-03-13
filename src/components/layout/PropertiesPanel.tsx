@@ -21,7 +21,8 @@ import { Switch } from '@/components/ui/switch';
 import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical } from 'lucide-react';
 import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution, HostServerNodeData, HostPortMapping } from '@/types';
 import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
-import type { ApiServiceNodeData, BackgroundJobNodeData, ApiServiceProtocol, BackgroundJobType } from '@/types';
+import type { ApiServiceNodeData, BackgroundJobNodeData, ApiServiceProtocol, BackgroundJobType, IdentityProviderNodeData, IdentityProviderType, IdPProtocol, IdPTokenFormat } from '@/types';
+import { defaultIdentityProviderData, IDP_PROVIDER_CAPABILITIES } from '@/types';
 import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import type { ProcessingComplexity } from '@/types';
@@ -369,6 +370,7 @@ export function PropertiesPanel() {
   const isHostServer = selectedNode.type === 'host-server';
   const isApiService = selectedNode.type === 'api-service';
   const isBackgroundJob = selectedNode.type === 'background-job';
+  const isIdentityProvider = selectedNode.type === 'identity-provider';
 
   return (
     <div className="border-l bg-background flex flex-col h-full overflow-hidden relative" style={{ width: panelWidth }} data-tour="properties-panel">
@@ -615,6 +617,14 @@ export function PropertiesPanel() {
           {isBackgroundJob && (
             <BackgroundJobConfig
               data={selectedNode.data as BackgroundJobNodeData}
+              onUpdate={updateNodeData}
+            />
+          )}
+
+          {/* Identity Provider Configuration */}
+          {isIdentityProvider && (
+            <IdentityProviderConfig
+              data={selectedNode.data as IdentityProviderNodeData}
               onUpdate={updateNodeData}
             />
           )}
@@ -3752,6 +3762,147 @@ function BackgroundJobConfig({ data, onUpdate }: { data: BackgroundJobNodeData; 
             <Input type="number" min="1" value={config.batchSize ?? 100} onChange={(e) => onUpdate({ batchSize: parseInt(e.target.value) || 100 })} />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Identity Provider Configuration
+// ============================================
+
+const IDP_PROTOCOL_LABELS: Record<IdPProtocol, string> = {
+  oidc: 'OpenID Connect',
+  saml: 'SAML 2.0',
+  ldap: 'LDAP',
+  oauth2: 'OAuth 2.0',
+};
+
+const IDP_TOKEN_FORMAT_LABELS: Record<IdPTokenFormat, string> = {
+  jwt: 'JWT',
+  opaque: 'Opaque',
+  'saml-assertion': 'SAML Assertion',
+};
+
+function IdentityProviderConfig({ data, onUpdate }: { data: IdentityProviderNodeData; onUpdate: (u: Partial<IdentityProviderNodeData>) => void }) {
+  const config = { ...defaultIdentityProviderData, ...data };
+  const capabilities = IDP_PROVIDER_CAPABILITIES[config.providerType];
+
+  // Quand le provider change, reset protocol/tokenFormat aux defaults du nouveau provider
+  const handleProviderChange = (newProvider: IdentityProviderType) => {
+    const newCaps = IDP_PROVIDER_CAPABILITIES[newProvider];
+    const updates: Partial<IdentityProviderNodeData> = { providerType: newProvider };
+
+    // Reset protocol si l'actuel n'est pas supporté par le nouveau provider
+    if (!newCaps.protocols.includes(config.protocol)) {
+      updates.protocol = newCaps.defaultProtocol;
+    }
+    // Reset tokenFormat si l'actuel n'est pas supporté
+    if (!newCaps.tokenFormats.includes(config.tokenFormat)) {
+      updates.tokenFormat = newCaps.defaultTokenFormat;
+    }
+    // SAML → forcer saml-assertion comme format
+    if (updates.protocol === 'saml' || (!updates.protocol && config.protocol === 'saml')) {
+      updates.tokenFormat = 'saml-assertion';
+    }
+
+    onUpdate(updates);
+  };
+
+  // Quand le protocole change, ajuster le format de token
+  const handleProtocolChange = (newProtocol: IdPProtocol) => {
+    const updates: Partial<IdentityProviderNodeData> = { protocol: newProtocol };
+    if (newProtocol === 'saml') {
+      updates.tokenFormat = 'saml-assertion';
+    } else if (config.tokenFormat === 'saml-assertion') {
+      updates.tokenFormat = capabilities.defaultTokenFormat;
+    }
+    onUpdate(updates);
+  };
+
+  // Formats disponibles en fonction du protocole
+  const availableTokenFormats = config.protocol === 'saml'
+    ? (['saml-assertion'] as IdPTokenFormat[])
+    : capabilities.tokenFormats;
+
+  return (
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">Identity Provider</span>
+      <Separator />
+      <div className="space-y-2">
+        <Label>Fournisseur</Label>
+        <Select value={config.providerType} onValueChange={(v) => handleProviderChange(v as IdentityProviderType)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="keycloak">Keycloak</SelectItem>
+            <SelectItem value="auth0">Auth0</SelectItem>
+            <SelectItem value="cognito">Cognito</SelectItem>
+            <SelectItem value="okta">Okta</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Protocole</Label>
+        <Select value={config.protocol} onValueChange={(v) => handleProtocolChange(v as IdPProtocol)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {capabilities.protocols.map((p) => (
+              <SelectItem key={p} value={p}>{IDP_PROTOCOL_LABELS[p]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Format de token</Label>
+        <Select value={config.tokenFormat} onValueChange={(v) => onUpdate({ tokenFormat: v as IdPTokenFormat })} disabled={config.protocol === 'saml'}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {availableTokenFormats.map((f) => (
+              <SelectItem key={f} value={f}>{IDP_TOKEN_FORMAT_LABELS[f]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Separator />
+      <div className="space-y-2">
+        <Label>Latence validation token (ms)</Label>
+        <Input type="number" min="1" max="50" value={config.tokenValidationLatencyMs} onChange={(e) => onUpdate({ tokenValidationLatencyMs: parseInt(e.target.value) || 5 })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Latence generation token (ms)</Label>
+        <Input type="number" min="10" max="500" value={config.tokenGenerationLatencyMs} onChange={(e) => onUpdate({ tokenGenerationLatencyMs: parseInt(e.target.value) || 100 })} />
+      </div>
+      <div className="flex items-center justify-between">
+        <Label>Cache de sessions</Label>
+        <Switch checked={config.sessionCacheEnabled} onCheckedChange={(v) => onUpdate({ sessionCacheEnabled: v })} />
+      </div>
+      {config.sessionCacheEnabled && (
+        <div className="space-y-2">
+          <Label>TTL cache sessions (s)</Label>
+          <Input type="number" min="60" max="86400" value={config.sessionCacheTTLSeconds} onChange={(e) => onUpdate({ sessionCacheTTLSeconds: parseInt(e.target.value) || 3600 })} />
+        </div>
+      )}
+      <div className="flex items-center justify-between">
+        <Label>MFA</Label>
+        <Switch checked={config.mfaEnabled} onCheckedChange={(v) => onUpdate({ mfaEnabled: v })} />
+      </div>
+      {config.mfaEnabled && (
+        <div className="space-y-2">
+          <Label>Latence MFA (ms)</Label>
+          <Input type="number" min="1000" max="10000" value={config.mfaLatencyMs} onChange={(e) => onUpdate({ mfaLatencyMs: parseInt(e.target.value) || 3000 })} />
+        </div>
+      )}
+      <div className="space-y-2">
+        <Label>Rate limit login (/min)</Label>
+        <Input type="number" min="1" max="1000" value={config.loginRateLimitPerMinute} onChange={(e) => onUpdate({ loginRateLimitPerMinute: parseInt(e.target.value) || 60 })} />
+      </div>
+      <div className="space-y-2">
+        <Label>TTL tokens (s)</Label>
+        <Input type="number" min="60" max="86400" value={config.tokenTTLSeconds} onChange={(e) => onUpdate({ tokenTTLSeconds: parseInt(e.target.value) || 3600 })} />
+      </div>
+      <div className="space-y-2">
+        <Label>Taux d&apos;erreur (%)</Label>
+        <Input type="number" min="0" max="100" value={config.errorRate} onChange={(e) => onUpdate({ errorRate: parseFloat(e.target.value) || 0 })} />
       </div>
     </div>
   );

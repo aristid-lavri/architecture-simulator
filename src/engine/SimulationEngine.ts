@@ -59,6 +59,7 @@ import {
   HostServerHandler,
   ApiServiceHandler,
   BackgroundJobHandler,
+  IdentityProviderHandler,
   type RequestContext,
   type RequestDecision,
 } from './handlers';
@@ -278,6 +279,7 @@ export class SimulationEngine {
       new HostServerHandler(),
       new ApiServiceHandler(),
       new BackgroundJobHandler(),
+      new IdentityProviderHandler(),
     ]);
 
     // Register plugin handlers

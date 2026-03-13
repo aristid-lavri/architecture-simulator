@@ -29,6 +29,7 @@ export const connectorCompatibility: ConnectorCompatibility = {
   'microservice': ['rest', 'grpc', 'graphql', 'websocket'],
   'api-service': ['rest', 'grpc', 'graphql'],
   'background-job': [],  // connexion directe (consomme depuis queue ou émet vers services)
+  'identity-provider': ['rest', 'grpc'],
 };
 
 /**

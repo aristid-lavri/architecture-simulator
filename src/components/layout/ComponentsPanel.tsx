@@ -23,6 +23,7 @@ import {
   HardDrive,
   Box,
   Layers,
+  KeyRound,
 } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -35,7 +36,7 @@ interface ComponentItem {
   descriptionKey: string;
   icon: React.ReactNode;
   signalColor: string;
-  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone';
+  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone' | 'security';
 }
 
 const COMPONENTS: ComponentItem[] = [
@@ -213,6 +214,15 @@ const COMPONENTS: ComponentItem[] = [
     signalColor: 'oklch(0.70 0.18 260)',
     category: 'cloud',
   },
+  // Security
+  {
+    type: 'identity-provider',
+    nameKey: 'components.identityProvider.name',
+    descriptionKey: 'components.identityProvider.description',
+    icon: <KeyRound className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.72 0.18 280)',
+    category: 'security',
+  },
 ];
 
 interface CategoryConfig {
@@ -323,6 +333,7 @@ const CATEGORY_SIGNAL_COLORS: Record<string, string> = {
   compute: 'oklch(0.68 0.18 50)',
   cloud: 'oklch(0.70 0.18 260)',
   zone: 'oklch(0.65 0.10 0)',
+  security: 'oklch(0.72 0.18 280)',
 };
 
 const CATEGORY_ORDER: { key: ComponentItem['category']; label: string }[] = [
@@ -332,6 +343,7 @@ const CATEGORY_ORDER: { key: ComponentItem['category']; label: string }[] = [
   { key: 'resilience', label: 'RESILIENCE' },
   { key: 'compute', label: 'COMPUTE' },
   { key: 'cloud', label: 'CLOUD' },
+  { key: 'security', label: 'SECURITY' },
   { key: 'zone', label: 'ZONES' },
 ];
 
