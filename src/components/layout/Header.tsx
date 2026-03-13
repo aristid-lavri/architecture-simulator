@@ -38,6 +38,11 @@ import {
   BookOpen,
   Code,
   ShieldCheck,
+  Undo2,
+  Redo2,
+  Camera,
+  History,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { architectureTemplates, type ArchitectureTemplate } from '@/data/architecture-templates';
@@ -46,6 +51,7 @@ import type { AppMode } from '@/types';
 import { cn } from '@/lib/utils';
 import { YamlEditor } from '@/components/YamlEditor';
 import { validateArchitecture } from '@/lib/simulation-validator';
+import { OfflineIndicator } from '@/components/layout/OfflineIndicator';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -69,7 +75,7 @@ export function Header() {
     metrics,
     clearReport,
   } = useSimulationStore();
-  const { nodes, edges, setNodes, setEdges, clear } = useArchitectureStore();
+  const { nodes, edges, setNodes, setEdges, clear, undo, redo, canUndo, canRedo, saveSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot } = useArchitectureStore();
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -80,6 +86,7 @@ export function Header() {
   const [pendingTemplate, setPendingTemplate] = useState<ArchitectureTemplate | null>(null);
   const [yamlOpen, setYamlOpen] = useState(false);
   const [yamlInitialContent, setYamlInitialContent] = useState<string | undefined>(undefined);
+  const [snapshotName, setSnapshotName] = useState('');
 
   const handleViewTemplateYaml = (template: ArchitectureTemplate) => {
     const yaml = exportToYaml(template.nodes, template.edges);
@@ -238,6 +245,7 @@ export function Header() {
           </TooltipTrigger>
           <TooltipContent side="bottom">Nombre de connexions</TooltipContent>
         </Tooltip>
+        <OfflineIndicator />
       </div>
 
       {/* Center: Simulation controls */}
@@ -375,6 +383,107 @@ export function Header() {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-3" data-tour="header-tools">
+        {/* Undo/Redo — edit mode only */}
+        {mode === 'edit' && (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={undo}
+                  disabled={!canUndo()}
+                  className="hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                  aria-label={t('snapshots.undo')}
+                >
+                  <Undo2 className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t('snapshots.undo')} (Ctrl+Z)</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={redo}
+                  disabled={!canRedo()}
+                  className="hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                  aria-label={t('snapshots.redo')}
+                >
+                  <Redo2 className="w-3 h-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t('snapshots.redo')} (Ctrl+Y)</TooltipContent>
+            </Tooltip>
+            <span className="text-border">|</span>
+          </>
+        )}
+
+        {/* Snapshots — edit mode only */}
+        {mode === 'edit' && (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    const name = snapshotName.trim() || undefined;
+                    saveSnapshot(name);
+                    setSnapshotName('');
+                  }}
+                  disabled={nodes.length === 0}
+                  className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                  aria-label={t('snapshots.save')}
+                >
+                  <Camera className="w-3 h-3" />
+                  SNAP
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t('snapshots.save')}</TooltipContent>
+            </Tooltip>
+
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger
+                    disabled={getSnapshots().length === 0}
+                    className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <History className="w-3 h-3" />
+                    <ChevronDown className="w-3 h-3" />
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{t('snapshots.history')}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="min-w-52 max-h-64 overflow-y-auto">
+                {getSnapshots().map((snap) => (
+                  <DropdownMenuItem
+                    key={snap.id}
+                    className="flex items-center justify-between gap-2"
+                    onClick={() => restoreSnapshot(snap.id)}
+                  >
+                    <div className="flex flex-col items-start gap-0.5 flex-1 min-w-0">
+                      <span className="font-medium text-xs truncate w-full">
+                        {snap.name || t('snapshots.unnamed')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(snap.timestamp).toLocaleString()} — N:{snap.nodes.length} E:{snap.edges.length}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteSnapshot(snap.id);
+                      }}
+                      className="p-1 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
+                      aria-label={t('snapshots.delete')}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <span className="text-border">|</span>
+          </>
+        )}
+
         {/* Templates */}
         <DropdownMenu>
           <Tooltip>

@@ -1,0 +1,19 @@
+{
+  "name": "ARCH.SIM — Architecture Simulator",
+  "short_name": "ARCH.SIM",
+  "description": "Simulez votre architecture distribuée : charge, flux, résilience.",
+  "start_url": "/simulator",
+  "display": "standalone",
+  "background_color": "#0a0f1c",
+  "theme_color": "#c8930a",
+  "orientation": "landscape",
+  "categories": ["developer", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

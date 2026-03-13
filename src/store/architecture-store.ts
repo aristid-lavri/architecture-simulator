@@ -68,12 +68,17 @@ interface ArchitectureState {
   past: ArchitectureSnapshot[];
   future: ArchitectureSnapshot[];
 
+  // Version counter — increments on undo/redo/restore/clear (non persiste)
+  _syncVersion: number;
+
   // Snapshots nommes (persistes)
   snapshots: ArchitectureSnapshot[];
 
   // Actions
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
+  /** Sets both nodes and edges in a single operation (single pushHistory). */
+  setNodesAndEdges: (nodes: Node[], edges: Edge[]) => void;
   updateNode: (nodeId: string, data: Partial<Node['data']>) => void;
   removeNode: (nodeId: string) => void;
   reparentNode: (nodeId: string, newParentId: string | null) => void;
@@ -130,6 +135,7 @@ export const useArchitectureStore = create<ArchitectureState>()(
         lastSaved: null,
         past: [],
         future: [],
+        _syncVersion: 0,
         snapshots: [],
 
         setNodes: (nodes) => {
@@ -140,6 +146,11 @@ export const useArchitectureStore = create<ArchitectureState>()(
         setEdges: (edges) => {
           pushHistory();
           set({ edges, lastSaved: Date.now() });
+        },
+
+        setNodesAndEdges: (nodes, edges) => {
+          pushHistory();
+          set({ nodes, edges, lastSaved: Date.now() });
         },
 
         updateNode: (nodeId, data) => {
@@ -269,6 +280,7 @@ export const useArchitectureStore = create<ArchitectureState>()(
             nodes: [],
             edges: [],
             lastSaved: Date.now(),
+            _syncVersion: get()._syncVersion + 1,
           });
         },
 
@@ -277,7 +289,7 @@ export const useArchitectureStore = create<ArchitectureState>()(
         // --- Undo/Redo ---
 
         undo: () => {
-          const { past } = get();
+          const { past, _syncVersion } = get();
           if (past.length === 0) return;
 
           const current = captureState();
@@ -289,11 +301,12 @@ export const useArchitectureStore = create<ArchitectureState>()(
             past: past.slice(0, -1),
             future: [current, ...get().future].slice(0, MAX_HISTORY),
             lastSaved: Date.now(),
+            _syncVersion: _syncVersion + 1,
           });
         },
 
         redo: () => {
-          const { future } = get();
+          const { future, _syncVersion } = get();
           if (future.length === 0) return;
 
           const current = captureState();
@@ -305,6 +318,7 @@ export const useArchitectureStore = create<ArchitectureState>()(
             past: [...get().past, current].slice(-MAX_HISTORY),
             future: future.slice(1),
             lastSaved: Date.now(),
+            _syncVersion: _syncVersion + 1,
           });
         },
 
@@ -332,6 +346,7 @@ export const useArchitectureStore = create<ArchitectureState>()(
             nodes: structuredClone(snapshot.nodes),
             edges: structuredClone(snapshot.edges),
             lastSaved: Date.now(),
+            _syncVersion: get()._syncVersion + 1,
           });
         },
 

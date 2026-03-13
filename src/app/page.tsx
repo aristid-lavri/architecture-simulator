@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Monitor, Sun, Moon, Github, Star } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
+import { InstallPrompt } from '@/components/layout/InstallPrompt';
 
 // ═══════════════════════════════════════
 // SIGNAL Landing Page
@@ -940,6 +941,9 @@ components:
           </div>
         </RevealBlock>
       </section>
+
+      {/* ── PWA Install Banner ── */}
+      <InstallPrompt />
 
       {/* ── FOOTER ── */}
       <footer className="h-12 border-t border-border flex items-center justify-center gap-2 font-mono text-[10px] text-muted-foreground">

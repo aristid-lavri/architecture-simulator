@@ -4,6 +4,7 @@ import { Header, ComponentsPanel, PropertiesPanel } from '@/components/layout';
 import { FlowCanvas } from '@/components/flow/FlowCanvas';
 import { SimulationReportDrawer } from '@/components/simulation/SimulationReportDrawer';
 import { OnboardingOverlay } from '@/components/onboarding/OnboardingOverlay';
+import { InstallPrompt } from '@/components/layout/InstallPrompt';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SimulationErrorBoundary } from '@/components/SimulationErrorBoundary';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -39,6 +40,9 @@ export default function SimulatorPage() {
 
       {/* Onboarding Tour */}
       <OnboardingOverlay />
+
+      {/* PWA Install Prompt */}
+      <InstallPrompt />
     </div>
   );
 }

@@ -50,6 +50,14 @@ export const TOUR_STEPS: TourStepConfig[] = [
     trigger: { type: 'click-next' },
   },
   {
+    id: 'undo-redo-snapshots',
+    titleKey: 'onboarding.undoRedoSnapshots.title',
+    descriptionKey: 'onboarding.undoRedoSnapshots.description',
+    targetSelector: '[data-tour="header-tools"]',
+    tooltipPosition: 'bottom',
+    trigger: { type: 'click-next' },
+  },
+  {
     id: 'flow-canvas-intro',
     titleKey: 'onboarding.flowCanvasIntro.title',
     descriptionKey: 'onboarding.flowCanvasIntro.description',

@@ -390,6 +390,11 @@
     "undo": "Undo",
     "redo": "Redo"
   },
+  "pwa": {
+    "offline": "You are offline. The app works in local mode.",
+    "installMessage": "Install ARCH.SIM on your device for quick offline access.",
+    "install": "Install"
+  },
   "license": {
     "community": "Community Edition",
     "enterprise": "Enterprise Edition",
@@ -474,7 +479,11 @@
     },
     "headerTools": {
       "title": "Toolbar",
-      "description": "**TPL** — load a predefined architecture\n**YAML** — define architecture in YAML code\n**VALID** — validate architecture consistency\n**Trash** — delete all components from the canvas"
+      "description": "**TPL** — load a predefined architecture\n**YAML** — define architecture in YAML code\n**VALID** — validate architecture consistency\n**Trash** — delete all components from the canvas\n**DOCS** — access the documentation"
+    },
+    "undoRedoSnapshots": {
+      "title": "Undo / Redo & Snapshots",
+      "description": "**Undo** (Ctrl+Z) — undo the last change\n**Redo** (Ctrl+Y) — redo the undone change\n**SNAP** — save a snapshot of the current architecture\n**History** (⏱) — restore or delete a previous snapshot"
     },
     "flowCanvasIntro": {
       "title": "Workspace Canvas",
@@ -551,6 +560,10 @@
     "viewReport": {
       "title": "Simulation Report",
       "description": "This report summarizes your architecture's performance: total duration, success rate, average latency, active client count, and server resource saturation. Use it to identify bottlenecks."
+    },
+    "installPwa": {
+      "title": "Install the App",
+      "description": "ARCH.SIM is a Progressive Web App: you can install it on your device for quick offline access. If an install banner appears at the bottom of the screen, click \"Install\" to add the app to your desktop."
     },
     "next": "Next",
     "start": "Start",
