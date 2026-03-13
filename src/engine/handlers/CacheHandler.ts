@@ -33,15 +33,16 @@ export class CacheHandler implements NodeRequestHandler {
   }
 
   /**
-   * Génère une clé de cache basée sur le contexte de la requête
-   * La clé doit être STABLE entre les requêtes pour permettre les cache hits
-   * On utilise l'origine (client/client-group) comme clé de ressource
+   * Génère une clé de cache basée sur le path HTTP de la requête.
+   * Inclut la méthode HTTP si disponible pour différencier GET/POST sur le même path.
+   * Fallback sur originNodeId si aucun requestPath n'est défini.
    */
   private generateCacheKey(context: RequestContext): string {
-    // Utiliser l'origine comme clé - toutes les requêtes du même client
-    // accèdent à la même ressource simulée
-    // Cela simule un cache de type "GET /api/resource"
-    return `resource:${context.originNodeId}`;
+    const method = context.httpMethod ?? 'GET';
+    if (context.requestPath) {
+      return `${method}:${context.requestPath}`;
+    }
+    return `${method}:resource:${context.originNodeId}`;
   }
 
   handleRequestArrival(
