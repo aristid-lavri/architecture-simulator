@@ -371,7 +371,7 @@ export function PropertiesPanel() {
   const isBackgroundJob = selectedNode.type === 'background-job';
 
   return (
-    <div className="border-l bg-background flex flex-col h-full overflow-hidden relative" style={{ width: panelWidth }}>
+    <div className="border-l bg-background flex flex-col h-full overflow-hidden relative" style={{ width: panelWidth }} data-tour="properties-panel">
       {/* Resize handle */}
       <div
         onMouseDown={handleResizeStart}
@@ -886,12 +886,12 @@ function HttpClientConfig({ data, onUpdate }: HttpClientConfigProps) {
               value={data.requestMode || 'single'}
               onValueChange={(value) => onUpdate({ requestMode: value as RequestMode })}
             >
-              <SelectTrigger>
+              <SelectTrigger data-tour="request-mode-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="single">Requête unique</SelectItem>
-                <SelectItem value="loop">Boucle continue</SelectItem>
+                <SelectItem value="loop" data-tour="request-mode-loop">Boucle continue</SelectItem>
               </SelectContent>
             </Select>
           </div>

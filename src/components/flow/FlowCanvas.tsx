@@ -1020,7 +1020,7 @@ export function FlowCanvas() {
   const isEditable = mode === 'edit';
 
   return (
-    <div className="flex-1 h-full relative">
+    <div className="flex-1 h-full relative" data-tour="flow-canvas">
       <ReactFlow
         nodes={displayNodes}
         edges={displayEdges}

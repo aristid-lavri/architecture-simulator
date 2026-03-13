@@ -399,6 +399,7 @@ export function MetricsPanel() {
         exit={{ y: 48, opacity: 0 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className="absolute bottom-0 left-0 right-0 z-10"
+        data-tour="metrics-panel"
       >
         <div className="bg-card/95 backdrop-blur-sm border-t border-border">
           {/* Compact telemetry bar — always visible */}
@@ -486,6 +487,7 @@ export function MetricsPanel() {
                   )}
                   style={{ borderRadius: '2px 0 0 2px' }}
                   onClick={(e) => { e.stopPropagation(); setActiveTab('metrics'); setIsExpanded(true); }}
+                  data-tour="metrics-panel-tab-metrics"
                 >
                   Metrics
                 </button>
@@ -497,6 +499,7 @@ export function MetricsPanel() {
                       : 'text-muted-foreground hover:text-foreground/70'
                   )}
                   onClick={(e) => { e.stopPropagation(); setActiveTab('output'); setIsExpanded(true); }}
+                  data-tour="metrics-panel-tab-output"
                 >
                   Output
                   {events.length > 0 && (
@@ -511,6 +514,7 @@ export function MetricsPanel() {
                       : 'text-muted-foreground hover:text-foreground/70'
                   )}
                   onClick={(e) => { e.stopPropagation(); setActiveTab('validation'); setIsExpanded(true); }}
+                  data-tour="metrics-panel-tab-valid"
                 >
                   Valid
                   {validationResult && validationResult.errorCount > 0 && (
@@ -529,6 +533,7 @@ export function MetricsPanel() {
                   )}
                   style={{ borderRadius: '0 2px 2px 0' }}
                   onClick={(e) => { e.stopPropagation(); setActiveTab('waterfall'); setIsExpanded(true); }}
+                  data-tour="metrics-panel-tab-traces"
                 >
                   Traces
                 </button>

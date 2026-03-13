@@ -462,5 +462,99 @@
       "containerWrongParent": "Container \"{label}\" is inside \"{parentLabel}\" instead of a host-server",
       "portMappingNotChild": "Port mapping {port} on \"{label}\" references a container that is not a child of this server"
     }
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Welcome to Architecture Simulator",
+      "description": "This interactive tutorial will guide you step by step to create your first distributed architecture and run a simulation. Follow each step to discover the main features."
+    },
+    "componentsPanel": {
+      "title": "Components Panel",
+      "description": "This panel (RACK) contains 20 components organized in 7 categories: Simulation, Infrastructure, Data, Resilience, Compute, Cloud and Zones. Drag and drop a component onto the canvas to add it to your architecture."
+    },
+    "headerTools": {
+      "title": "Toolbar",
+      "description": "**TPL** — load a predefined architecture\n**YAML** — define architecture in YAML code\n**VALID** — validate architecture consistency\n**Trash** — delete all components from the canvas"
+    },
+    "flowCanvasIntro": {
+      "title": "Workspace Canvas",
+      "description": "This is where you build your architecture. Drag components from the RACK, connect them together, and organize your diagram. You can zoom, pan the view, and select components to configure them."
+    },
+    "dragHttpClient": {
+      "title": "Add an HTTP Client",
+      "description": "Drag the \"HTTP Client\" component from the left panel and drop it onto the canvas."
+    },
+    "dragHttpServer": {
+      "title": "Add an HTTP Server",
+      "description": "Now drag the \"HTTP Server\" component and drop it onto the canvas, to the right of the client."
+    },
+    "connectNodes": {
+      "title": "Connect the Components",
+      "description": "Click and hold the connection point (●) on the right side of the HTTP Client, then drag to the input point (●) on the left side of the HTTP Server to create a connection."
+    },
+    "architectureReady": {
+      "title": "Architecture Ready!",
+      "description": "Well done! Your first architecture is created. Tip: click on a component to edit its properties in the right panel (HTTP method, port, response delay, etc.)."
+    },
+    "selectHttpClient": {
+      "title": "Select the HTTP Client",
+      "description": "Click on the \"HTTP Client\" component on the canvas to select it and open the properties panel."
+    },
+    "propertiesPanelIntro": {
+      "title": "Properties Panel",
+      "description": "This panel shows the properties of the selected component. You can modify the HTTP method, path, request mode, interval, and many other parameters."
+    },
+    "setLoopMode": {
+      "title": "Enable Continuous Loop",
+      "description": "Change the request mode from \"Single Request\" to \"Continuous Loop\". This will allow the client to send requests continuously during the simulation."
+    },
+    "switchSimMode": {
+      "title": "Switch to Simulation Mode",
+      "description": "Click \"SIM\" to switch to simulation mode. In simulation mode, the architecture is locked and you can run load tests."
+    },
+    "simControlsIntro": {
+      "title": "Simulation Controls",
+      "description": "**START** — launch the simulation\n**PAUSE** — pause it\n**STOP** — stop and generate the report\n**RST** — reset\n**DUR** — configure the maximum duration"
+    },
+    "startSimulation": {
+      "title": "Start the Simulation",
+      "description": "Click START to launch the simulation. The HTTP client will start sending requests to the server."
+    },
+    "observeParticles": {
+      "title": "Simulation Running",
+      "description": "Watch the animated particles flowing between components. They represent requests in transit. Nodes change color based on their state (processing, success, error)."
+    },
+    "pauseSimulation": {
+      "title": "Pause the Simulation",
+      "description": "Click PAUSE to suspend the simulation. This will let you explore the collected metrics at your own pace."
+    },
+    "metricsTab": {
+      "title": "Metrics Tab",
+      "description": "The Metrics tab displays real-time performance metrics: latency (min/avg/max), success rate, requests per second (RPS), and server resource utilization with sparklines."
+    },
+    "outputTab": {
+      "title": "Output Tab",
+      "description": "The Output tab displays a real-time request log: each request sent and its response with status code, latency, and the path taken."
+    },
+    "validationTab": {
+      "title": "Validation Tab",
+      "description": "The Valid tab shows architecture validation results: blocking errors (disconnected components, invalid configurations) and warnings."
+    },
+    "tracesTab": {
+      "title": "Traces Tab",
+      "description": "The Traces tab displays a waterfall view of request chains. You can visualize the complete path of a request through components with detailed timings."
+    },
+    "stopSimulation": {
+      "title": "Stop the Simulation",
+      "description": "Click STOP to stop the simulation. A detailed report will be automatically generated with all collected metrics."
+    },
+    "viewReport": {
+      "title": "Simulation Report",
+      "description": "This report summarizes your architecture's performance: total duration, success rate, average latency, active client count, and server resource saturation. Use it to identify bottlenecks."
+    },
+    "next": "Next",
+    "start": "Start",
+    "finish": "Finish",
+    "stepOf": "of"
   }
 }

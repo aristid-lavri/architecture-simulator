@@ -243,6 +243,7 @@ function DraggableComponent({ component, t, disabled, categoryColor }: { compone
       role="option"
       aria-label={`${t(component.nameKey)} — ${t(component.descriptionKey)}`}
       aria-disabled={disabled}
+      data-tour={`component-${component.type}`}
     >
       {/* Signal accent */}
       <div
@@ -404,6 +405,7 @@ export function ComponentsPanel() {
       className={`border-r border-border bg-card transition-all duration-300 flex flex-col h-full ${
         isComponentsPanelOpen ? 'w-56' : 'w-8'
       }`}
+      data-tour="components-panel"
     >
       {/* Toggle */}
       <div className="h-8 border-b border-border flex items-center justify-between px-1.5">

@@ -216,6 +216,7 @@ export function Header() {
                 'px-1.5 py-0.5 transition-colors cursor-pointer',
                 mode === 'simulation' ? 'text-signal-active' : 'hover:text-foreground/70'
               )}
+              data-tour="mode-sim-button"
             >
               SIM
             </button>
@@ -240,7 +241,7 @@ export function Header() {
       </div>
 
       {/* Center: Simulation controls */}
-      <div className="flex items-center gap-3" role="toolbar" aria-label="Controles de simulation">
+      <div className="flex items-center gap-3" role="toolbar" aria-label="Controles de simulation" data-tour="sim-controls">
         {mode === 'simulation' && (
           <>
             {/* Duration selector */}
@@ -291,6 +292,7 @@ export function Header() {
                     onClick={pause}
                     className="flex items-center gap-1 text-signal-active hover:text-signal-active/80 transition-colors cursor-pointer"
                     aria-label="Mettre en pause la simulation"
+                    data-tour="sim-pause-button"
                   >
                     <Pause className="w-3 h-3" />
                     PAUSE
@@ -322,6 +324,7 @@ export function Header() {
                     )}
                     style={{ borderRadius: '2px' }}
                     aria-label={simulationState === 'paused' ? 'Reprendre la simulation' : 'Demarrer la simulation'}
+                    data-tour="sim-start-button"
                   >
                     <Play className="w-3 h-3" />
                     {simulationState === 'paused' ? 'RESUME' : 'START'}
@@ -344,6 +347,7 @@ export function Header() {
                   disabled={simulationState === 'idle'}
                   className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                   aria-label="Arreter la simulation"
+                  data-tour="sim-stop-button"
                 >
                   <Square className="w-3 h-3" />
                   STOP
@@ -370,7 +374,7 @@ export function Header() {
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" data-tour="header-tools">
         {/* Templates */}
         <DropdownMenu>
           <Tooltip>
