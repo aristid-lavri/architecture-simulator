@@ -26,10 +26,45 @@ import {
   Compass,
   HardDrive,
   Layers,
+  AlertTriangle,
+  Link as LinkIcon,
+  Cable,
+  Activity,
 } from 'lucide-react';
 import { ComponentCard } from '@/components/docs/ComponentCard';
 import { TemplateCard } from '@/components/docs/TemplateCard';
 import { cn } from '@/lib/utils';
+import { componentDocs, edgeProperties, designErrors, globalMetrics, rejectionReasons, particleTypes, protocolMatrix, traceSpanFields, requestTraceFields, criticalPathFields, tracingConcepts, waterfallGuide } from '@/data/docs-data';
+import type { DocComponent } from '@/data/docs-data';
+
+// ── Icon mapping helper ──
+function getComponentIcon(type: string) {
+  const iconMap: Record<string, React.ReactNode> = {
+    'http-client': <Monitor className="w-4 h-4" />,
+    'http-server': <Server className="w-4 h-4" />,
+    'client-group': <Users className="w-4 h-4" />,
+    'api-gateway': <Shield className="w-4 h-4" />,
+    'load-balancer': <Share2 className="w-4 h-4" />,
+    'database': <Database className="w-4 h-4" />,
+    'cache': <Zap className="w-4 h-4" />,
+    'message-queue': <MessageSquare className="w-4 h-4" />,
+    'circuit-breaker': <ShieldOff className="w-4 h-4" />,
+    'cdn': <Globe className="w-4 h-4" />,
+    'waf': <ShieldCheck className="w-4 h-4" />,
+    'firewall': <ShieldOff className="w-4 h-4" />,
+    'service-discovery': <Compass className="w-4 h-4" />,
+    'dns': <Globe className="w-4 h-4" />,
+    'serverless': <Cloud className="w-4 h-4" />,
+    'container': <Box className="w-4 h-4" />,
+    'host-server': <Monitor className="w-4 h-4" />,
+    'api-service': <Server className="w-4 h-4" />,
+    'background-job': <Zap className="w-4 h-4" />,
+    'cloud-storage': <HardDrive className="w-4 h-4" />,
+    'cloud-function': <Cloud className="w-4 h-4" />,
+    'network-zone': <Layers className="w-4 h-4" />,
+  };
+  return iconMap[type] || <Box className="w-4 h-4" />;
+}
 
 // ── Section definitions ──
 const sections = [
@@ -80,7 +115,6 @@ const sections = [
       { id: 'component-serverless', label: 'Serverless' },
       { id: 'component-container', label: 'Container' },
       { id: 'component-service-discovery', label: 'Service Discovery' },
-      { id: 'component-dns', label: 'DNS' },
       { id: 'component-cloud-storage', label: 'Cloud Storage' },
       { id: 'component-cloud-function', label: 'Cloud Function' },
       { id: 'component-serveur-hôte', label: 'Serveur Hôte' },
@@ -101,6 +135,41 @@ const sections = [
     label: 'Métriques',
     icon: '05',
     color: 'oklch(0.72 0.19 155)',   // signal-data (green)
+    children: [
+      { id: 'metriques-globales', label: 'Métriques globales' },
+      { id: 'metriques-rejets', label: 'Raisons de rejet' },
+      { id: 'metriques-interpretation', label: 'Guide d\'interprétation' },
+    ],
+  },
+  {
+    id: 'edges',
+    label: 'Connexions (Edges)',
+    icon: '06',
+    color: 'oklch(0.75 0.18 75)',
+    children: [
+      { id: 'edges-proprietes', label: 'Propriétés des edges' },
+      { id: 'edges-protocoles', label: 'Matrice des protocoles' },
+      { id: 'edges-particules', label: 'Particules animées' },
+    ],
+  },
+  {
+    id: 'traces',
+    label: 'Tracing distribué',
+    icon: '07',
+    color: 'oklch(0.72 0.16 200)',
+    children: [
+      { id: 'traces-concepts', label: 'Concepts clés' },
+      { id: 'traces-span', label: 'TraceSpan' },
+      { id: 'traces-request', label: 'RequestTrace' },
+      { id: 'traces-critical', label: 'Chemin critique' },
+      { id: 'traces-waterfall', label: 'Guide du waterfall' },
+    ],
+  },
+  {
+    id: 'erreurs',
+    label: 'Erreurs de conception',
+    icon: '08',
+    color: 'oklch(0.65 0.22 25)',
     children: [],
   },
 ];
@@ -137,11 +206,16 @@ function useScrollSpy(ids: string[], offset = 100) {
 // ── Sidebar ──
 function SidebarContent({ activeId, onLinkClick }: { activeId: string; onLinkClick?: () => void }) {
   const scrollToSection = useCallback((id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      onLinkClick?.();
-    }
+    // Dispatch event so collapsed accordions can auto-open if they contain this target
+    window.dispatchEvent(new CustomEvent('docs-scroll-to', { detail: { targetId: id } }));
+    // Wait for React to re-render the opened accordion, then scroll
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        onLinkClick?.();
+      }
+    }, 50);
   }, [onLinkClick]);
 
   return (
@@ -255,6 +329,19 @@ function CategoryAccordion({ label, color, count, defaultOpen = false, children 
   label: string; color: string; count: number; defaultOpen?: boolean; children: React.ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Auto-open when a child element is targeted by sidebar navigation
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const targetId = (e as CustomEvent).detail?.targetId;
+      if (targetId && contentRef.current?.querySelector(`[id="${targetId}"]`)) {
+        setIsOpen(true);
+      }
+    };
+    window.addEventListener('docs-scroll-to', handler);
+    return () => window.removeEventListener('docs-scroll-to', handler);
+  }, []);
 
   return (
     <div className="mb-2 border border-border/50 overflow-hidden" style={{ borderRadius: '4px' }}>
@@ -311,17 +398,32 @@ function CategoryAccordion({ label, color, count, defaultOpen = false, children 
         <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${color}15, transparent)` }} />
       </button>
 
-      {/* Content */}
-      {isOpen && (
-        <div className="border-t border-border/30 px-4 pt-4 pb-3 bg-background">
-          <div className="space-y-4">
-            {children}
-          </div>
+      {/* Content — always in DOM so scroll targets are reachable */}
+      <div
+        ref={contentRef}
+        className={cn(
+          'border-t border-border/30 px-4 pt-4 pb-3 bg-background',
+          !isOpen && 'hidden'
+        )}
+      >
+        <div className="space-y-4">
+          {children}
         </div>
-      )}
+      </div>
     </div>
   );
 }
+
+// ── Category definitions for the component catalog ──
+const componentCategories: { label: string; color: string; filter: string }[] = [
+  { label: 'Simulation', color: '#3b82f6', filter: 'simulation' },
+  { label: 'Infrastructure', color: '#a855f7', filter: 'infrastructure' },
+  { label: 'Données', color: '#10b981', filter: 'data' },
+  { label: 'Résilience', color: '#f43f5e', filter: 'resilience' },
+  { label: 'Compute', color: '#f59e0b', filter: 'compute' },
+  { label: 'Cloud', color: '#0ea5e9', filter: 'cloud' },
+  { label: 'Zones', color: '#64748b', filter: 'zone' },
+];
 
 export default function DocsPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -330,6 +432,9 @@ export default function DocsPage() {
   // Collect all IDs for scroll spy
   const allIds = sections.flatMap(s => [s.id, ...s.children.map(c => c.id)]);
   const activeId = useScrollSpy(allIds);
+
+  // Group design errors by category
+  const errorCategories = Array.from(new Set(designErrors.map(e => e.category)));
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
@@ -769,328 +874,28 @@ connections:  # Requis — liens entre composants
             description="22 types de composants répartis en 7 catégories. Chaque composant est configurable via le panneau de propriétés."
           />
 
-          {/* Category: Simulation */}
-          <CategoryAccordion label="Simulation" color="#3b82f6" count={3}>
-              <ComponentCard
-                icon={<Monitor className="w-4 h-4" />}
-                name="Client HTTP"
-                description="Envoie des requêtes HTTP vers un serveur. Point de départ du flux."
-                category="simulation"
-                properties={[
-                  { name: 'method', type: 'enum', defaultValue: 'GET', description: 'Méthode HTTP (GET, POST, PUT, DELETE)' },
-                  { name: 'path', type: 'string', defaultValue: '/api/data', description: 'Chemin de la requête' },
-                  { name: 'mode', type: 'enum', defaultValue: 'single', description: 'Requête unique ou en boucle' },
-                  { name: 'interval', type: 'number', defaultValue: '1000', description: 'Intervalle entre requêtes en ms (mode boucle)' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Server className="w-4 h-4" />}
-                name="Serveur HTTP"
-                description="Reçoit et traite les requêtes HTTP. Simule la latence, les erreurs et la dégradation sous charge."
-                category="simulation"
-                properties={[
-                  { name: 'responseDelay', type: 'number', defaultValue: '100', description: 'Latence de base en ms' },
-                  { name: 'errorRate', type: 'number', defaultValue: '0', description: "Taux d'erreur (0-100%)" },
-                  { name: 'resources.cpu', type: 'number', defaultValue: '4', description: 'Nombre de cœurs CPU' },
-                  { name: 'resources.memory', type: 'number', defaultValue: '8192', description: 'Mémoire en MB' },
-                  { name: 'connections.max', type: 'number', defaultValue: '100', description: 'Connexions simultanées max' },
-                  { name: 'degradation', type: 'object', defaultValue: 'enabled', description: 'Augmentation de latence sous charge (linéaire/quadratique/exponentiel)' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Users className="w-4 h-4" />}
-                name="Groupe de clients"
-                description="Simule 1 à 1000 clients virtuels pour stress testing avec distribution configurable."
-                category="simulation"
-                properties={[
-                  { name: 'virtualClients', type: 'number', defaultValue: '10', description: 'Nombre de clients virtuels (1-1000)' },
-                  { name: 'concurrency', type: 'enum', defaultValue: 'parallel', description: "Mode d'envoi : séquentiel ou parallèle" },
-                  { name: 'distribution', type: 'enum', defaultValue: 'uniform', description: 'Distribution : uniform, random, burst' },
-                  { name: 'rampUp.enabled', type: 'boolean', defaultValue: 'true', description: 'Montée en charge progressive' },
-                  { name: 'rampUp.duration', type: 'number', defaultValue: '5000', description: 'Durée de la montée en charge (ms)' },
-                  { name: 'baseInterval', type: 'number', defaultValue: '1000', description: 'Intervalle de base entre requêtes (ms)' },
-                ]}
-              />
-          </CategoryAccordion>
-
-          {/* Category: Infrastructure */}
-          <CategoryAccordion label="Infrastructure" color="#a855f7" count={2}>
-              <ComponentCard
-                icon={<Shield className="w-4 h-4" />}
-                name="API Gateway"
-                description="Point d'entrée pour les requêtes API. Gère l'authentification, le rate limiting et le routage."
-                category="infrastructure"
-                properties={[
-                  { name: 'authType', type: 'enum', defaultValue: 'none', description: "Type d'auth (none, API Key, JWT, OAuth2)" },
-                  { name: 'authFailureRate', type: 'number', defaultValue: '0', description: "Taux d'échec auth (0-100%)" },
-                  { name: 'rateLimiting.enabled', type: 'boolean', defaultValue: 'false', description: 'Activer la limitation de débit' },
-                  { name: 'rateLimiting.rps', type: 'number', defaultValue: '100', description: 'Requêtes par seconde autorisées' },
-                  { name: 'rateLimiting.burstSize', type: 'number', defaultValue: '10', description: 'Taille du burst autorisé' },
-                  { name: 'baseLatencyMs', type: 'number', defaultValue: '10', description: 'Latence de base en ms' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Share2 className="w-4 h-4" />}
-                name="Load Balancer"
-                description="Répartit la charge entre plusieurs serveurs selon un algorithme configurable."
-                category="infrastructure"
-                properties={[
-                  { name: 'algorithm', type: 'enum', defaultValue: 'round-robin', description: 'Algorithme (Round Robin, Least Connections, IP Hash, Weighted)' },
-                  { name: 'healthCheck.enabled', type: 'boolean', defaultValue: 'true', description: 'Activer le health check' },
-                  { name: 'healthCheck.interval', type: 'number', defaultValue: '10', description: 'Intervalle du health check (s)' },
-                  { name: 'healthCheck.threshold', type: 'number', defaultValue: '3', description: 'Échecs consécutifs avant exclusion' },
-                  { name: 'stickySessions.enabled', type: 'boolean', defaultValue: 'false', description: 'Sessions persistantes (sticky)' },
-                  { name: 'stickySessions.ttl', type: 'number', defaultValue: '300', description: 'Durée de la session (s)' },
-                ]}
-              />
-          </CategoryAccordion>
-
-          {/* Category: Data */}
-          <CategoryAccordion label="Données" color="#10b981" count={3}>
-              <ComponentCard
-                icon={<Database className="w-4 h-4" />}
-                name="Base de données"
-                description="Stockage persistant avec pool de connexions et latences configurables."
-                category="data"
-                properties={[
-                  { name: 'type', type: 'enum', defaultValue: 'postgresql', description: 'Type (PostgreSQL, MySQL, MongoDB)' },
-                  { name: 'pool.maxConnections', type: 'number', defaultValue: '20', description: 'Connexions max dans le pool' },
-                  { name: 'readLatency', type: 'number', defaultValue: '5', description: 'Latence lecture (ms)' },
-                  { name: 'writeLatency', type: 'number', defaultValue: '10', description: 'Latence écriture (ms)' },
-                  { name: 'maxQps', type: 'number', defaultValue: '1000', description: 'Max requêtes par seconde' },
-                  { name: 'errorRate', type: 'number', defaultValue: '0', description: "Taux d'erreur (0-100%)" },
-                ]}
-              />
-              <ComponentCard
-                icon={<Zap className="w-4 h-4" />}
-                name="Cache"
-                description="Stockage temporaire en mémoire pour accès rapide. Simule les hit/miss et l'éviction."
-                category="data"
-                properties={[
-                  { name: 'type', type: 'enum', defaultValue: 'redis', description: 'Type (Redis, Memcached)' },
-                  { name: 'evictionPolicy', type: 'enum', defaultValue: 'lru', description: "Politique d'éviction (LRU, LFU, FIFO)" },
-                  { name: 'maxMemory', type: 'number', defaultValue: '256', description: 'Mémoire max (MB)' },
-                  { name: 'defaultTTL', type: 'number', defaultValue: '300', description: 'TTL par défaut (s)' },
-                  { name: 'hitRatio', type: 'number', defaultValue: '80', description: 'Hit ratio initial (%)' },
-                  { name: 'warmUp.enabled', type: 'boolean', defaultValue: 'false', description: 'Période de warm-up progressive' },
-                ]}
-              />
-              <ComponentCard
-                icon={<MessageSquare className="w-4 h-4" />}
-                name="File de messages"
-                description="Communication asynchrone entre services. Supporte FIFO et Pub/Sub."
-                category="data"
-                properties={[
-                  { name: 'type', type: 'enum', defaultValue: 'rabbitmq', description: 'Type (RabbitMQ, Kafka, SQS)' },
-                  { name: 'mode', type: 'enum', defaultValue: 'fifo', description: 'Mode (FIFO, Pub/Sub)' },
-                  { name: 'maxQueueSize', type: 'number', defaultValue: '10000', description: 'Taille max de la file' },
-                  { name: 'publishLatency', type: 'number', defaultValue: '5', description: 'Latence publication (ms)' },
-                  { name: 'consumeLatency', type: 'number', defaultValue: '10', description: 'Latence consommation (ms)' },
-                  { name: 'consumerCount', type: 'number', defaultValue: '1', description: 'Nombre de consommateurs' },
-                ]}
-              />
-          </CategoryAccordion>
-
-          {/* Category: Infrastructure (suite) */}
-          <CategoryAccordion label="Infrastructure (suite)" color="#a855f7" count={5}>
-              <ComponentCard
-                icon={<Globe className="w-4 h-4" />}
-                name="CDN"
-                description="Content Delivery Network — cache en edge avec latence réduite. Simule les cache hit/miss."
-                category="infrastructure"
-                properties={[
-                  { name: 'provider', type: 'enum', defaultValue: 'generic', description: 'Provider (Cloudflare, CloudFront, Akamai, Generic)' },
-                  { name: 'cacheHitRatio', type: 'number', defaultValue: '85', description: 'Ratio de cache hit (0-100%)' },
-                  { name: 'edgeLatencyMs', type: 'number', defaultValue: '5', description: 'Latence edge en ms (cache hit)' },
-                  { name: 'originLatencyMs', type: 'number', defaultValue: '50', description: 'Latence origin en ms (cache miss)' },
-                  { name: 'cacheTTLSeconds', type: 'number', defaultValue: '3600', description: 'TTL du cache en secondes' },
-                ]}
-              />
-              <ComponentCard
-                icon={<ShieldCheck className="w-4 h-4" />}
-                name="WAF"
-                description="Web Application Firewall — filtre les requêtes malveillantes (SQL injection, XSS, rate limiting)."
-                category="infrastructure"
-                properties={[
-                  { name: 'provider', type: 'enum', defaultValue: 'generic', description: 'Provider (AWS WAF, Cloudflare, Azure WAF, Generic)' },
-                  { name: 'blockRate', type: 'number', defaultValue: '5', description: 'Taux de blocage simulé (0-100%)' },
-                  { name: 'inspectionLatencyMs', type: 'number', defaultValue: '2', description: "Latence d'inspection en ms" },
-                  { name: 'rules.sqlInjection', type: 'boolean', defaultValue: 'true', description: 'Protection SQL Injection' },
-                  { name: 'rules.xss', type: 'boolean', defaultValue: 'true', description: 'Protection XSS' },
-                  { name: 'rules.rateLimiting', type: 'boolean', defaultValue: 'true', description: 'Rate limiting' },
-                ]}
-              />
-              <ComponentCard
-                icon={<ShieldOff className="w-4 h-4" />}
-                name="Firewall"
-                description="Firewall réseau — filtre le trafic par action par défaut (allow/deny) et ports autorisés."
-                category="infrastructure"
-                properties={[
-                  { name: 'defaultAction', type: 'enum', defaultValue: 'allow', description: 'Action par défaut (allow, deny)' },
-                  { name: 'inspectionLatencyMs', type: 'number', defaultValue: '1', description: "Latence d'inspection en ms" },
-                  { name: 'allowedPorts', type: 'string', defaultValue: '80, 443, 8080', description: 'Ports autorisés (séparés par virgule)' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Compass className="w-4 h-4" />}
-                name="Service Discovery"
-                description="Registre de services — résout dynamiquement les instances saines (Consul, Eureka, Kubernetes)."
-                category="infrastructure"
-                properties={[
-                  { name: 'provider', type: 'enum', defaultValue: 'consul', description: 'Provider (Consul, Eureka, Kubernetes, Generic)' },
-                  { name: 'lookupLatencyMs', type: 'number', defaultValue: '2', description: 'Latence de lookup en ms' },
-                  { name: 'healthCheckIntervalMs', type: 'number', defaultValue: '10000', description: 'Intervalle health check en ms' },
-                  { name: 'cacheTTLMs', type: 'number', defaultValue: '5000', description: 'TTL du cache de résolution en ms' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Globe className="w-4 h-4" />}
-                name="DNS"
-                description="Résolution DNS avec TTL configurable et support du failover entre cibles."
-                category="infrastructure"
-                properties={[
-                  { name: 'resolutionLatencyMs', type: 'number', defaultValue: '5', description: 'Latence de résolution en ms' },
-                  { name: 'ttlSeconds', type: 'number', defaultValue: '300', description: 'TTL en secondes' },
-                  { name: 'failoverEnabled', type: 'boolean', defaultValue: 'false', description: 'Activer le failover entre cibles' },
-                ]}
-              />
-          </CategoryAccordion>
-
-          {/* Category: Resilience */}
-          <CategoryAccordion label="Résilience" color="#f43f5e" count={1}>
-              <ComponentCard
-                icon={<ShieldOff className="w-4 h-4" />}
-                name="Circuit Breaker"
-                description="Pattern Circuit Breaker — protège les services en aval. 3 états : closed, open, half-open."
-                category="resilience"
-                properties={[
-                  { name: 'failureThreshold', type: 'number', defaultValue: '5', description: "Nombre d'erreurs avant ouverture du circuit" },
-                  { name: 'successThreshold', type: 'number', defaultValue: '3', description: 'Succès nécessaires en half-open pour fermer' },
-                  { name: 'timeout', type: 'number', defaultValue: '30000', description: "Délai avant passage en half-open (ms)" },
-                  { name: 'halfOpenMaxRequests', type: 'number', defaultValue: '3', description: 'Requêtes autorisées en half-open' },
-                ]}
-              />
-          </CategoryAccordion>
-
-          {/* Category: Compute */}
-          <CategoryAccordion label="Compute" color="#f59e0b" count={5}>
-              <ComponentCard
-                icon={<Cloud className="w-4 h-4" />}
-                name="Serverless"
-                description="Fonction serverless avec cold start, concurrence limitée et auto-scaling des instances."
-                category="compute"
-                properties={[
-                  { name: 'provider', type: 'enum', defaultValue: 'aws', description: 'Provider (AWS, Azure, GCP, Generic)' },
-                  { name: 'runtime', type: 'string', defaultValue: 'nodejs20.x', description: 'Runtime de la fonction' },
-                  { name: 'memoryMB', type: 'number', defaultValue: '256', description: 'Mémoire allouée en MB' },
-                  { name: 'coldStartMs', type: 'number', defaultValue: '500', description: 'Latence cold start en ms' },
-                  { name: 'warmStartMs', type: 'number', defaultValue: '5', description: 'Latence warm start en ms' },
-                  { name: 'concurrencyLimit', type: 'number', defaultValue: '100', description: 'Concurrence maximale' },
-                  { name: 'minInstances', type: 'number', defaultValue: '0', description: "Instances minimum (provisioned)" },
-                  { name: 'maxInstances', type: 'number', defaultValue: '100', description: 'Instances maximum' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Box className="w-4 h-4" />}
-                name="Container"
-                description="Container Docker/Kubernetes avec replicas, limites de ressources et auto-scaling HPA."
-                category="compute"
-                properties={[
-                  { name: 'image', type: 'string', defaultValue: 'app:latest', description: 'Image Docker' },
-                  { name: 'replicas', type: 'number', defaultValue: '2', description: 'Nombre de replicas' },
-                  { name: 'cpuLimit', type: 'string', defaultValue: '500m', description: 'Limite CPU (millicores)' },
-                  { name: 'memoryLimit', type: 'string', defaultValue: '512Mi', description: 'Limite mémoire' },
-                  { name: 'responseDelayMs', type: 'number', defaultValue: '20', description: 'Délai de réponse en ms' },
-                  { name: 'autoScaling.enabled', type: 'boolean', defaultValue: 'true', description: 'Activer le HPA' },
-                  { name: 'autoScaling.targetCPU', type: 'number', defaultValue: '70', description: 'Seuil CPU pour le scaling (%)' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Monitor className="w-4 h-4" />}
-                name="Serveur Hôte"
-                description="Serveur physique ou VM hébergeant des containers Docker. Partage ses ressources CPU/RAM entre ses enfants."
-                category="compute"
-                properties={[
-                  { name: 'os', type: 'enum', defaultValue: 'linux', description: "Système d'exploitation (Linux, Windows, macOS)" },
-                  { name: 'ipAddress', type: 'string', defaultValue: '192.168.1.10', description: 'Adresse IP du serveur' },
-                  { name: 'resources.cpu', type: 'number', defaultValue: '4', description: 'Nombre de cœurs CPU' },
-                  { name: 'resources.memory', type: 'number', defaultValue: '4096', description: 'Mémoire en MB' },
-                  { name: 'degradation', type: 'object', defaultValue: 'enabled', description: 'Dégradation de latence sous charge' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Server className="w-4 h-4" />}
-                name="API Service"
-                description="Service API REST/gRPC hébergé dans un serveur ou container. Configurable en protocole et temps de réponse."
-                category="compute"
-                properties={[
-                  { name: 'serviceName', type: 'string', defaultValue: 'my-service', description: 'Nom du service' },
-                  { name: 'basePath', type: 'string', defaultValue: '/api', description: 'Route de base' },
-                  { name: 'protocol', type: 'enum', defaultValue: 'rest', description: 'Protocole (REST, gRPC, WebSocket, GraphQL)' },
-                  { name: 'responseTime', type: 'number', defaultValue: '50', description: 'Temps de réponse (ms)' },
-                  { name: 'errorRate', type: 'number', defaultValue: '0', description: "Taux d'erreur (0-100%)" },
-                  { name: 'maxConcurrentRequests', type: 'number', defaultValue: '100', description: 'Requêtes concurrentes max' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Zap className="w-4 h-4" />}
-                name="Background Job"
-                description="Job en arrière-plan : cron (planifié), worker (consomme une queue), ou batch (traitement par lots)."
-                category="compute"
-                properties={[
-                  { name: 'jobType', type: 'enum', defaultValue: 'worker', description: 'Type de job (cron, worker, batch)' },
-                  { name: 'schedule', type: 'string', defaultValue: '—', description: 'Expression cron (type cron uniquement)' },
-                  { name: 'concurrency', type: 'number', defaultValue: '1', description: 'Exécutions concurrentes max' },
-                  { name: 'processingTimeMs', type: 'number', defaultValue: '500', description: 'Durée de traitement (ms)' },
-                  { name: 'errorRate', type: 'number', defaultValue: '0', description: "Taux d'erreur (0-100%)" },
-                ]}
-              />
-          </CategoryAccordion>
-
-          {/* Category: Cloud */}
-          <CategoryAccordion label="Cloud" color="#0ea5e9" count={2}>
-              <ComponentCard
-                icon={<HardDrive className="w-4 h-4" />}
-                name="Cloud Storage"
-                description="Stockage objet cloud (S3, Azure Blob, GCS) avec classes de stockage et rate limiting."
-                category="cloud"
-                properties={[
-                  { name: 'provider', type: 'enum', defaultValue: 'aws', description: 'Provider (AWS S3, Azure Blob, GCS, Generic)' },
-                  { name: 'storageClass', type: 'enum', defaultValue: 'standard', description: 'Classe (Standard, Infrequent Access, Archive)' },
-                  { name: 'readLatencyMs', type: 'number', defaultValue: '20', description: 'Latence lecture en ms' },
-                  { name: 'writeLatencyMs', type: 'number', defaultValue: '50', description: 'Latence écriture en ms' },
-                  { name: 'maxRequestsPerSecond', type: 'number', defaultValue: '5500', description: 'Max requêtes par seconde' },
-                ]}
-              />
-              <ComponentCard
-                icon={<Cloud className="w-4 h-4" />}
-                name="Cloud Function"
-                description="Fonction cloud managée (AWS Lambda, Azure Function) — hérite de la configuration Serverless avec presets cloud."
-                category="cloud"
-                properties={[
-                  { name: 'serviceType', type: 'enum', defaultValue: 'aws-lambda', description: 'Service (AWS Lambda, Azure Function, GCP Cloud Function)' },
-                  { name: 'provider', type: 'enum', defaultValue: 'aws', description: 'Provider cloud' },
-                  { name: 'coldStartMs', type: 'number', defaultValue: '500', description: 'Latence cold start en ms' },
-                  { name: 'concurrencyLimit', type: 'number', defaultValue: '100', description: 'Concurrence maximale' },
-                ]}
-              />
-          </CategoryAccordion>
-
-          {/* Category: Zones */}
-          <CategoryAccordion label="Zones" color="#64748b" count={1}>
-              <ComponentCard
-                icon={<Layers className="w-4 h-4" />}
-                name="Zone Réseau"
-                description="Zone de regroupement réseau (public, DMZ, backend, data). Les composants placés dans une zone héritent de sa latence inter-zone."
-                category="zone"
-                properties={[
-                  { name: 'zoneType', type: 'enum', defaultValue: 'backend', description: 'Type de zone (public, dmz, backend, data, custom)' },
-                  { name: 'domain', type: 'string', defaultValue: '', description: 'Domaine de la zone (ex: api.example.com)' },
-                  { name: 'interZoneLatency', type: 'number', defaultValue: '0', description: 'Latence ajoutée pour les requêtes sortantes (ms)' },
-                  { name: 'color', type: 'string', defaultValue: '#3b82f6', description: 'Couleur de la zone' },
-                ]}
-              />
-          </CategoryAccordion>
+          {componentCategories.map(({ label, color, filter }) => {
+            const comps = componentDocs.filter(c => c.category === filter);
+            if (comps.length === 0) return null;
+            return (
+              <CategoryAccordion key={filter} label={label} color={color} count={comps.length}>
+                {comps.map(comp => (
+                  <ComponentCard
+                    key={comp.type}
+                    icon={getComponentIcon(comp.type)}
+                    name={comp.name}
+                    description={comp.description}
+                    category={comp.category}
+                    sections={comp.sections}
+                    metrics={comp.metrics}
+                    behavior={comp.behavior}
+                    connections={comp.connections}
+                    protocols={comp.protocols}
+                  />
+                ))}
+              </CategoryAccordion>
+            );
+          })}
 
           {/* ═══ SECTION 4: TEMPLATES ═══ */}
           <div className="mt-16" />
@@ -1150,58 +955,465 @@ connections:  # Requis — liens entre composants
             description="Les métriques collectées pendant la simulation et comment les interpréter."
           />
 
-          <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
-            <table className="w-full font-mono text-[11px]">
-              <thead>
-                <tr className="text-muted-foreground text-left border-b border-border bg-card/50">
-                  <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Métrique</th>
-                  <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Description</th>
-                  <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Interprétation</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {[
-                  ['REQ', 'Requêtes envoyées', 'Volume total de trafic généré par les clients'],
-                  ['RES', 'Réponses reçues', 'Total des réponses (succès + erreurs)'],
-                  ['ERR (%)', "Taux d'erreur", '< 1% acceptable | 1-5% à surveiller | > 5% problème'],
-                  ['P50', 'Latence médiane', 'La moitié des requêtes sont plus rapides'],
-                  ['P95', 'Latence 95e percentile', '95% des requêtes sont sous ce seuil — indicateur clé'],
-                  ['P99', 'Latence 99e percentile', 'Cas limite — révèle les pics de latence sous charge'],
-                  ['RPS', 'Requêtes par seconde', 'Débit réel du système vs. débit attendu'],
-                  ['CPU %', 'Utilisation CPU', '< 70% sain | 70-90% attention | > 90% saturation'],
-                  ['RAM %', 'Utilisation mémoire', 'Mêmes seuils que CPU'],
-                  ['Network %', 'Utilisation réseau', 'Bande passante relative au max configuré'],
-                  ['Rejections', 'Requêtes rejetées', 'Capacité dépassée — ajoutez des serveurs'],
-                  ['Queue', 'Requêtes en file', 'Indique du backpressure'],
-                ].map(([metric, desc, interp], i) => (
-                  <tr key={metric} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
-                    <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">{metric}</td>
-                    <td className="py-2 px-4">{desc}</td>
-                    <td className="py-2 px-4 text-muted-foreground">{interp}</td>
+          {/* 5a. Global metrics */}
+          <div id="metriques-globales" className="scroll-mt-16">
+            <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Métriques globales</h2>
+            <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+              Métriques affichées dans la barre de télémétrie pendant la simulation.
+            </p>
+            <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+              <table className="w-full font-mono text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground text-left border-b border-border bg-card/50">
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Métrique</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Description</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Interprétation</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {globalMetrics.map((metric, i) => (
+                    <tr key={metric.name} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
+                      <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">{metric.name}</td>
+                      <td className="py-2 px-4">{metric.description}</td>
+                      <td className="py-2 px-4 text-muted-foreground">{metric.interpretation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Color legend */}
+            <div className="mt-4 p-3 border border-border bg-card/30 flex flex-wrap items-center gap-6" style={{ borderRadius: '3px' }}>
+              <span className="text-[9px] font-mono uppercase text-muted-foreground font-semibold">Seuils</span>
+              <div className="flex items-center gap-2 font-mono text-[11px]">
+                <div className="w-2 h-2 rounded-full bg-signal-healthy" />
+                <span className="text-signal-healthy">Sain</span>
+                <span className="text-muted-foreground/50">&lt; 70%</span>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[11px]">
+                <div className="w-2 h-2 rounded-full bg-signal-warning" />
+                <span className="text-signal-warning">Attention</span>
+                <span className="text-muted-foreground/50">70-90%</span>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[11px]">
+                <div className="w-2 h-2 rounded-full bg-signal-critical" />
+                <span className="text-signal-critical">Critique</span>
+                <span className="text-muted-foreground/50">&gt; 90%</span>
+              </div>
+            </div>
           </div>
 
-          {/* Color legend */}
-          <div className="mt-4 p-3 border border-border bg-card/30 flex flex-wrap items-center gap-6" style={{ borderRadius: '3px' }}>
-            <span className="text-[9px] font-mono uppercase text-muted-foreground font-semibold">Seuils</span>
-            <div className="flex items-center gap-2 font-mono text-[11px]">
-              <div className="w-2 h-2 rounded-full bg-signal-healthy" />
-              <span className="text-signal-healthy">Sain</span>
-              <span className="text-muted-foreground/50">&lt; 70%</span>
+          {/* 5b. Rejection reasons */}
+          <div id="metriques-rejets" className="scroll-mt-16 mt-8">
+            <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Raisons de rejet</h2>
+            <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+              Lorsqu&apos;une requête est rejetée, une raison est enregistrée dans les métriques. Voici les raisons possibles et comment les résoudre.
+            </p>
+            <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+              <table className="w-full font-mono text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground text-left border-b border-border bg-card/50">
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Raison</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Description</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Composants</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Solution</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {rejectionReasons.map((r, i) => (
+                    <tr key={r.reason} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
+                      <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">
+                        <code className="px-1.5 py-0.5 text-[9px] font-mono border border-red-500/20 text-red-400 bg-red-500/10" style={{ borderRadius: '2px' }}>{r.reason}</code>
+                      </td>
+                      <td className="py-2 px-4">{r.description}</td>
+                      <td className="py-2 px-4 text-muted-foreground whitespace-nowrap">{r.components}</td>
+                      <td className="py-2 px-4 text-muted-foreground">{r.solution}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="flex items-center gap-2 font-mono text-[11px]">
-              <div className="w-2 h-2 rounded-full bg-signal-warning" />
-              <span className="text-signal-warning">Attention</span>
-              <span className="text-muted-foreground/50">70-90%</span>
+          </div>
+
+          {/* 5c. Interpretation guide */}
+          <div id="metriques-interpretation" className="scroll-mt-16 mt-8">
+            <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Guide d&apos;interprétation</h2>
+
+            <div className="space-y-4">
+              {/* RPS vs Latency */}
+              <div className="p-4 border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                <h3 className="font-mono text-[11px] font-semibold text-foreground mb-2">Comment lire un graphique RPS vs latence</h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Le RPS (requêtes par seconde) et la latence sont inversement corrélés sous charge.
+                  Quand le RPS augmente, la latence reste stable jusqu&apos;à un point d&apos;inflexion
+                  où les ressources saturent. Au-delà, la latence augmente exponentiellement tandis que
+                  le RPS plafonne ou diminue. Ce point d&apos;inflexion représente la capacité maximale
+                  soutenable du système.
+                </p>
+              </div>
+
+              {/* Bottleneck identification */}
+              <div className="p-4 border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                <h3 className="font-mono text-[11px] font-semibold text-foreground mb-2">Identifier les goulots d&apos;étranglement</h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Utilisez la métrique <strong className="text-foreground">Saturation %</strong> de chaque serveur
+                  pour identifier la ressource limitante. La saturation correspond au maximum de CPU, mémoire et réseau.
+                  La première ressource à atteindre 100% est le goulot d&apos;étranglement. Surveillez aussi la file
+                  d&apos;attente : une croissance continue indique que le serveur ne peut pas absorber le trafic entrant.
+                </p>
+              </div>
+
+              {/* Typical patterns */}
+              <div className="p-4 border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                <h3 className="font-mono text-[11px] font-semibold text-foreground mb-2">Patterns typiques</h3>
+                <div className="space-y-2 text-[11px] text-muted-foreground leading-relaxed">
+                  <div className="flex items-start gap-2">
+                    <span className="w-1 h-1 rounded-full bg-signal-healthy mt-1.5 shrink-0" />
+                    <span><strong className="text-foreground">Croissance linéaire</strong> — La latence augmente proportionnellement à la charge. Comportement sain avec dégradation linéaire. Le système scale prévisiblement.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="w-1 h-1 rounded-full bg-signal-warning mt-1.5 shrink-0" />
+                    <span><strong className="text-foreground">Courbe en J</strong> — La latence reste basse puis explose soudainement. Typique de la dégradation quadratique ou exponentielle. Le point d&apos;inflexion indique la capacité maximale.</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="w-1 h-1 rounded-full bg-signal-critical mt-1.5 shrink-0" />
+                    <span><strong className="text-foreground">Plateau + effondrement</strong> — Le RPS plafonne puis chute brusquement. Les rejets augmentent. Le système est au-delà de sa capacité et commence à refuser du trafic.</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2 font-mono text-[11px]">
-              <div className="w-2 h-2 rounded-full bg-signal-critical" />
-              <span className="text-signal-critical">Critique</span>
-              <span className="text-muted-foreground/50">&gt; 90%</span>
+          </div>
+
+          {/* ═══ SECTION 6: EDGES ═══ */}
+          <div className="mt-16" />
+          <SectionHeader
+            id="edges"
+            label="Connexions (Edges)"
+            icon="06"
+            color="oklch(0.75 0.18 75)"
+            description="Les edges relient les composants et définissent le flux des requêtes. Chaque edge est configurable via un clic."
+          />
+
+          {/* 6a. Edge properties */}
+          <div id="edges-proprietes" className="scroll-mt-16">
+            <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Propriétés des edges</h2>
+            <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+              Cliquez sur un edge pour ouvrir son panneau de configuration. Chaque edge possède les propriétés suivantes.
+            </p>
+            <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+              <table className="w-full font-mono text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground text-left border-b border-border bg-card/50">
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Propriété</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Type</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Défaut</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {edgeProperties.map((prop, i) => (
+                    <tr key={prop.name} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
+                      <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">{prop.name}</td>
+                      <td className="py-2 px-4">
+                        <span className={cn(
+                          'px-1 py-px text-[9px] border',
+                          prop.type === 'enum' ? 'text-purple-400 bg-purple-500/10 border-purple-500/20' :
+                          prop.type === 'number' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
+                          'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        )} style={{ borderRadius: '2px' }}>
+                          {prop.type}
+                        </span>
+                      </td>
+                      <td className="py-2 px-4 text-muted-foreground">{prop.defaultValue}</td>
+                      <td className="py-2 px-4 text-muted-foreground">{prop.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </div>
+
+          {/* 6b. Protocol matrix */}
+          <div id="edges-protocoles" className="scroll-mt-16 mt-8">
+            <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Matrice des protocoles</h2>
+            <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+              Chaque type de composant supporte un ensemble de protocoles. Les composants de stockage (database, cache, message-queue) utilisent une connexion directe sans protocole applicatif.
+            </p>
+            <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+              <table className="w-full font-mono text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground text-left border-b border-border bg-card/50">
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Type composant</th>
+                    <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Protocoles supportés</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {protocolMatrix.map((entry, i) => (
+                    <tr key={entry.type} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
+                      <td className="py-2 px-4 text-foreground font-medium whitespace-nowrap">{entry.name}</td>
+                      <td className="py-2 px-4">
+                        {entry.protocols.length > 0 ? (
+                          <div className="flex gap-1.5 flex-wrap">
+                            {entry.protocols.map(p => (
+                              <span key={p} className="px-1.5 py-0.5 text-[9px] font-mono border border-border text-muted-foreground" style={{ borderRadius: '2px' }}>
+                                {p}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/60 text-[10px]">Connexion directe</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 6c. Particle types */}
+          <div id="edges-particules" className="scroll-mt-16 mt-8">
+            <h2 className="font-mono text-sm font-semibold text-foreground mb-3">Particules animées</h2>
+            <p className="text-sm text-foreground/80 leading-relaxed mb-3">
+              Pendant la simulation, des particules animées circulent le long des edges pour visualiser le flux de requêtes et réponses.
+            </p>
+            <div className="space-y-2">
+              {particleTypes.map(pt => (
+                <div key={pt.type} className="flex items-center gap-3 p-3 border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                  <div
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: pt.color }}
+                  />
+                  <div>
+                    <span className="font-mono text-[11px] font-semibold text-foreground">{pt.label}</span>
+                    <span className="text-[11px] text-muted-foreground ml-2">{pt.description}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ═══ SECTION 7: TRACING DISTRIBUÉ ═══ */}
+          <div className="mt-16" />
+          <SectionHeader
+            id="traces"
+            label="Tracing distribué"
+            icon="07"
+            color="oklch(0.72 0.16 200)"
+            description="Le simulateur trace chaque requête bout-en-bout à travers tous les composants traversés, générant des spans et des analyses de chemin critique."
+          />
+
+          {/* Concepts clés */}
+          <div id="traces-concepts" className="scroll-mt-16">
+            <h3 className="font-mono text-[11px] font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-cyan-400" />
+              Concepts clés
+            </h3>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {tracingConcepts.map(concept => (
+                <div key={concept.title} className="p-3 border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                  <h4 className="font-mono text-[11px] font-semibold text-foreground mb-1">{concept.title}</h4>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">{concept.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* TraceSpan */}
+          <div id="traces-span" className="scroll-mt-16 mt-8">
+            <h3 className="font-mono text-[11px] font-semibold text-foreground mb-1 flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-cyan-400" />
+              Interface TraceSpan
+            </h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Unité de travail atomique — un span est créé à chaque traversée d&apos;un composant par une requête.
+            </p>
+            <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+              <table className="w-full font-mono text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground/70 text-left border-b border-border">
+                    <th className="p-2 text-[8px] uppercase font-semibold">Champ</th>
+                    <th className="p-2 text-[8px] uppercase font-semibold">Type</th>
+                    <th className="p-2 text-[8px] uppercase font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {traceSpanFields.map(field => (
+                    <tr key={field.name} className="text-foreground/80">
+                      <td className="p-2 text-foreground font-medium whitespace-nowrap">{field.name}</td>
+                      <td className="p-2">
+                        <span className={cn(
+                          'px-1 py-px text-[9px] border',
+                          field.type === 'enum' ? 'text-purple-400 bg-purple-500/10 border-purple-500/20' :
+                          field.type === 'number' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
+                          field.type === 'object' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' :
+                          'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        )} style={{ borderRadius: '2px' }}>
+                          {field.type}
+                        </span>
+                      </td>
+                      <td className="p-2 text-muted-foreground">{field.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* RequestTrace */}
+          <div id="traces-request" className="scroll-mt-16 mt-8">
+            <h3 className="font-mono text-[11px] font-semibold text-foreground mb-1 flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-cyan-400" />
+              Interface RequestTrace
+            </h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Trace complète regroupant tous les spans d&apos;une chaîne de requêtes. Représente le parcours bout-en-bout.
+            </p>
+            <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+              <table className="w-full font-mono text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground/70 text-left border-b border-border">
+                    <th className="p-2 text-[8px] uppercase font-semibold">Champ</th>
+                    <th className="p-2 text-[8px] uppercase font-semibold">Type</th>
+                    <th className="p-2 text-[8px] uppercase font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {requestTraceFields.map(field => (
+                    <tr key={field.name} className="text-foreground/80">
+                      <td className="p-2 text-foreground font-medium whitespace-nowrap">{field.name}</td>
+                      <td className="p-2">
+                        <span className={cn(
+                          'px-1 py-px text-[9px] border',
+                          field.type === 'enum' ? 'text-purple-400 bg-purple-500/10 border-purple-500/20' :
+                          field.type === 'number' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
+                          field.type === 'object' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' :
+                          'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        )} style={{ borderRadius: '2px' }}>
+                          {field.type}
+                        </span>
+                      </td>
+                      <td className="p-2 text-muted-foreground">{field.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* CriticalPathAnalysis */}
+          <div id="traces-critical" className="scroll-mt-16 mt-8">
+            <h3 className="font-mono text-[11px] font-semibold text-foreground mb-1 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+              Interface CriticalPathAnalysis
+            </h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Analyse automatique du chemin critique, détection des goulots d&apos;étranglement et des patterns N+1.
+            </p>
+            <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+              <table className="w-full font-mono text-[11px]">
+                <thead>
+                  <tr className="text-muted-foreground/70 text-left border-b border-border">
+                    <th className="p-2 text-[8px] uppercase font-semibold">Champ</th>
+                    <th className="p-2 text-[8px] uppercase font-semibold">Type</th>
+                    <th className="p-2 text-[8px] uppercase font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {criticalPathFields.map(field => (
+                    <tr key={field.name} className="text-foreground/80">
+                      <td className="p-2 text-foreground font-medium whitespace-nowrap">{field.name}</td>
+                      <td className="p-2">
+                        <span className={cn(
+                          'px-1 py-px text-[9px] border',
+                          field.type === 'enum' ? 'text-purple-400 bg-purple-500/10 border-purple-500/20' :
+                          field.type === 'number' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
+                          field.type === 'object' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' :
+                          'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        )} style={{ borderRadius: '2px' }}>
+                          {field.type}
+                        </span>
+                      </td>
+                      <td className="p-2 text-muted-foreground">{field.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Guide du waterfall */}
+          <div id="traces-waterfall" className="scroll-mt-16 mt-8">
+            <h3 className="font-mono text-[11px] font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Activity className="w-3.5 h-3.5 text-cyan-400" />
+              Guide du Waterfall
+            </h3>
+            <div className="space-y-3">
+              {waterfallGuide.map(item => (
+                <div key={item.title} className="p-3 border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                  <h4 className="font-mono text-[11px] font-semibold text-foreground mb-1">{item.title}</h4>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">{item.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ═══ SECTION 8: ERREURS DE CONCEPTION ═══ */}
+          <div className="mt-16" />
+          <SectionHeader
+            id="erreurs"
+            label="Erreurs de conception"
+            icon="08"
+            color="oklch(0.65 0.22 25)"
+            description="Erreurs courantes dans la conception d&apos;architectures et comment les corriger."
+          />
+
+          <div className="space-y-6">
+            {errorCategories.map(category => {
+              const errors = designErrors.filter(e => e.category === category);
+              return (
+                <div key={category}>
+                  <h3 className="font-mono text-[11px] font-semibold text-foreground mb-3 flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                    {category}
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 border border-border text-muted-foreground" style={{ borderRadius: '2px' }}>
+                      {errors.length}
+                    </span>
+                  </h3>
+                  <div className="overflow-x-auto border border-border bg-card/30" style={{ borderRadius: '3px' }}>
+                    <table className="w-full font-mono text-[11px]">
+                      <thead>
+                        <tr className="text-muted-foreground text-left border-b border-border bg-card/50">
+                          <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Erreur</th>
+                          <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Sévérité</th>
+                          <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Description</th>
+                          <th className="py-2.5 px-4 text-[9px] uppercase font-semibold">Solution</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {errors.map((err, i) => (
+                          <tr key={err.error} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
+                            <td className="py-2 px-4 text-foreground font-medium">{err.error}</td>
+                            <td className="py-2 px-4 whitespace-nowrap">
+                              <span className={cn(
+                                'px-1.5 py-0.5 text-[9px] font-mono border',
+                                err.severity === 'ERROR' && 'text-red-400 bg-red-500/10 border-red-500/20',
+                                err.severity === 'WARNING' && 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                                err.severity === 'INFO' && 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+                              )} style={{ borderRadius: '2px' }}>
+                                {err.severity}
+                              </span>
+                            </td>
+                            <td className="py-2 px-4 text-muted-foreground">{err.description}</td>
+                            <td className="py-2 px-4 text-muted-foreground">{err.solution}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Bottom spacer */}

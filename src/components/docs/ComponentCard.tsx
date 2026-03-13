@@ -12,12 +12,29 @@ interface PropertyInfo {
   description: string;
 }
 
+interface DocSection {
+  name: string;
+  description: string;
+  properties: PropertyInfo[];
+}
+
+interface DocMetric {
+  name: string;
+  description: string;
+  interpretation: string;
+}
+
 interface ComponentCardProps {
   icon: ReactNode;
   name: string;
   description: string;
   category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone';
-  properties: PropertyInfo[];
+  properties?: PropertyInfo[];
+  sections?: DocSection[];
+  metrics?: DocMetric[];
+  behavior?: string;
+  connections?: string;
+  protocols?: string[];
 }
 
 const categoryColors: Record<string, { border: string; accent: string; text: string; hover: string }> = {
@@ -38,9 +55,46 @@ const typeColors: Record<string, string> = {
   object: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
 };
 
-export function ComponentCard({ icon, name, description, category, properties }: ComponentCardProps) {
+function PropertiesTable({ properties }: { properties: PropertyInfo[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full font-mono text-[11px]">
+        <thead>
+          <tr className="text-muted-foreground/70 text-left">
+            <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Propriété</th>
+            <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Type</th>
+            <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Défaut</th>
+            <th className="pb-2 text-[8px] uppercase font-semibold">Description</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/30">
+          {properties.map((prop) => (
+            <tr key={prop.name} className="text-foreground/80">
+              <td className="py-1.5 pr-4 text-foreground font-medium whitespace-nowrap">{prop.name}</td>
+              <td className="py-1.5 pr-4">
+                <span className={cn('px-1 py-px text-[9px] border', typeColors[prop.type] || 'text-muted-foreground')} style={{ borderRadius: '2px' }}>
+                  {prop.type}
+                </span>
+              </td>
+              <td className="py-1.5 pr-4 text-muted-foreground">{prop.defaultValue}</td>
+              <td className="py-1.5 text-muted-foreground">{prop.description}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function ComponentCard({ icon, name, description, category, properties, sections, metrics, behavior, connections, protocols }: ComponentCardProps) {
   const [expanded, setExpanded] = useState(false);
   const colors = categoryColors[category];
+
+  const totalProps = sections
+    ? sections.reduce((sum, s) => sum + s.properties.length, 0)
+    : (properties?.length ?? 0);
+
+  const hasExpandedContent = totalProps > 0 || (metrics && metrics.length > 0) || behavior || connections;
 
   return (
     <div
@@ -61,7 +115,7 @@ export function ComponentCard({ icon, name, description, category, properties }:
           <div className="flex items-center gap-2">
             <h3 className="font-mono text-sm font-semibold text-foreground">{name}</h3>
             <span className={cn('text-[8px] font-mono px-1.5 py-px border', typeColors[category === 'simulation' ? 'number' : category === 'infrastructure' ? 'enum' : 'string'])} style={{ borderRadius: '2px' }}>
-              {properties.length} props
+              {totalProps} props
             </span>
           </div>
           <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{description}</p>
@@ -73,35 +127,106 @@ export function ComponentCard({ icon, name, description, category, properties }:
         )} />
       </button>
 
-      {/* Properties — collapsible */}
-      {expanded && properties.length > 0 && (
+      {/* Expanded content — collapsible */}
+      {expanded && hasExpandedContent && (
         <div className="border-t border-border/50 px-4 pb-4">
-          <div className="overflow-x-auto">
-            <table className="w-full font-mono text-[11px] mt-3">
-              <thead>
-                <tr className="text-muted-foreground/70 text-left">
-                  <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Propriété</th>
-                  <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Type</th>
-                  <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Défaut</th>
-                  <th className="pb-2 text-[8px] uppercase font-semibold">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/30">
-                {properties.map((prop) => (
-                  <tr key={prop.name} className="text-foreground/80">
-                    <td className="py-1.5 pr-4 text-foreground font-medium whitespace-nowrap">{prop.name}</td>
-                    <td className="py-1.5 pr-4">
-                      <span className={cn('px-1 py-px text-[9px] border', typeColors[prop.type] || 'text-muted-foreground')} style={{ borderRadius: '2px' }}>
-                        {prop.type}
-                      </span>
-                    </td>
-                    <td className="py-1.5 pr-4 text-muted-foreground">{prop.defaultValue}</td>
-                    <td className="py-1.5 text-muted-foreground">{prop.description}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+          {/* Sections mode */}
+          {sections && sections.length > 0 && (
+            <div className="mt-3 space-y-4">
+              {sections.map((section) => (
+                <div key={section.name}>
+                  <div className="flex items-start gap-2 mb-1.5">
+                    <div className={cn('w-0.5 h-4 mt-0.5 shrink-0', colors.accent)} style={{ borderRadius: '1px' }} />
+                    <div>
+                      <h4 className="text-[10px] font-mono uppercase font-semibold text-muted-foreground">
+                        {section.name}
+                      </h4>
+                      <p className="text-[10px] text-muted-foreground/70 mt-0.5">{section.description}</p>
+                    </div>
+                  </div>
+                  {section.properties.length > 0 && (
+                    <div className="ml-2.5">
+                      <PropertiesTable properties={section.properties} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Flat properties mode (backwards compat) */}
+          {!sections && properties && properties.length > 0 && (
+            <div className="mt-3">
+              <PropertiesTable properties={properties} />
+            </div>
+          )}
+
+          {/* Metrics */}
+          {metrics && metrics.length > 0 && (
+            <div className="mt-4">
+              <h4 className={cn('text-[9px] font-mono uppercase font-semibold mb-2', colors.text)}>
+                Métriques
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full font-mono text-[11px]">
+                  <thead>
+                    <tr className="text-muted-foreground/70 text-left">
+                      <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Métrique</th>
+                      <th className="pb-2 pr-4 text-[8px] uppercase font-semibold">Description</th>
+                      <th className="pb-2 text-[8px] uppercase font-semibold">Interprétation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30">
+                    {metrics.map((metric) => (
+                      <tr key={metric.name} className="text-foreground/80">
+                        <td className="py-1.5 pr-4 text-foreground font-medium whitespace-nowrap">{metric.name}</td>
+                        <td className="py-1.5 pr-4 text-muted-foreground">{metric.description}</td>
+                        <td className="py-1.5 text-muted-foreground">{metric.interpretation}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Behavior */}
+          {behavior && (
+            <div className="mt-4">
+              <h4 className={cn('text-[9px] font-mono uppercase font-semibold mb-1.5', colors.text)}>
+                Comportement en simulation
+              </h4>
+              <p className="text-[11px] font-mono text-muted-foreground leading-relaxed whitespace-pre-line">
+                {behavior}
+              </p>
+            </div>
+          )}
+
+          {/* Connections */}
+          {connections && (
+            <div className="mt-4">
+              <h4 className={cn('text-[9px] font-mono uppercase font-semibold mb-1.5', colors.text)}>
+                Connexions requises
+              </h4>
+              <p className="text-[11px] font-mono text-muted-foreground leading-relaxed whitespace-pre-line">
+                {connections}
+              </p>
+              {protocols && protocols.length > 0 && (
+                <div className="flex gap-1.5 mt-2 flex-wrap">
+                  {protocols.map((protocol) => (
+                    <span
+                      key={protocol}
+                      className={cn('text-[8px] font-mono px-1.5 py-px border', colors.border, colors.text)}
+                      style={{ borderRadius: '2px' }}
+                    >
+                      {protocol}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -462,5 +462,99 @@
       "containerWrongParent": "Le container \"{label}\" est dans \"{parentLabel}\" au lieu d'un host-server",
       "portMappingNotChild": "Le port mapping {port} sur \"{label}\" référence un container qui n'est pas un enfant de ce serveur"
     }
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Bienvenue dans Architecture Simulator",
+      "description": "Ce tutoriel interactif va vous guider pas à pas pour créer votre première architecture distribuée et lancer une simulation. Suivez chaque étape pour découvrir les fonctionnalités principales."
+    },
+    "componentsPanel": {
+      "title": "Panneau des composants",
+      "description": "Ce panneau (RACK) contient 20 composants organisés en 7 catégories : Simulation, Infrastructure, Données, Résilience, Compute, Cloud et Zones. Glissez-déposez un composant sur le canevas pour l'ajouter à votre architecture."
+    },
+    "headerTools": {
+      "title": "Outils de la barre d'outils",
+      "description": "**TPL** — charger une architecture prédéfinie\n**YAML** — définir l'architecture en code YAML\n**VALID** — valider la cohérence de l'architecture\n**Corbeille** — supprimer tous les composants du canevas"
+    },
+    "flowCanvasIntro": {
+      "title": "Canevas de travail",
+      "description": "C'est ici que vous construisez votre architecture. Glissez des composants depuis le RACK, connectez-les entre eux, et organisez votre schéma. Vous pouvez zoomer, déplacer la vue et sélectionner des composants pour les configurer."
+    },
+    "dragHttpClient": {
+      "title": "Ajouter un Client HTTP",
+      "description": "Glissez le composant « Client HTTP » depuis le panneau de gauche et déposez-le sur le canevas."
+    },
+    "dragHttpServer": {
+      "title": "Ajouter un Serveur HTTP",
+      "description": "Glissez maintenant le composant « Serveur HTTP » et déposez-le sur le canevas, à droite du client."
+    },
+    "connectNodes": {
+      "title": "Connecter les composants",
+      "description": "Cliquez et maintenez le point de connexion (●) à droite du Client HTTP, puis glissez jusqu'au point d'entrée (●) à gauche du Serveur HTTP pour créer une connexion."
+    },
+    "architectureReady": {
+      "title": "Architecture prête !",
+      "description": "Bravo ! Votre première architecture est créée. Astuce : cliquez sur un composant pour modifier ses propriétés dans le panneau de droite (méthode HTTP, port, délai de réponse, etc.)."
+    },
+    "selectHttpClient": {
+      "title": "Sélectionner le Client HTTP",
+      "description": "Cliquez sur le composant « Client HTTP » dans le canevas pour le sélectionner et ouvrir le panneau de propriétés."
+    },
+    "propertiesPanelIntro": {
+      "title": "Panneau de propriétés",
+      "description": "Ce panneau affiche les propriétés du composant sélectionné. Vous pouvez modifier la méthode HTTP, le chemin, le mode de requête, l'intervalle et bien d'autres paramètres."
+    },
+    "setLoopMode": {
+      "title": "Activer la boucle continue",
+      "description": "Changez le mode de requête de « Requête unique » à « Boucle continue ». Cela permettra au client d'envoyer des requêtes en continu pendant la simulation."
+    },
+    "switchSimMode": {
+      "title": "Passer en mode Simulation",
+      "description": "Cliquez sur « SIM » pour passer en mode simulation. En mode simulation, l'architecture est verrouillée et vous pouvez lancer des tests de charge."
+    },
+    "simControlsIntro": {
+      "title": "Contrôles de simulation",
+      "description": "**START** — lancer la simulation\n**PAUSE** — mettre en pause\n**STOP** — arrêter et générer le rapport\n**RST** — réinitialiser\n**DUR** — configurer la durée maximale"
+    },
+    "startSimulation": {
+      "title": "Démarrer la simulation",
+      "description": "Cliquez sur START pour lancer la simulation. Le client HTTP va commencer à envoyer des requêtes vers le serveur."
+    },
+    "observeParticles": {
+      "title": "Simulation en cours",
+      "description": "Observez les particules animées qui circulent entre les composants. Elles représentent les requêtes en transit. Les nœuds changent de couleur selon leur état (traitement, succès, erreur)."
+    },
+    "pauseSimulation": {
+      "title": "Mettre en pause",
+      "description": "Cliquez sur PAUSE pour suspendre la simulation. Cela vous permettra d'explorer les métriques collectées tranquillement."
+    },
+    "metricsTab": {
+      "title": "Onglet Metrics",
+      "description": "L'onglet Metrics affiche les métriques de performance en temps réel : latence (min/avg/max), taux de succès, requêtes par seconde (RPS) et l'utilisation des ressources serveur avec des sparklines."
+    },
+    "outputTab": {
+      "title": "Onglet Output",
+      "description": "L'onglet Output affiche le journal temps réel des requêtes : chaque requête envoyée et sa réponse avec le code de statut, la latence et le chemin emprunté."
+    },
+    "validationTab": {
+      "title": "Onglet Validation",
+      "description": "L'onglet Valid affiche les résultats de la validation de l'architecture : erreurs bloquantes (composants non connectés, configurations invalides) et avertissements."
+    },
+    "tracesTab": {
+      "title": "Onglet Traces",
+      "description": "L'onglet Traces affiche une vue waterfall des chaînes de requêtes. Vous pouvez visualiser le parcours complet d'une requête à travers les composants avec les timings détaillés."
+    },
+    "stopSimulation": {
+      "title": "Arrêter la simulation",
+      "description": "Cliquez sur STOP pour arrêter la simulation. Un rapport détaillé sera automatiquement généré avec toutes les métriques collectées."
+    },
+    "viewReport": {
+      "title": "Rapport de simulation",
+      "description": "Ce rapport résume les performances de votre architecture : durée totale, taux de succès, latence moyenne, nombre de clients actifs et saturation des ressources serveur. Vous pouvez l'utiliser pour identifier les goulots d'étranglement."
+    },
+    "next": "Suivant",
+    "start": "Commencer",
+    "finish": "Terminer",
+    "stepOf": "sur"
   }
 }
