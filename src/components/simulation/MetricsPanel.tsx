@@ -8,10 +8,11 @@ import { useAppStore } from '@/store/app-store';
 import { useSimulationEvents } from '@/hooks/useSimulationEvents';
 import { useArchitectureStore } from '@/store/architecture-store';
 import { OutputPanel } from './OutputPanel';
+import { ValidationPanel } from './ValidationPanel';
 import { MetricSparkline } from './MetricSparkline';
 import { cn } from '@/lib/utils';
 
-type BottomTab = 'metrics' | 'output';
+type BottomTab = 'metrics' | 'output' | 'validation';
 
 function SaturationBadge({ saturation }: { saturation: number }) {
   if (saturation >= 90) {
@@ -363,6 +364,7 @@ export function MetricsPanel() {
   const avgLatency = useSimulationStore(selectAverageLatency);
   const successRate = useSimulationStore(selectSuccessRate);
   const mode = useAppStore((s) => s.mode);
+  const validationResult = useAppStore((s) => s.validationResult);
   const { events } = useSimulationEvents();
 
   // Auto-expand when simulation starts
@@ -372,8 +374,19 @@ export function MetricsPanel() {
     }
   }, [state]);
 
-  // Hide in edit mode or when no simulation data exists
-  if (mode === 'edit' || (state === 'idle' && metrics.requestsSent === 0 && events.length === 0)) {
+  // Auto-expand and switch to validation tab when validation has errors
+  useEffect(() => {
+    if (validationResult && validationResult.issues.length > 0) {
+      setActiveTab('validation');
+      setIsExpanded(true);
+    }
+  }, [validationResult]);
+
+  const hasSimData = state !== 'idle' || metrics.requestsSent > 0 || events.length > 0;
+  const hasValidation = validationResult !== null;
+
+  // Hide when no data to show
+  if (!hasSimData && !hasValidation) {
     return null;
   }
 
@@ -393,49 +406,71 @@ export function MetricsPanel() {
             onClick={() => setIsExpanded(!isExpanded)}
           >
             <div className="flex items-center gap-6 font-mono text-[11px]">
-              {/* Status dot */}
-              <div className="flex items-center gap-2">
-                <div className={cn(
-                  'w-1.5 h-1.5 rounded-full',
-                  state === 'running' && 'bg-signal-healthy signal-pulse',
-                  state === 'paused' && 'bg-signal-warning',
-                  state === 'idle' && 'bg-muted-foreground/30'
-                )} />
-                <span className="text-muted-foreground uppercase text-[10px]">{state}</span>
-              </div>
+              {hasSimData ? (
+                <>
+                  {/* Status dot */}
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
+                      'w-1.5 h-1.5 rounded-full',
+                      state === 'running' && 'bg-signal-healthy signal-pulse',
+                      state === 'paused' && 'bg-signal-warning',
+                      state === 'idle' && 'bg-muted-foreground/30'
+                    )} />
+                    <span className="text-muted-foreground uppercase text-[10px]">{state}</span>
+                  </div>
 
-              <span className="text-border">|</span>
+                  <span className="text-border">|</span>
 
-              {/* Key metrics inline */}
-              <span className="text-muted-foreground">
-                REQ:<span className="text-foreground ml-1">{metrics.requestsSent.toLocaleString()}</span>
-              </span>
-              <span className="text-muted-foreground">
-                RES:<span className="text-foreground ml-1">{metrics.successCount + metrics.errorCount}</span>
-              </span>
-              <span className="text-muted-foreground">
-                ERR:<span className={cn(
-                  'ml-1',
-                  metrics.errorCount > 0 ? 'text-signal-critical' : 'text-foreground'
-                )}>{metrics.errorCount}</span>
-                {metrics.requestsSent > 0 && (
-                  <span className="text-muted-foreground ml-0.5">
-                    ({(100 - successRate).toFixed(1)}%)
+                  {/* Key metrics inline */}
+                  <span className="text-muted-foreground">
+                    REQ:<span className="text-foreground ml-1">{metrics.requestsSent.toLocaleString()}</span>
                   </span>
-                )}
-              </span>
+                  <span className="text-muted-foreground">
+                    RES:<span className="text-foreground ml-1">{metrics.successCount + metrics.errorCount}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    ERR:<span className={cn(
+                      'ml-1',
+                      metrics.errorCount > 0 ? 'text-signal-critical' : 'text-foreground'
+                    )}>{metrics.errorCount}</span>
+                    {metrics.requestsSent > 0 && (
+                      <span className="text-muted-foreground ml-0.5">
+                        ({(100 - successRate).toFixed(1)}%)
+                      </span>
+                    )}
+                  </span>
 
-              <span className="text-border">|</span>
+                  <span className="text-border">|</span>
 
-              <span className="text-muted-foreground">
-                P50:<span className={cn(
-                  'ml-1',
-                  avgLatency < 100 ? 'text-signal-healthy' : avgLatency < 500 ? 'text-signal-warning' : 'text-signal-critical'
-                )}>{avgLatency}ms</span>
-              </span>
-              <span className="text-muted-foreground">
-                RPS:<span className="text-foreground ml-1">{metrics.requestsPerSecond}</span>
-              </span>
+                  <span className="text-muted-foreground">
+                    P50:<span className={cn(
+                      'ml-1',
+                      avgLatency < 100 ? 'text-signal-healthy' : avgLatency < 500 ? 'text-signal-warning' : 'text-signal-critical'
+                    )}>{avgLatency}ms</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    RPS:<span className="text-foreground ml-1">{metrics.requestsPerSecond}</span>
+                  </span>
+                </>
+              ) : validationResult ? (
+                <>
+                  <span className="text-muted-foreground uppercase text-[10px]">VALIDATION</span>
+                  <span className="text-border">|</span>
+                  {validationResult.errorCount > 0 && (
+                    <span className="text-signal-critical">
+                      {validationResult.errorCount} err
+                    </span>
+                  )}
+                  {validationResult.warningCount > 0 && (
+                    <span className="text-signal-warning">
+                      {validationResult.warningCount} warn
+                    </span>
+                  )}
+                  {validationResult.isValid && validationResult.issues.length === 0 && (
+                    <span className="text-signal-healthy">OK</span>
+                  )}
+                </>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2">
@@ -455,17 +490,34 @@ export function MetricsPanel() {
                 </button>
                 <button
                   className={cn(
-                    'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors',
+                    'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors border-x border-border/30',
                     activeTab === 'output'
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground/70'
                   )}
-                  style={{ borderRadius: '0 2px 2px 0' }}
                   onClick={(e) => { e.stopPropagation(); setActiveTab('output'); setIsExpanded(true); }}
                 >
                   Output
                   {events.length > 0 && (
                     <span className="text-signal-flux ml-1">({events.length})</span>
+                  )}
+                </button>
+                <button
+                  className={cn(
+                    'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors',
+                    activeTab === 'validation'
+                      ? 'text-foreground bg-muted/50'
+                      : 'text-muted-foreground hover:text-foreground/70'
+                  )}
+                  style={{ borderRadius: '0 2px 2px 0' }}
+                  onClick={(e) => { e.stopPropagation(); setActiveTab('validation'); setIsExpanded(true); }}
+                >
+                  Valid
+                  {validationResult && validationResult.errorCount > 0 && (
+                    <span className="text-signal-critical ml-1">({validationResult.errorCount})</span>
+                  )}
+                  {validationResult && validationResult.errorCount === 0 && validationResult.warningCount > 0 && (
+                    <span className="text-signal-warning ml-1">({validationResult.warningCount})</span>
                   )}
                 </button>
               </div>
@@ -494,11 +546,9 @@ export function MetricsPanel() {
                   <div className="w-12 h-1 rounded-full bg-muted-foreground/40 group-hover:bg-muted-foreground group-active:bg-foreground transition-colors" />
                 </div>
                 <div className="h-full overflow-y-auto">
-                  {activeTab === 'metrics' ? (
-                    <MetricsContent />
-                  ) : (
-                    <OutputPanel eventCount={events.length} panelHeight={panelHeight} />
-                  )}
+                  {activeTab === 'metrics' && <MetricsContent />}
+                  {activeTab === 'output' && <OutputPanel eventCount={events.length} panelHeight={panelHeight} />}
+                  {activeTab === 'validation' && <ValidationPanel panelHeight={panelHeight} />}
                 </div>
               </motion.div>
             )}

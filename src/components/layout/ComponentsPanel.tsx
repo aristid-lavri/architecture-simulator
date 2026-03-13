@@ -146,6 +146,14 @@ const COMPONENTS: ComponentItem[] = [
     signalColor: 'oklch(0.65 0.20 25)',
     category: 'infrastructure',
   },
+  {
+    type: 'firewall',
+    nameKey: 'components.firewall.name',
+    descriptionKey: 'components.firewall.description',
+    icon: <Shield className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.65 0.20 25)',
+    category: 'infrastructure',
+  },
   // Compute
   {
     type: 'serverless',

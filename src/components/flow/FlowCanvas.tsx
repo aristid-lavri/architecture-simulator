@@ -949,27 +949,73 @@ export function FlowCanvas() {
     setHighlightedPath(null);
   }, []);
 
+  // Validation highlighting
+  const validationResult = useAppStore((s) => s.validationResult);
+  const validationNodeSeverity = useMemo(() => {
+    const map = new Map<string, 'error' | 'warning'>();
+    if (!validationResult) return map;
+    for (const issue of validationResult.issues) {
+      for (const nodeId of issue.nodeIds || []) {
+        const existing = map.get(nodeId);
+        if (issue.severity === 'error' || !existing) {
+          map.set(nodeId, issue.severity === 'error' ? 'error' : (existing || 'warning'));
+        }
+      }
+    }
+    return map;
+  }, [validationResult]);
+
+  const validationEdgeIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!validationResult) return set;
+    for (const issue of validationResult.issues) {
+      for (const edgeId of issue.edgeIds || []) {
+        set.add(edgeId);
+      }
+    }
+    return set;
+  }, [validationResult]);
+
   // Apply highlight styles to nodes/edges
   const displayNodes = useMemo(() => {
-    if (!highlightedPath) return nodes;
-    return nodes.map((node) => ({
-      ...node,
-      className: [
-        node.className || '',
-        highlightedPath.nodeIds.has(node.id) ? 'node-latency-highlight' : 'node-latency-dimmed',
-      ].filter(Boolean).join(' '),
-    }));
-  }, [nodes, highlightedPath]);
+    return nodes.map((node) => {
+      const classes: string[] = [node.className || ''];
+
+      // Latency path highlighting
+      if (highlightedPath) {
+        classes.push(highlightedPath.nodeIds.has(node.id) ? 'node-latency-highlight' : 'node-latency-dimmed');
+      }
+
+      // Validation highlighting
+      const severity = validationNodeSeverity.get(node.id);
+      if (severity === 'error') classes.push('validation-error');
+      else if (severity === 'warning') classes.push('validation-warning');
+
+      return { ...node, className: classes.filter(Boolean).join(' ') };
+    });
+  }, [nodes, highlightedPath, validationNodeSeverity]);
 
   const displayEdges = useMemo(() => {
-    if (!highlightedPath) return edges;
-    return edges.map((edge) => ({
-      ...edge,
-      style: highlightedPath.edgeIds.has(edge.id)
-        ? { ...edge.style, stroke: 'oklch(0.70 0.15 220)', strokeWidth: 3 }
-        : { ...edge.style, opacity: 0.2 },
-    }));
-  }, [edges, highlightedPath]);
+    return edges.map((edge) => {
+      let style = { ...edge.style };
+
+      // Latency path highlighting
+      if (highlightedPath) {
+        if (highlightedPath.edgeIds.has(edge.id)) {
+          style = { ...style, stroke: 'oklch(0.70 0.15 220)', strokeWidth: 3 };
+        } else {
+          style = { ...style, opacity: 0.2 };
+        }
+      }
+
+      // Validation edge highlighting
+      if (validationEdgeIds.has(edge.id)) {
+        style = { ...style, stroke: 'oklch(0.65 0.25 25)', strokeWidth: 2.5 };
+      }
+
+      return { ...edge, style };
+    });
+  }, [edges, highlightedPath, validationEdgeIds]);
 
   const isEditable = mode === 'edit';
 
