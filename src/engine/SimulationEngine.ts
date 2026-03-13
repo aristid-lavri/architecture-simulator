@@ -109,6 +109,48 @@ interface QueuedRequest {
 }
 
 /**
+ * Derive queryType from httpMethod.
+ * GET → read, POST/PUT/DELETE → write.
+ */
+function deriveQueryType(method?: string): 'read' | 'write' | 'transaction' {
+  if (!method || method === 'GET') return 'read';
+  return 'write';
+}
+
+/**
+ * Infer contentType from request path.
+ * /static/** or known extensions → static, /api/** → dynamic, otherwise user-specific.
+ */
+function inferContentType(path?: string): 'static' | 'dynamic' | 'user-specific' {
+  if (!path) return 'dynamic';
+  if (path.startsWith('/static') || /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/i.test(path)) return 'static';
+  if (path.startsWith('/api') || path.startsWith('/graphql')) return 'dynamic';
+  return 'user-specific';
+}
+
+/**
+ * Default payload size estimates based on HTTP method.
+ */
+function estimatePayloadSize(method?: string): number {
+  if (!method || method === 'GET' || method === 'DELETE') return 0;
+  return 1024; // 1KB default for POST/PUT
+}
+
+/**
+ * Generate a pseudo-random IP for a virtual client.
+ */
+function generateSourceIP(virtualClientId?: number): string {
+  if (virtualClientId != null) {
+    // Deterministic IP per virtual client
+    const octet3 = Math.floor(virtualClientId / 256) % 256;
+    const octet4 = virtualClientId % 256;
+    return `10.0.${octet3}.${octet4 || 1}`;
+  }
+  // Random IP for http-client nodes
+  return `10.0.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 255) + 1}`;
+}
+
+/**
  * Suivi d'une chaine de requete a travers la topologie.
  * Enregistre le chemin complet (noeuds et aretes traverses) et l'etat cache-aside.
  */
@@ -120,6 +162,12 @@ interface RequestChain {
   virtualClientId?: number;
   startTime: number;
   requestPath?: string;           // Path HTTP de la requête (ex: "/api/orders")
+  // Enriched context (Issue #4)
+  httpMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  queryType?: 'read' | 'write' | 'transaction';
+  contentType?: 'static' | 'dynamic' | 'user-specific';
+  payloadSizeBytes?: number;
+  sourceIP?: string;
   // Cache-aside pattern tracking
   cacheHit?: boolean;             // True si cache hit, false si miss
   cacheNodeId?: string;           // ID du cache pour stockage après DB
@@ -611,6 +659,7 @@ export class SimulationEngine {
     if (!chain) {
       // Get the path from the client node data
       const clientData = client.data as HttpClientNodeData;
+      const method = clientData.method;
       chain = {
         id: chainId,
         originNodeId: client.id,
@@ -618,6 +667,11 @@ export class SimulationEngine {
         edgePath: [],
         startTime: Date.now(),
         requestPath: clientData.path,
+        httpMethod: method,
+        queryType: deriveQueryType(method),
+        contentType: inferContentType(clientData.path),
+        payloadSizeBytes: estimatePayloadSize(method),
+        sourceIP: generateSourceIP(),
       };
       this.activeChains.set(chainId, chain);
     }
@@ -667,6 +721,11 @@ export class SimulationEngine {
       edgePath: chain.edgePath,
       requestPath: chain.requestPath,
       targetPort: (edgeData?.targetPort as number) ?? undefined,
+      httpMethod: chain.httpMethod,
+      queryType: chain.queryType,
+      contentType: chain.contentType,
+      payloadSizeBytes: chain.payloadSizeBytes,
+      sourceIP: chain.sourceIP,
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
@@ -845,6 +904,11 @@ export class SimulationEngine {
       currentPath: chain.currentPath,
       edgePath: chain.edgePath,
       requestPath: chain.requestPath,
+      httpMethod: chain.httpMethod,
+      queryType: chain.queryType,
+      contentType: chain.contentType,
+      payloadSizeBytes: chain.payloadSizeBytes,
+      sourceIP: chain.sourceIP,
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
@@ -1093,6 +1157,11 @@ export class SimulationEngine {
       edgePath: chain.edgePath,
       requestPath: chain.requestPath,
       targetPort: (chainEdgeData?.targetPort as number) ?? undefined,
+      httpMethod: chain.httpMethod,
+      queryType: chain.queryType,
+      contentType: chain.contentType,
+      payloadSizeBytes: chain.payloadSizeBytes,
+      sourceIP: chain.sourceIP,
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
@@ -1291,6 +1360,11 @@ export class SimulationEngine {
             currentPath: chain.currentPath,
             edgePath: chain.edgePath,
             requestPath: chain.requestPath,
+            httpMethod: chain.httpMethod,
+            queryType: chain.queryType,
+            contentType: chain.contentType,
+            payloadSizeBytes: chain.payloadSizeBytes,
+            sourceIP: chain.sourceIP,
           };
           handler.handleResponsePassthrough(currentNode, responseContext, isError);
         }
@@ -1465,6 +1539,11 @@ export class SimulationEngine {
       virtualClientId,
       startTime: Date.now(),
       requestPath: reqType.path,
+      httpMethod: reqType.method,
+      queryType: deriveQueryType(reqType.method),
+      contentType: inferContentType(reqType.path),
+      payloadSizeBytes: estimatePayloadSize(reqType.method),
+      sourceIP: generateSourceIP(virtualClientId),
     };
     this.activeChains.set(chainId, chain);
 

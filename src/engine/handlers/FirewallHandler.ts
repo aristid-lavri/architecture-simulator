@@ -19,6 +19,13 @@ export class FirewallHandler implements NodeRequestHandler {
     const data = node.data as FirewallNodeData;
     const requestPort = context.targetPort;
 
+    // Check IP filtering if blockedIPs is configured
+    if (context.sourceIP && data.blockedIPs.length > 0) {
+      if (data.blockedIPs.includes(context.sourceIP)) {
+        return { action: 'reject', reason: 'firewall-blocked' };
+      }
+    }
+
     if (data.defaultAction === 'deny') {
       // Default deny: only allow if request port is explicitly in allowedPorts
       if (requestPort == null || !data.allowedPorts.includes(requestPort)) {
