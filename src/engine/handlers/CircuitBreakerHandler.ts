@@ -50,14 +50,14 @@ export class CircuitBreakerHandler implements NodeRequestHandler {
         cbState.halfOpenRequests = 0;
         cbState.successCount = 0;
       } else {
-        return { action: 'reject', reason: 'capacity' };
+        return { action: 'reject', reason: 'circuit-open' };
       }
     }
 
     // Half-open: limit concurrent requests
     if (cbState.state === 'half-open') {
       if (cbState.halfOpenRequests >= data.halfOpenMaxRequests) {
-        return { action: 'reject', reason: 'capacity' };
+        return { action: 'reject', reason: 'circuit-open' };
       }
       cbState.halfOpenRequests++;
     }

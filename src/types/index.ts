@@ -469,6 +469,7 @@ export interface ExtendedSimulationMetrics extends SimulationMetrics {
   // Métriques rejets
   requestsRejected: number;
   rejectionRate: number;
+  rejectionsByReason: Map<string, number>;
 
   // Historique ressources
   resourceHistory: ResourceSample[];

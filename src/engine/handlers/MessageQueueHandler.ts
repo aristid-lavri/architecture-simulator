@@ -68,7 +68,7 @@ export class MessageQueueHandler implements NodeRequestHandler {
     // Vérifier la capacité de la file
     if (state.messages.length >= data.configuration.maxQueueSize) {
       state.messagesDeadLettered++;
-      return { action: 'reject', reason: 'capacity' };
+      return { action: 'reject', reason: 'queue-full' };
     }
 
     // Publier le message dans la file

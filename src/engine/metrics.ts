@@ -1,4 +1,5 @@
 import type { SimulationMetrics, ExtendedSimulationMetrics, ResourceSample, ClientGroupMetrics, TimeSeriesSnapshot } from '@/types';
+import type { RejectionReason } from './handlers/types';
 
 /**
  * Collecteur de metriques pour la simulation.
@@ -15,6 +16,7 @@ export class MetricsCollector {
   // Extended metrics for stress testing
   private resourceHistory: ResourceSample[] = [];
   private rejectionCount: number = 0;
+  private rejectionsByReason: Map<RejectionReason, number> = new Map();
   private queueMetrics = {
     totalQueued: 0,
     maxQueueDepth: 0,
@@ -174,6 +176,7 @@ export class MetricsCollector {
     this.latencies = [];
     this.resourceHistory = [];
     this.rejectionCount = 0;
+    this.rejectionsByReason.clear();
     this.queueMetrics = {
       totalQueued: 0,
       maxQueueDepth: 0,
@@ -190,8 +193,11 @@ export class MetricsCollector {
   // Extended Methods for Stress Testing
   // ============================================
 
-  recordRejection(): void {
+  recordRejection(reason?: RejectionReason): void {
     this.rejectionCount++;
+    if (reason) {
+      this.rejectionsByReason.set(reason, (this.rejectionsByReason.get(reason) || 0) + 1);
+    }
   }
 
   recordQueued(queueDepth: number): void {
@@ -284,6 +290,7 @@ export class MetricsCollector {
         this.metrics.requestsSent > 0
           ? (this.rejectionCount / this.metrics.requestsSent) * 100
           : 0,
+      rejectionsByReason: new Map(this.rejectionsByReason),
       resourceHistory: [...this.resourceHistory],
       clientGroupStats: new Map(this.clientGroupStats),
     };

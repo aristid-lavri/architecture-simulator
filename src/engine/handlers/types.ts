@@ -30,12 +30,27 @@ export interface ForwardTarget {
 }
 
 /**
+ * Raisons de rejet possibles par les handlers
+ */
+export type RejectionReason =
+  | 'rate-limit'
+  | 'auth-failure'
+  | 'capacity'
+  | 'waf-blocked'
+  | 'firewall-blocked'
+  | 'timeout'
+  | 'circuit-open'
+  | 'oom-killed'
+  | 'dns-failure'
+  | 'queue-full';
+
+/**
  * Décision retournée par un handler après traitement
  */
 export type RequestDecision =
   | { action: 'forward'; targets: ForwardTarget[] }
   | { action: 'respond'; isError: boolean; delay?: number }
-  | { action: 'reject'; reason: 'rate-limit' | 'auth-failure' | 'capacity' | 'waf-blocked' }
+  | { action: 'reject'; reason: RejectionReason }
   | { action: 'queue'; priority?: number }
   | { action: 'cache-miss'; dbTarget: ForwardTarget; cacheNodeId: string }
   | { action: 'notify'; targets: ForwardTarget[] }; // Fire-and-forget: répond immédiatement, notifie les consumers async
