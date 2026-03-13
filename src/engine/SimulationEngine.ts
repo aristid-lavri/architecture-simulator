@@ -705,12 +705,8 @@ export class SimulationEngine {
       client.id, server.id, clientData.method, clientData.path, chainId
     ));
 
-    // Use handler pattern for consistent behavior
-    let processingDelay = this.getNodeProcessingDelay(server);
-    if (effectiveFault === 'degraded') processingDelay *= 3;
-    const outgoingEdges = this.edges.filter((e) => e.source === server.id);
-
     // Build request context for the handler
+    const outgoingEdges = this.edges.filter((e) => e.source === server.id);
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const context: RequestContext = {
       chainId,
@@ -731,6 +727,10 @@ export class SimulationEngine {
       waitingForDb: chain.waitingForDb,
     };
 
+    // Use handler pattern for consistent behavior
+    let processingDelay = this.getNodeProcessingDelay(server, context);
+    if (effectiveFault === 'degraded') processingDelay *= 3;
+
     // Emit PROCESSING_START event
     simulationEvents.emit(createProcessingStartEvent(server.id, chainId));
 
@@ -738,6 +738,11 @@ export class SimulationEngine {
     const nodeType = server.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
     let decision = handler.handleRequestArrival(server, context, outgoingEdges, this.nodes);
+
+    // Track database query type metrics
+    if (nodeType === 'database') {
+      this.metrics.recordDatabaseQuery(context.queryType || 'read');
+    }
 
     // Chaos: degraded nodes have 50% chance of error
     if (serverFault === 'degraded' && Math.random() < 0.5) {
@@ -759,10 +764,10 @@ export class SimulationEngine {
    * Get processing delay for a node based on its type
    * Delegates to the appropriate handler
    */
-  private getNodeProcessingDelay(node: Node): number {
+  private getNodeProcessingDelay(node: Node, context?: RequestContext): number {
     const nodeType = node.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
-    return handler.getProcessingDelay(node, this.speed);
+    return handler.getProcessingDelay(node, this.speed, context);
   }
 
   /**
@@ -918,6 +923,11 @@ export class SimulationEngine {
     const nodeType = sourceNode.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
     const decision = handler.handleRequestArrival(sourceNode, context, outgoingEdges, this.nodes);
+
+    // Track database query type metrics
+    if (nodeType === 'database') {
+      this.metrics.recordDatabaseQuery(context.queryType || 'read');
+    }
 
     // Execute the decision
     this.executeDecision(decision, sourceNode, chainId, context);
@@ -1138,13 +1148,6 @@ export class SimulationEngine {
       sourceNode.id, targetNode.id, 'GET', chain.requestPath || '/', chainId
     ));
 
-    let processingDelay = this.getNodeProcessingDelay(targetNode);
-
-    // Chaos: degraded nodes (or with degraded parent) have 3x latency and 50% error injection
-    if (effectiveTargetFault === 'degraded') {
-      processingDelay *= 3;
-    }
-
     // Build request context for the handler
     const fullEdge = this.edges.find((e) => e.id === edge.id);
     const chainEdgeData = fullEdge?.data as Record<string, unknown> | undefined;
@@ -1167,6 +1170,13 @@ export class SimulationEngine {
       waitingForDb: chain.waitingForDb,
     };
 
+    let processingDelay = this.getNodeProcessingDelay(targetNode, context);
+
+    // Chaos: degraded nodes (or with degraded parent) have 3x latency and 50% error injection
+    if (effectiveTargetFault === 'degraded') {
+      processingDelay *= 3;
+    }
+
     // Emit PROCESSING_START event
     simulationEvents.emit(createProcessingStartEvent(targetNode.id, chainId));
 
@@ -1179,6 +1189,11 @@ export class SimulationEngine {
     const nodeType = targetNode.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
     let decision = handler.handleRequestArrival(targetNode, context, outgoingEdges, this.nodes);
+
+    // Track database query type metrics
+    if (nodeType === 'database') {
+      this.metrics.recordDatabaseQuery(context.queryType || 'read');
+    }
 
     // Chaos: degraded nodes have 50% chance of error
     if (targetFault === 'degraded' && Math.random() < 0.5) {
@@ -1611,8 +1626,26 @@ export class SimulationEngine {
 
     const serverState = this.serverStates.get(server.id);
 
+    // Build minimal context for processing delay calculation
+    const edgeData = edge.data as Record<string, unknown> | undefined;
+    const context: RequestContext = {
+      chainId,
+      originNodeId: chain?.originNodeId || clientGroup.id,
+      virtualClientId,
+      startTime: chain?.startTime || Date.now(),
+      currentPath: chain?.currentPath || [server.id],
+      edgePath: chain?.edgePath || [edge.id],
+      requestPath: chain?.requestPath,
+      targetPort: (edgeData?.targetPort as number) ?? undefined,
+      httpMethod: chain?.httpMethod,
+      queryType: chain?.queryType,
+      contentType: chain?.contentType,
+      payloadSizeBytes: chain?.payloadSizeBytes,
+      sourceIP: chain?.sourceIP,
+    };
+
     // Calculate processing delay
-    let processingDelay = this.getNodeProcessingDelay(server);
+    let processingDelay = this.getNodeProcessingDelay(server, context);
 
     if (serverState && server.type === 'http-server') {
       const serverData = server.data as HttpServerNodeData;

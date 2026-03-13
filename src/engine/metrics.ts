@@ -31,6 +31,9 @@ export class MetricsCollector {
   // Per-hierarchy metrics tracking (aggregated by parent)
   private perHierarchyMetrics: Map<string, { cpu: number; memory: number; requests: number; errors: number }> = new Map();
 
+  // Database query type counters
+  private databaseQueryCounts = { read: 0, write: 0, transaction: 0 };
+
   // Time-series snapshots
   private timeSeries: TimeSeriesSnapshot[] = [];
 
@@ -186,12 +189,17 @@ export class MetricsCollector {
     this.clientGroupStats.clear();
     this.perServerMetrics.clear();
     this.perHierarchyMetrics.clear();
+    this.databaseQueryCounts = { read: 0, write: 0, transaction: 0 };
     this.timeSeries = [];
   }
 
   // ============================================
   // Extended Methods for Stress Testing
   // ============================================
+
+  recordDatabaseQuery(queryType: 'read' | 'write' | 'transaction'): void {
+    this.databaseQueryCounts[queryType]++;
+  }
 
   recordRejection(reason?: RejectionReason): void {
     this.rejectionCount++;
@@ -293,6 +301,7 @@ export class MetricsCollector {
       rejectionsByReason: new Map(this.rejectionsByReason),
       resourceHistory: [...this.resourceHistory],
       clientGroupStats: new Map(this.clientGroupStats),
+      databaseQueryCounts: { ...this.databaseQueryCounts },
     };
   }
 

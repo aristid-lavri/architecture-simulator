@@ -18,6 +18,7 @@ interface DatabaseState {
   utilization: DatabaseUtilization;
   activeQueries: Map<string, ActiveQuery>;
   queriesLastSecond: number[];
+  queriesByType: { read: number; write: number; transaction: number };
 }
 
 /**
@@ -38,6 +39,7 @@ export class DatabaseManager {
       utilization: this.createInitialUtilization(),
       activeQueries: new Map(),
       queriesLastSecond: [],
+      queriesByType: { read: 0, write: 0, transaction: 0 },
     });
   }
 
@@ -116,6 +118,9 @@ export class DatabaseManager {
       estimatedCompletion: now + degradedLatency,
     });
 
+    // Track query type counts
+    state.queriesByType[queryType]++;
+
     // Record for QPS calculation
     state.queriesLastSecond.push(now);
 
@@ -173,6 +178,7 @@ export class DatabaseManager {
       queriesPerSecond,
       connectionPoolUsage: Math.min(100, connectionPoolUsage),
       avgQueryTime,
+      queriesByType: { ...state.queriesByType },
     };
   }
 
@@ -201,6 +207,7 @@ export class DatabaseManager {
       queriesPerSecond: 0,
       connectionPoolUsage: 0,
       avgQueryTime: 0,
+      queriesByType: { read: 0, write: 0, transaction: 0 },
     };
   }
 

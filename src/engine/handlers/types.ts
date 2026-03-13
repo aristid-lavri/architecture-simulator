@@ -82,7 +82,7 @@ export interface NodeRequestHandler {
    * @param speed Multiplicateur de vitesse de simulation
    * @returns Délai en millisecondes
    */
-  getProcessingDelay(node: Node, speed: number): number;
+  getProcessingDelay(node: Node, speed: number, context?: RequestContext): number;
 
   /**
    * Gère l'arrivée d'une requête sur un nœud
