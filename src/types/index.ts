@@ -160,7 +160,12 @@ export type SimulationEventType =
   | 'RESPONSE_RECEIVED'
   | 'ERROR'
   | 'SPAN_START'
-  | 'SPAN_END';
+  | 'SPAN_END'
+  | 'HANDLER_DECISION'
+  | 'QUEUE_ENTER'
+  | 'QUEUE_EXIT'
+  | 'STATE_TRANSITION'
+  | 'RESOURCE_SNAPSHOT';
 
 // ============================================
 // Distributed Tracing Types (Critical Path Analyzer)
@@ -178,6 +183,14 @@ export interface TraceSpan {
   endTime?: number;
   duration?: number;
   status: 'active' | 'completed' | 'error';
+  /** Decision prise par le handler pour ce span. */
+  decision?: HandlerDecisionAction;
+  /** Raison du rejet ou detail de la decision. */
+  decisionReason?: string;
+  /** Cibles du forwarding (nodeIds). */
+  forwardTargets?: string[];
+  /** Snapshot des ressources au moment du traitement. */
+  resourceSnapshot?: { cpu: number; memory: number; activeConnections: number; queuedRequests: number };
 }
 
 /** Trace complete regroupant tous les spans d'une chaine de requete. */
@@ -197,6 +210,19 @@ export interface CriticalPathAnalysis {
   nPlusOnePatterns: { nodeId: string; nodeName: string; count: number }[];
   totalDuration: number;
 }
+
+/** Action decidee par un handler apres traitement d'une requete. */
+export type HandlerDecisionAction = 'forward' | 'respond' | 'reject' | 'queue' | 'cache-miss' | 'notify';
+
+/** Type de transition d'etat d'un composant. */
+export type StateTransitionType =
+  | 'circuit-breaker-open'
+  | 'circuit-breaker-closed'
+  | 'circuit-breaker-half-open'
+  | 'cache-eviction'
+  | 'node-degraded'
+  | 'node-down'
+  | 'node-recovered';
 
 /** Evenement de simulation avec source, cible et donnees contextuelles. */
 export interface SimulationEvent {
@@ -219,6 +245,33 @@ export interface SimulationEvent {
     nodeType?: string;
     parentSpanId?: string;
     isError?: boolean;
+    // Enriched request context (propagated from RequestContext)
+    httpMethod?: HttpMethod;
+    queryType?: 'read' | 'write' | 'transaction';
+    contentType?: 'static' | 'dynamic' | 'user-specific';
+    payloadSizeBytes?: number;
+    sourceIP?: string;
+    virtualClientId?: number;
+    authToken?: { tokenId: string; format: string; issuerId: string };
+    // Handler decision fields (HANDLER_DECISION events)
+    decision?: HandlerDecisionAction;
+    reason?: string;
+    targets?: string[];
+    // Queue fields (QUEUE_ENTER / QUEUE_EXIT events)
+    queueDepth?: number;
+    waitTime?: number;
+    priority?: number;
+    // State transition fields (STATE_TRANSITION events)
+    transition?: StateTransitionType;
+    previousState?: string;
+    newState?: string;
+    // Resource snapshot fields (RESOURCE_SNAPSHOT events)
+    cpu?: number;
+    memory?: number;
+    activeConnections?: number;
+    queuedRequests?: number;
+    throughput?: number;
+    errorRate?: number;
   };
 }
 
@@ -425,6 +478,40 @@ export interface ResourceUtilization {
   parentId?: string;                  // ID du noeud parent (pour aggregation hierarchique)
   isAggregated?: boolean;             // True si les valeurs incluent les enfants
   childrenCount?: number;             // Nombre d'enfants contribuant a l'utilisation
+}
+
+// ============================================
+// Bottleneck Analysis
+// ============================================
+
+/** Niveau de saturation pour la heatmap canvas. */
+export type HeatmapLevel = 'green' | 'yellow' | 'orange' | 'red';
+
+/** Informations détaillées sur un goulot d'étranglement détecté. */
+export interface BottleneckInfo {
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  impactScore: number;                    // 0-100, score composite
+  rank: number;                            // 1 = pire goulot
+  saturation: number;                      // % saturation actuelle
+  p99Latency: number;                      // ms
+  latencyContribution: number;             // % de la latence totale e2e
+  queueGrowthRate: number;                 // dérivée req/s
+  utilization: number;                     // max(cpu, mem, net)
+  isSpof: boolean;                         // point unique de défaillance
+  heatmapLevel: HeatmapLevel;
+  predictedSaturationTime: number | null;  // secondes avant saturation, null si stable
+  reasons: string[];                       // ex: ["CPU > 80%", "Queue +5/s"]
+}
+
+/** Résultat complet de l'analyse de goulots d'étranglement. */
+export interface BottleneckAnalysis {
+  timestamp: number;
+  topBottlenecks: BottleneckInfo[];        // top 3
+  allNodes: BottleneckInfo[];              // tous les nœuds analysés, triés par impactScore
+  spofNodes: string[];                     // nodeIds des points uniques de défaillance
+  criticalPath: string[];                  // nodeIds ordonnés du chemin critique
 }
 
 // ============================================

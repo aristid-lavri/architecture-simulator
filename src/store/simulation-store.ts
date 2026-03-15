@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   SimulationState,
   SimulationMetrics,
+  ExtendedSimulationMetrics,
   SimulationEvent,
   TimeSeriesSnapshot,
   Particle,
@@ -10,6 +11,12 @@ import type {
   ResourceUtilization,
   ResourceSample,
   ClientGroupMetrics,
+  BottleneckAnalysis,
+  RequestTrace,
+  CacheUtilization,
+  DatabaseUtilization,
+  MessageQueueUtilization,
+  ApiGatewayUtilization,
 } from '@/types';
 import { simulationEvents } from '@/engine/events';
 
@@ -24,6 +31,18 @@ export interface SimulationReport {
   timestamp: number;
   events: SimulationEvent[]; // request traces captured at stop time
   timeSeries: TimeSeriesSnapshot[]; // metrics snapshots over time
+
+  // Extended data captured before cleanup
+  extendedMetrics?: ExtendedSimulationMetrics;
+  bottleneckAnalysis?: BottleneckAnalysis | null;
+  hierarchicalUtilizations?: Record<string, { aggregated: ResourceUtilization; children: { childId: string; utilization: ResourceUtilization }[] }>;
+  resourceHistory?: ResourceSample[];
+  traces?: RequestTrace[];
+  faultInjections?: Record<string, string>;
+  apiGatewayStats?: Record<string, ApiGatewayUtilization>;
+  messageQueueStats?: Record<string, MessageQueueUtilization>;
+  cacheStats?: Record<string, CacheUtilization>;
+  databaseStats?: Record<string, DatabaseUtilization>;
 }
 
 /**
@@ -48,6 +67,9 @@ interface SimulationStore {
   // Metrics
   metrics: SimulationMetrics;
 
+  // Extended metrics (percentiles, rejections, queue stats) — pushed every 1s
+  extendedMetrics: ExtendedSimulationMetrics | null;
+
   // Resource utilization for stress testing
   resourceUtilizations: Map<string, ResourceUtilization>;
 
@@ -63,6 +85,9 @@ interface SimulationStore {
   // Hierarchical resource utilization (parent → aggregated + children)
   hierarchicalUtilizations: Record<string, { aggregated: ResourceUtilization; children: { childId: string; utilization: ResourceUtilization }[] }>;
 
+  // Bottleneck analysis
+  bottleneckAnalysis: BottleneckAnalysis | null;
+
   // Chaos mode — fault injections
   faultInjections: Map<string, 'down' | 'degraded'>;
   isolatedNodes: Set<string>;
@@ -71,9 +96,24 @@ interface SimulationStore {
   report: SimulationReport | null;
   showReport: boolean;
 
+  // Analysis mode (full-screen post-simulation analysis)
+  analysisMode: boolean;
+
   // Engine metrics provider (set by FlowCanvas to pull fresh metrics from engine)
   _engineMetricsProvider: (() => SimulationMetrics) | null;
   registerEngineMetricsProvider: (provider: (() => SimulationMetrics) | null) => void;
+
+  // Engine report data provider (set by FlowCanvas to pull extended data before stop)
+  _engineReportDataProvider: (() => {
+    extendedMetrics: ExtendedSimulationMetrics;
+    traces: RequestTrace[];
+    resourceHistory: ResourceSample[];
+    apiGatewayStats: Record<string, ApiGatewayUtilization>;
+    messageQueueStats: Record<string, MessageQueueUtilization>;
+    cacheStats: Record<string, CacheUtilization>;
+    databaseStats: Record<string, DatabaseUtilization>;
+  }) | null;
+  registerEngineReportDataProvider: (provider: SimulationStore['_engineReportDataProvider']) => void;
 
   // Actions - Simulation control
   start: () => void;
@@ -84,9 +124,12 @@ interface SimulationStore {
   setDuration: (duration: number | null) => void;
   updateElapsedTime: (elapsed: number) => void;
 
-  // Actions - Report
+  // Actions - Report & Analysis
   setShowReport: (show: boolean) => void;
   clearReport: () => void;
+  setAnalysisMode: (active: boolean) => void;
+  /** Generate a live snapshot report from current running/paused state (without stopping). */
+  generateLiveReport: () => SimulationReport | null;
 
   // Actions - Particles
   addParticle: (particle: Particle) => void;
@@ -104,6 +147,7 @@ interface SimulationStore {
   updateRequestsPerSecond: () => void;
   resetMetrics: () => void;
   setMetrics: (metrics: SimulationMetrics) => void;
+  setExtendedMetrics: (extendedMetrics: ExtendedSimulationMetrics) => void;
 
   // Actions - Resource utilization
   setResourceUtilization: (nodeId: string, utilization: ResourceUtilization) => void;
@@ -121,12 +165,72 @@ interface SimulationStore {
   // Actions - Hierarchical utilization
   setHierarchicalUtilization: (parentId: string, data: { aggregated: ResourceUtilization; children: { childId: string; utilization: ResourceUtilization }[] }) => void;
 
+  // Actions - Bottleneck analysis
+  setBottleneckAnalysis: (analysis: BottleneckAnalysis | null) => void;
+
   // Actions - Chaos mode
   injectFault: (nodeId: string, fault: 'down' | 'degraded') => void;
   clearFault: (nodeId: string) => void;
   clearAllFaults: () => void;
   isolateNode: (nodeId: string) => void;
   restoreNode: (nodeId: string) => void;
+}
+
+// localStorage key for persisting the last simulation report
+const REPORT_STORAGE_KEY = 'simulation-last-report';
+const REPORT_MAX_SIZE = 2 * 1024 * 1024; // 2MB limit
+
+/** Save report to localStorage (truncate if too large). */
+function persistReport(report: SimulationReport): void {
+  try {
+    // Convert Maps to plain objects for JSON serialization
+    const serializable = {
+      ...report,
+      extendedMetrics: report.extendedMetrics ? {
+        ...report.extendedMetrics,
+        rejectionsByReason: report.extendedMetrics.rejectionsByReason instanceof Map
+          ? Object.fromEntries(report.extendedMetrics.rejectionsByReason)
+          : report.extendedMetrics.rejectionsByReason,
+        clientGroupStats: report.extendedMetrics.clientGroupStats instanceof Map
+          ? Object.fromEntries(report.extendedMetrics.clientGroupStats)
+          : report.extendedMetrics.clientGroupStats,
+      } : undefined,
+    };
+    let json = JSON.stringify(serializable);
+    // If too large, trim events and resourceHistory
+    if (json.length > REPORT_MAX_SIZE) {
+      serializable.events = serializable.events.slice(0, 500);
+      serializable.resourceHistory = serializable.resourceHistory?.slice(-300) ?? [];
+      json = JSON.stringify(serializable);
+    }
+    localStorage.setItem(REPORT_STORAGE_KEY, json);
+  } catch {
+    // localStorage may be full or unavailable
+  }
+}
+
+/** Load report from localStorage. */
+function loadPersistedReport(): SimulationReport | null {
+  try {
+    const json = localStorage.getItem(REPORT_STORAGE_KEY);
+    if (!json) return null;
+    const report = JSON.parse(json) as SimulationReport;
+    // Restore Maps in extendedMetrics if they were serialized as plain objects
+    if (report.extendedMetrics) {
+      const ext = report.extendedMetrics as unknown as Record<string, unknown>;
+      if (ext.rejectionsByReason && !(ext.rejectionsByReason instanceof Map)) {
+        (report.extendedMetrics as unknown as Record<string, unknown>).rejectionsByReason =
+          new Map(Object.entries(ext.rejectionsByReason as Record<string, number>));
+      }
+      if (ext.clientGroupStats && !(ext.clientGroupStats instanceof Map)) {
+        (report.extendedMetrics as unknown as Record<string, unknown>).clientGroupStats =
+          new Map(Object.entries(ext.clientGroupStats as Record<string, ClientGroupMetrics>));
+      }
+    }
+    return report;
+  } catch {
+    return null;
+  }
 }
 
 const initialMetrics: SimulationMetrics = {
@@ -154,18 +258,23 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   particles: [],
   nodeStates: new Map(),
   metrics: { ...initialMetrics },
+  extendedMetrics: null,
   resourceUtilizations: new Map(),
   resourceHistory: [],
   clientGroupStats: new Map(),
   metricsTimeSeries: [],
   hierarchicalUtilizations: {},
+  bottleneckAnalysis: null,
   faultInjections: new Map(),
   isolatedNodes: new Set(),
-  report: null,
+  report: loadPersistedReport(),
   showReport: false,
+  analysisMode: false,
   _engineMetricsProvider: null,
+  _engineReportDataProvider: null,
 
   registerEngineMetricsProvider: (provider) => set({ _engineMetricsProvider: provider }),
+  registerEngineReportDataProvider: (provider) => set({ _engineReportDataProvider: provider }),
 
   // Simulation control
   start: () => {
@@ -181,7 +290,16 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     }));
   },
 
-  pause: () => set({ state: 'paused' }),
+  pause: () => {
+    const state = get();
+    // Capture extended metrics snapshot on pause so UI can display them
+    const reportData = state._engineReportDataProvider ? state._engineReportDataProvider() : null;
+    return set({
+      state: 'paused',
+      // Update extended metrics with latest data from engine
+      extendedMetrics: reportData?.extendedMetrics ?? state.extendedMetrics,
+    });
+  },
 
   stop: (reason = 'manual') => {
     const state = get();
@@ -197,7 +315,10 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     // Capture events from the emitter before clearing
     const capturedEvents = simulationEvents.getEvents();
 
-    // Generate report with fresh engine metrics
+    // Capture extended data from engine BEFORE cleanup
+    const reportData = state._engineReportDataProvider ? state._engineReportDataProvider() : null;
+
+    // Generate report with fresh engine metrics + all extended data
     const report: SimulationReport = {
       duration: actualDuration,
       configuredDuration: state.duration ? state.duration * 1000 : null,
@@ -208,12 +329,28 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
       timestamp: Date.now(),
       events: capturedEvents,
       timeSeries: [...state.metricsTimeSeries],
+
+      // Extended data
+      extendedMetrics: reportData?.extendedMetrics ?? state.extendedMetrics ?? undefined,
+      bottleneckAnalysis: state.bottleneckAnalysis,
+      hierarchicalUtilizations: { ...state.hierarchicalUtilizations },
+      resourceHistory: [...state.resourceHistory],
+      traces: reportData?.traces ?? [],
+      faultInjections: Object.fromEntries(state.faultInjections),
+      apiGatewayStats: reportData?.apiGatewayStats ?? {},
+      messageQueueStats: reportData?.messageQueueStats ?? {},
+      cacheStats: reportData?.cacheStats ?? {},
+      databaseStats: reportData?.databaseStats ?? {},
     };
+
+    // Persist report to localStorage for recovery after page refresh
+    persistReport(report);
 
     set({
       state: 'idle',
       particles: [],
       nodeStates: new Map(),
+      bottleneckAnalysis: null,
       faultInjections: new Map(),
       isolatedNodes: new Set(),
       report,
@@ -227,11 +364,13 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     particles: [],
     nodeStates: new Map(),
     metrics: { ...initialMetrics },
+    extendedMetrics: null,
     resourceUtilizations: new Map(),
     resourceHistory: [],
     clientGroupStats: new Map(),
     metricsTimeSeries: [],
     hierarchicalUtilizations: {},
+    bottleneckAnalysis: null,
     faultInjections: new Map(),
     isolatedNodes: new Set(),
   }),
@@ -242,10 +381,51 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
   updateElapsedTime: (elapsed) => set({ elapsedTime: elapsed }),
 
-  // Report actions
+  // Report & analysis actions
   setShowReport: (show) => set({ showReport: show }),
+  setAnalysisMode: (active) => set({ analysisMode: active }),
 
-  clearReport: () => set({ report: null, showReport: false }),
+  generateLiveReport: () => {
+    const state = get();
+    if (state.state === 'idle' && !state.report) return null;
+
+    // If we already have a report (post-stop), return it
+    if (state.report) return state.report;
+
+    // Generate a live snapshot from current running/paused state
+    const freshMetrics = state._engineMetricsProvider ? state._engineMetricsProvider() : state.metrics;
+    const reportData = state._engineReportDataProvider ? state._engineReportDataProvider() : null;
+    const capturedEvents = simulationEvents.getEvents();
+
+    const duration = freshMetrics.startTime ? Date.now() - freshMetrics.startTime : state.elapsedTime;
+
+    return {
+      duration,
+      configuredDuration: state.duration ? state.duration * 1000 : null,
+      metrics: { ...freshMetrics },
+      resourceUtilizations: Object.fromEntries(state.resourceUtilizations),
+      clientGroupStats: Object.fromEntries(state.clientGroupStats),
+      endReason: 'manual' as const,
+      timestamp: Date.now(),
+      events: capturedEvents,
+      timeSeries: [...state.metricsTimeSeries],
+      extendedMetrics: reportData?.extendedMetrics ?? state.extendedMetrics ?? undefined,
+      bottleneckAnalysis: state.bottleneckAnalysis,
+      hierarchicalUtilizations: { ...state.hierarchicalUtilizations },
+      resourceHistory: [...state.resourceHistory],
+      traces: reportData?.traces ?? [],
+      faultInjections: Object.fromEntries(state.faultInjections),
+      apiGatewayStats: reportData?.apiGatewayStats ?? {},
+      messageQueueStats: reportData?.messageQueueStats ?? {},
+      cacheStats: reportData?.cacheStats ?? {},
+      databaseStats: reportData?.databaseStats ?? {},
+    };
+  },
+
+  clearReport: () => {
+    try { localStorage.removeItem(REPORT_STORAGE_KEY); } catch { /* ignore */ }
+    return set({ report: null, showReport: false });
+  },
 
   // Particles
   addParticle: (particle) => set((state) => ({
@@ -324,6 +504,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   resetMetrics: () => set({ metrics: { ...initialMetrics } }),
 
   setMetrics: (metrics) => set({ metrics }),
+  setExtendedMetrics: (extendedMetrics) => set({ extendedMetrics }),
 
   // Resource utilization
   setResourceUtilization: (nodeId, utilization) => set((state) => {
@@ -381,6 +562,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
       [parentId]: data,
     },
   })),
+
+  // Bottleneck analysis
+  setBottleneckAnalysis: (analysis) => set({ bottleneckAnalysis: analysis }),
 
   // Chaos mode
   injectFault: (nodeId, fault) => set((state) => {

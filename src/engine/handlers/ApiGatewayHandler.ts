@@ -16,6 +16,12 @@ interface GatewayState {
   activeRequests: number;
   /** True quand le rate limit a été atteint — bloque toutes nouvelles requêtes jusqu'à ce que activeRequests tombe à 0 */
   isRateLimited: boolean;
+  /** Config tracking — détecte les changements mid-simulation pour reset l'état */
+  lastSeenRateLimitRps?: number;
+  lastSeenRateLimitWindowMs?: number;
+  lastSeenRateLimitBurst?: number;
+  lastSeenRateLimitEnabled?: boolean;
+  lastSeenAuthType?: string;
 }
 
 /**
@@ -48,6 +54,28 @@ export class ApiGatewayHandler implements NodeRequestHandler {
   ): RequestDecision {
     const data = node.data as ApiGatewayNodeData;
     const state = this.getOrCreateState(node.id);
+
+    // Détecter les changements de config mid-simulation et reset l'état accumulé
+    const rl = data.rateLimiting;
+    if (state.lastSeenRateLimitRps !== undefined && (
+      state.lastSeenRateLimitRps !== rl.requestsPerSecond ||
+      state.lastSeenRateLimitWindowMs !== rl.windowMs ||
+      state.lastSeenRateLimitBurst !== rl.burstSize ||
+      state.lastSeenRateLimitEnabled !== rl.enabled
+    )) {
+      state.requestsInWindow = 0;
+      state.windowStartTime = Date.now();
+      state.isRateLimited = false;
+    }
+    state.lastSeenRateLimitRps = rl.requestsPerSecond;
+    state.lastSeenRateLimitWindowMs = rl.windowMs;
+    state.lastSeenRateLimitBurst = rl.burstSize;
+    state.lastSeenRateLimitEnabled = rl.enabled;
+
+    if (state.lastSeenAuthType !== undefined && state.lastSeenAuthType !== data.authType) {
+      state.authFailures = 0;
+    }
+    state.lastSeenAuthType = data.authType;
 
     state.totalRequests++;
 
@@ -257,6 +285,7 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     blockedRequests: number;
     authFailures: number;
     rateLimitHits: number;
+    activeRequests: number;
   } | null {
     const state = this.gatewayStates.get(nodeId);
     if (!state) return null;
@@ -266,6 +295,7 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       blockedRequests: state.blockedRequests,
       authFailures: state.authFailures,
       rateLimitHits: state.rateLimitHits,
+      activeRequests: state.activeRequests,
     };
   }
 

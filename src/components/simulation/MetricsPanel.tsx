@@ -10,10 +10,11 @@ import { useArchitectureStore } from '@/store/architecture-store';
 import { OutputPanel } from './OutputPanel';
 import { ValidationPanel } from './ValidationPanel';
 import { WaterfallView } from './WaterfallView';
+import { BottleneckPanel } from './BottleneckPanel';
 import { MetricSparkline } from './MetricSparkline';
 import { cn } from '@/lib/utils';
 
-type BottomTab = 'metrics' | 'output' | 'validation' | 'waterfall';
+type BottomTab = 'metrics' | 'output' | 'validation' | 'waterfall' | 'bottlenecks';
 
 function SaturationBadge({ saturation }: { saturation: number }) {
   if (saturation >= 90) {
@@ -25,8 +26,33 @@ function SaturationBadge({ saturation }: { saturation: number }) {
   return <span className="text-[8px] px-1 py-0 bg-signal-healthy/15 text-signal-healthy font-mono" style={{ borderRadius: '2px' }}>OK</span>;
 }
 
+/** Downsample resource samples to ~1 per second by averaging within each second bucket. */
+function downsampleToSeconds(samples: { timestamp: number; cpu: number; memory: number; network: number; queuedRequests: number; activeConnections: number; disk?: number; nodeId: string }[]) {
+  if (samples.length <= 60) return samples;
+  const buckets = new Map<number, typeof samples>();
+  for (const s of samples) {
+    const sec = Math.floor(s.timestamp / 1000);
+    const bucket = buckets.get(sec) || [];
+    bucket.push(s);
+    buckets.set(sec, bucket);
+  }
+  const result: typeof samples = [];
+  for (const [, bucket] of buckets) {
+    const avg = {
+      ...bucket[0],
+      cpu: bucket.reduce((sum, s) => sum + s.cpu, 0) / bucket.length,
+      memory: bucket.reduce((sum, s) => sum + s.memory, 0) / bucket.length,
+      queuedRequests: Math.round(bucket.reduce((sum, s) => sum + s.queuedRequests, 0) / bucket.length),
+      activeConnections: Math.round(bucket.reduce((sum, s) => sum + s.activeConnections, 0) / bucket.length),
+    };
+    result.push(avg);
+  }
+  return result.sort((a, b) => a.timestamp - b.timestamp).slice(-60);
+}
+
 function MetricsContent() {
   const metrics = useSimulationStore((s) => s.metrics);
+  const extendedMetrics = useSimulationStore((s) => s.extendedMetrics);
   const avgLatency = useSimulationStore(selectAverageLatency);
   const successRate = useSimulationStore(selectSuccessRate);
   const resourceUtilizations = useSimulationStore((s) => s.resourceUtilizations);
@@ -46,7 +72,7 @@ function MetricsContent() {
     return map;
   }, [nodes]);
 
-  // Build sparkline data per server from resourceHistory
+  // Build sparkline data per server from resourceHistory (full 60s, downsampled to ~60 points)
   const serverSparklines = useMemo(() => {
     const result = new Map<string, { cpu: number[]; memory: number[]; queue: number[] }>();
     const byNode = new Map<string, typeof resourceHistory>();
@@ -56,11 +82,12 @@ function MetricsContent() {
       byNode.set(sample.nodeId, list);
     }
     for (const [nodeId, samples] of byNode) {
-      const recent = samples.slice(-30);
+      // Downsample to ~60 points (1 per second) for the full 60s window
+      const downsampled = downsampleToSeconds(samples);
       result.set(nodeId, {
-        cpu: recent.map((s) => s.cpu),
-        memory: recent.map((s) => s.memory),
-        queue: recent.map((s) => s.queuedRequests),
+        cpu: downsampled.map((s) => s.cpu),
+        memory: downsampled.map((s) => s.memory),
+        queue: downsampled.map((s) => s.queuedRequests),
       });
     }
     return result;
@@ -68,22 +95,36 @@ function MetricsContent() {
 
   return (
     <div className="px-4 pb-3 border-t border-border pt-3 space-y-3">
-      {/* Detailed latency */}
-      <div className="grid grid-cols-4 gap-4 font-mono text-[11px]">
+      {/* Detailed latency with real percentiles */}
+      <div className="grid grid-cols-6 gap-3 font-mono text-[11px]">
         <div>
-          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">MIN LATENCY</span>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">MIN</span>
           <span className="text-foreground">{metrics.minLatency === Infinity ? 0 : metrics.minLatency}ms</span>
         </div>
         <div>
-          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">AVG LATENCY</span>
-          <span className="text-foreground">{avgLatency}ms</span>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">P50</span>
+          <span className={cn(
+            (extendedMetrics?.p50Latency ?? avgLatency) < 100 ? 'text-signal-healthy' : (extendedMetrics?.p50Latency ?? avgLatency) < 500 ? 'text-signal-warning' : 'text-signal-critical'
+          )}>{Math.round(extendedMetrics?.p50Latency ?? avgLatency)}ms</span>
         </div>
         <div>
-          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">MAX LATENCY</span>
-          <span className="text-foreground">{metrics.maxLatency}ms</span>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">P95</span>
+          <span className={cn(
+            (extendedMetrics?.p95Latency ?? 0) < 200 ? 'text-signal-healthy' : (extendedMetrics?.p95Latency ?? 0) < 1000 ? 'text-signal-warning' : 'text-signal-critical'
+          )}>{Math.round(extendedMetrics?.p95Latency ?? 0)}ms</span>
         </div>
         <div>
-          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">SUCCESS RATE</span>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">P99</span>
+          <span className={cn(
+            (extendedMetrics?.p99Latency ?? 0) < 500 ? 'text-signal-healthy' : (extendedMetrics?.p99Latency ?? 0) < 2000 ? 'text-signal-warning' : 'text-signal-critical'
+          )}>{Math.round(extendedMetrics?.p99Latency ?? 0)}ms</span>
+        </div>
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">MAX</span>
+          <span className="text-foreground">{Math.round(metrics.maxLatency)}ms</span>
+        </div>
+        <div>
+          <span className="text-instrument text-[9px] text-muted-foreground block mb-0.5">SUCCES</span>
           <span className={cn(
             successRate >= 95 ? 'text-signal-healthy' : successRate >= 80 ? 'text-signal-warning' : 'text-signal-critical'
           )}>{successRate}%</span>
@@ -159,24 +200,24 @@ function MetricsContent() {
                   <div className="flex items-center gap-3 mt-1">
                     <div className="flex flex-col items-center gap-0.5">
                       <span className="text-[8px] text-muted-foreground/50">CPU</span>
-                      <MetricSparkline data={sparklines.cpu} width={100} height={28}
+                      <MetricSparkline data={sparklines.cpu} width={140} height={28}
                         color={util.cpu > 90 ? 'text-signal-critical' : util.cpu > 70 ? 'text-signal-warning' : 'text-blue-400'} />
                     </div>
                     <div className="flex flex-col items-center gap-0.5">
                       <span className="text-[8px] text-muted-foreground/50">MEM</span>
-                      <MetricSparkline data={sparklines.memory} width={100} height={28}
+                      <MetricSparkline data={sparklines.memory} width={140} height={28}
                         color={util.memory > 90 ? 'text-signal-critical' : util.memory > 70 ? 'text-signal-warning' : 'text-emerald-400'} />
                     </div>
                     {serverTsRps.length > 2 && (
                       <div className="flex flex-col items-center gap-0.5">
                         <span className="text-[8px] text-muted-foreground/50">REQ/5s</span>
-                        <MetricSparkline data={serverTsRps} width={100} height={28} color="text-blue-400" />
+                        <MetricSparkline data={serverTsRps} width={140} height={28} color="text-blue-400" />
                       </div>
                     )}
                     {serverTsErrors.length > 2 && serverTsErrors.some(v => v > 0) && (
                       <div className="flex flex-col items-center gap-0.5">
                         <span className="text-[8px] text-muted-foreground/50">ERR/5s</span>
-                        <MetricSparkline data={serverTsErrors} width={100} height={28} color="text-signal-critical" />
+                        <MetricSparkline data={serverTsErrors} width={140} height={28} color="text-signal-critical" />
                       </div>
                     )}
                   </div>
@@ -317,6 +358,69 @@ function MetricsContent() {
           </div>
         </div>
       )}
+
+      {/* API Gateway Stats */}
+      {(() => {
+        const gatewayNodes = nodes.filter((n) => n.type === 'api-gateway');
+        const withUtil = gatewayNodes.filter((gw) => (gw.data as Record<string, unknown>).utilization);
+        if (withUtil.length === 0) return null;
+        return (
+          <div>
+            <span className="text-instrument text-[9px] text-muted-foreground block mb-1">API GATEWAYS</span>
+            <div className="space-y-1.5">
+              {withUtil.map((gw) => {
+                const data = gw.data as { label: string; utilization: { totalRequests: number; blockedRequests: number; authFailures: number; rateLimitHits: number; activeConnections: number } };
+                const util = data.utilization;
+                const successRate = util.totalRequests > 0
+                  ? ((util.totalRequests - util.blockedRequests) / util.totalRequests * 100)
+                  : 100;
+                const rejectionRate = util.totalRequests > 0
+                  ? (util.blockedRequests / util.totalRequests * 100)
+                  : 0;
+                return (
+                  <div key={gw.id} className="px-2 py-1.5 bg-muted/30 border border-border font-mono text-[11px]" style={{ borderRadius: '2px' }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-foreground/80 truncate max-w-32">{data.label}</span>
+                      <span className={cn(
+                        'text-[8px] px-1 py-0 font-mono',
+                        successRate >= 95 ? 'bg-signal-healthy/15 text-signal-healthy' :
+                        successRate >= 80 ? 'bg-signal-warning/15 text-signal-warning' :
+                        'bg-signal-critical/15 text-signal-critical'
+                      )} style={{ borderRadius: '2px' }}>
+                        {successRate.toFixed(1)}% OK
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-[10px]">
+                      <div>
+                        <span className="text-muted-foreground block">Total</span>
+                        <span className="text-foreground">{util.totalRequests}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block">Rejet</span>
+                        <span className={cn(rejectionRate > 20 ? 'text-signal-critical' : rejectionRate > 5 ? 'text-signal-warning' : 'text-foreground')}>
+                          {util.blockedRequests}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block">Auth</span>
+                        <span className={cn(util.authFailures > 0 ? 'text-signal-warning' : 'text-foreground')}>
+                          {util.authFailures}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block">Rate</span>
+                        <span className={cn(util.rateLimitHits > 0 ? 'text-signal-critical' : 'text-foreground')}>
+                          {util.rateLimitHits}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -362,8 +466,18 @@ export function MetricsPanel() {
 
   const state = useSimulationStore((s) => s.state);
   const metrics = useSimulationStore((s) => s.metrics);
+  const extendedMetrics = useSimulationStore((s) => s.extendedMetrics);
+  const bottleneckAnalysis = useSimulationStore((s) => s.bottleneckAnalysis);
   const avgLatency = useSimulationStore(selectAverageLatency);
   const successRate = useSimulationStore(selectSuccessRate);
+
+  // Real percentiles from extended metrics (fallback to avg for P50)
+  const p50 = extendedMetrics?.p50Latency ?? avgLatency;
+  const p95 = extendedMetrics?.p95Latency ?? 0;
+  const p99 = extendedMetrics?.p99Latency ?? 0;
+
+  // Worst bottleneck for compact badge
+  const worstBottleneck = bottleneckAnalysis?.topBottlenecks?.[0] ?? null;
   const mode = useAppStore((s) => s.mode);
   const validationResult = useAppStore((s) => s.validationResult);
   const { events } = useSimulationEvents();
@@ -402,12 +516,14 @@ export function MetricsPanel() {
         data-tour="metrics-panel"
       >
         <div className="bg-card/95 backdrop-blur-sm border-t border-border">
-          {/* Compact telemetry bar — always visible */}
+          {/* Compact telemetry bar — always visible, two-row layout */}
           <div
-            className="flex items-center justify-between px-4 h-10 cursor-pointer hover:bg-muted/30 transition-colors"
+            className="cursor-pointer hover:bg-muted/30 transition-colors"
             onClick={() => setIsExpanded(!isExpanded)}
           >
-            <div className="flex items-center gap-6 font-mono text-[11px]">
+            {/* Primary row */}
+            <div className="flex items-center justify-between px-4 h-7">
+            <div className="flex items-center gap-5 font-mono text-[11px]">
               {hasSimData ? (
                 <>
                   {/* Status dot */}
@@ -423,12 +539,9 @@ export function MetricsPanel() {
 
                   <span className="text-border">|</span>
 
-                  {/* Key metrics inline */}
+                  {/* Primary metrics */}
                   <span className="text-muted-foreground">
                     REQ:<span className="text-foreground ml-1">{metrics.requestsSent.toLocaleString()}</span>
-                  </span>
-                  <span className="text-muted-foreground">
-                    RES:<span className="text-foreground ml-1">{metrics.successCount + metrics.errorCount}</span>
                   </span>
                   <span className="text-muted-foreground">
                     ERR:<span className={cn(
@@ -447,8 +560,8 @@ export function MetricsPanel() {
                   <span className="text-muted-foreground">
                     P50:<span className={cn(
                       'ml-1',
-                      avgLatency < 100 ? 'text-signal-healthy' : avgLatency < 500 ? 'text-signal-warning' : 'text-signal-critical'
-                    )}>{avgLatency}ms</span>
+                      p50 < 100 ? 'text-signal-healthy' : p50 < 500 ? 'text-signal-warning' : 'text-signal-critical'
+                    )}>{Math.round(p50)}ms</span>
                   </span>
                   <span className="text-muted-foreground">
                     RPS:<span className="text-foreground ml-1">{metrics.requestsPerSecond}</span>
@@ -476,6 +589,39 @@ export function MetricsPanel() {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Analyze button (visible when paused or idle with data) */}
+              {hasSimData && state !== 'running' && (
+                <button
+                  className="px-2 py-0.5 text-[10px] font-mono bg-primary/10 text-primary hover:bg-primary/20 rounded-sm transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    useSimulationStore.getState().setAnalysisMode(true);
+                  }}
+                >
+                  Analyser
+                </button>
+              )}
+
+              {/* Bottleneck alert badge */}
+              {worstBottleneck && worstBottleneck.impactScore >= 70 && (
+                <button
+                  className={cn(
+                    'flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono rounded-sm transition-colors',
+                    worstBottleneck.impactScore >= 90
+                      ? 'bg-signal-critical/15 text-signal-critical signal-pulse'
+                      : 'bg-signal-warning/15 text-signal-warning'
+                  )}
+                  onClick={(e) => { e.stopPropagation(); setActiveTab('bottlenecks'); setIsExpanded(true); }}
+                  title={`Goulot: ${worstBottleneck.nodeName} (impact ${Math.round(worstBottleneck.impactScore)})`}
+                >
+                  <span className={cn(
+                    'w-1.5 h-1.5 rounded-full',
+                    worstBottleneck.impactScore >= 90 ? 'bg-signal-critical' : 'bg-signal-warning'
+                  )} />
+                  <span className="max-w-20 truncate">{worstBottleneck.nodeName}</span>
+                </button>
+              )}
+
               {/* Tab buttons */}
               <div className="flex gap-px" style={{ borderRadius: '2px' }}>
                 <button
@@ -537,12 +683,52 @@ export function MetricsPanel() {
                 >
                   Traces
                 </button>
+                <button
+                  className={cn(
+                    'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors border-l border-border/30 relative',
+                    activeTab === 'bottlenecks'
+                      ? 'text-foreground bg-muted/50'
+                      : 'text-muted-foreground hover:text-foreground/70'
+                  )}
+                  style={{ borderRadius: '0 2px 2px 0' }}
+                  onClick={(e) => { e.stopPropagation(); setActiveTab('bottlenecks'); setIsExpanded(true); }}
+                >
+                  Goulots
+                </button>
               </div>
 
               <button className="text-muted-foreground hover:text-foreground transition-colors">
                 {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
               </button>
             </div>
+          </div>
+
+            {/* Secondary row — visible only when collapsed, shows P95/P99/Success% */}
+            {!isExpanded && hasSimData && p95 > 0 && (
+              <div className="flex items-center gap-5 px-4 h-4 pb-1 font-mono text-[10px]">
+                <span className="text-muted-foreground">
+                  RES:<span className="text-foreground ml-1">{metrics.successCount + metrics.errorCount}</span>
+                </span>
+                <span className="text-muted-foreground">
+                  P95:<span className={cn(
+                    'ml-1',
+                    p95 < 200 ? 'text-signal-healthy' : p95 < 1000 ? 'text-signal-warning' : 'text-signal-critical'
+                  )}>{Math.round(p95)}ms</span>
+                </span>
+                <span className="text-muted-foreground">
+                  P99:<span className={cn(
+                    'ml-1',
+                    p99 < 500 ? 'text-signal-healthy' : p99 < 2000 ? 'text-signal-warning' : 'text-signal-critical'
+                  )}>{Math.round(p99)}ms</span>
+                </span>
+                <span className="text-muted-foreground">
+                  Succes:<span className={cn(
+                    'ml-1',
+                    successRate >= 95 ? 'text-signal-healthy' : successRate >= 80 ? 'text-signal-warning' : 'text-signal-critical'
+                  )}>{successRate}%</span>
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Expanded details */}
@@ -567,6 +753,7 @@ export function MetricsPanel() {
                   {activeTab === 'output' && <OutputPanel eventCount={events.length} panelHeight={panelHeight} />}
                   {activeTab === 'validation' && <ValidationPanel panelHeight={panelHeight} />}
                   {activeTab === 'waterfall' && <WaterfallView panelHeight={panelHeight} />}
+                  {activeTab === 'bottlenecks' && <BottleneckPanel panelHeight={panelHeight} />}
                 </div>
               </motion.div>
             )}

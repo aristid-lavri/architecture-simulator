@@ -1,4 +1,4 @@
-import type { SimulationEvent, SimulationEventType, HttpMethod } from '@/types';
+import type { SimulationEvent, SimulationEventType, HttpMethod, HandlerDecisionAction, StateTransitionType } from '@/types';
 
 // Generate unique ID for events
 let eventCounter = 0;
@@ -20,7 +20,15 @@ export function createRequestSentEvent(
   method: HttpMethod,
   path: string,
   body?: string,
-  chainId?: string
+  chainId?: string,
+  enriched?: {
+    queryType?: 'read' | 'write' | 'transaction';
+    contentType?: 'static' | 'dynamic' | 'user-specific';
+    payloadSizeBytes?: number;
+    sourceIP?: string;
+    virtualClientId?: number;
+    authToken?: { tokenId: string; format: string; issuerId: string };
+  }
 ): SimulationEvent {
   return {
     id: generateEventId(),
@@ -34,6 +42,13 @@ export function createRequestSentEvent(
       method,
       path,
       body,
+      httpMethod: method,
+      queryType: enriched?.queryType,
+      contentType: enriched?.contentType,
+      payloadSizeBytes: enriched?.payloadSizeBytes,
+      sourceIP: enriched?.sourceIP,
+      virtualClientId: enriched?.virtualClientId,
+      authToken: enriched?.authToken,
     },
   };
 }
@@ -184,10 +199,125 @@ export function createSpanEndEvent(
   };
 }
 
+// --- Enriched trace events ---
+
+export function createHandlerDecisionEvent(
+  nodeId: string,
+  nodeType: string,
+  decision: HandlerDecisionAction,
+  chainId: string,
+  opts?: {
+    reason?: string;
+    targets?: string[];
+    httpMethod?: HttpMethod;
+    queryType?: 'read' | 'write' | 'transaction';
+    contentType?: 'static' | 'dynamic' | 'user-specific';
+    sourceIP?: string;
+    virtualClientId?: number;
+  }
+): SimulationEvent {
+  return {
+    id: generateEventId(),
+    type: 'HANDLER_DECISION',
+    sourceNodeId: nodeId,
+    chainId,
+    timestamp: Date.now(),
+    data: {
+      nodeType,
+      decision,
+      reason: opts?.reason,
+      targets: opts?.targets,
+      httpMethod: opts?.httpMethod,
+      queryType: opts?.queryType,
+      contentType: opts?.contentType,
+      sourceIP: opts?.sourceIP,
+      virtualClientId: opts?.virtualClientId,
+    },
+  };
+}
+
+export function createQueueEnterEvent(
+  nodeId: string,
+  chainId: string,
+  queueDepth: number,
+  priority?: number
+): SimulationEvent {
+  return {
+    id: generateEventId(),
+    type: 'QUEUE_ENTER',
+    sourceNodeId: nodeId,
+    chainId,
+    timestamp: Date.now(),
+    data: { queueDepth, priority },
+  };
+}
+
+export function createQueueExitEvent(
+  nodeId: string,
+  chainId: string,
+  waitTime: number,
+  queueDepth: number
+): SimulationEvent {
+  return {
+    id: generateEventId(),
+    type: 'QUEUE_EXIT',
+    sourceNodeId: nodeId,
+    chainId,
+    timestamp: Date.now(),
+    data: { waitTime, queueDepth },
+  };
+}
+
+export function createStateTransitionEvent(
+  nodeId: string,
+  transition: StateTransitionType,
+  previousState: string,
+  newState: string,
+  chainId?: string
+): SimulationEvent {
+  return {
+    id: generateEventId(),
+    type: 'STATE_TRANSITION',
+    sourceNodeId: nodeId,
+    chainId,
+    timestamp: Date.now(),
+    data: { transition, previousState, newState },
+  };
+}
+
+export function createResourceSnapshotEvent(
+  nodeId: string,
+  chainId: string,
+  snapshot: {
+    cpu: number;
+    memory: number;
+    activeConnections: number;
+    queuedRequests: number;
+    throughput?: number;
+    errorRate?: number;
+  }
+): SimulationEvent {
+  return {
+    id: generateEventId(),
+    type: 'RESOURCE_SNAPSHOT',
+    sourceNodeId: nodeId,
+    chainId,
+    timestamp: Date.now(),
+    data: {
+      cpu: snapshot.cpu,
+      memory: snapshot.memory,
+      activeConnections: snapshot.activeConnections,
+      queuedRequests: snapshot.queuedRequests,
+      throughput: snapshot.throughput,
+      errorRate: snapshot.errorRate,
+    },
+  };
+}
+
 // Simple event emitter for simulation events
 type EventHandler = (event: SimulationEvent) => void;
 
-const MAX_STORED_EVENTS = 500;
+const MAX_STORED_EVENTS = 2000;
 
 class SimulationEventEmitter {
   private handlers: Map<SimulationEventType | '*', Set<EventHandler>> = new Map();

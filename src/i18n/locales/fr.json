@@ -573,5 +573,20 @@
     "start": "Commencer",
     "finish": "Terminer",
     "stepOf": "sur"
+  },
+  "bottleneck": {
+    "tab": "Goulots",
+    "top3": "Top 3 goulots",
+    "rank": "Rang",
+    "impact": "Impact",
+    "saturation": "Satur.",
+    "latencyContrib": "Latence",
+    "queueGrowth": "File",
+    "spof": "Point unique de défaillance",
+    "spofNodes": "Points uniques de défaillance",
+    "predictedSat": "Saturation dans ~{time}s",
+    "stable": "Stable",
+    "noData": "En attente de données…",
+    "allNodes": "Tous les composants"
   }
 }

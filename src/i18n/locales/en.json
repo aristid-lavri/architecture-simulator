@@ -573,5 +573,20 @@
     "start": "Start",
     "finish": "Finish",
     "stepOf": "of"
+  },
+  "bottleneck": {
+    "tab": "Bottlenecks",
+    "top3": "Top 3 bottlenecks",
+    "rank": "Rank",
+    "impact": "Impact",
+    "saturation": "Satur.",
+    "latencyContrib": "Latency",
+    "queueGrowth": "Queue",
+    "spof": "Single point of failure",
+    "spofNodes": "Single points of failure",
+    "predictedSat": "Saturation in ~{time}s",
+    "stable": "Stable",
+    "noData": "Waiting for data…",
+    "allNodes": "All components"
   }
 }

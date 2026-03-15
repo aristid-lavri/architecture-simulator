@@ -271,6 +271,15 @@ export class MetricsCollector {
     this.perHierarchyMetrics.set(parentId, { ...aggregated });
   }
 
+  /** Retourne toutes les métriques brutes par serveur pour l'analyse de goulots. */
+  getAllServerMetrics(): Map<string, { requests: number; errors: number; totalLatency: number; rps: number }> {
+    const result = new Map<string, { requests: number; errors: number; totalLatency: number; rps: number }>();
+    for (const [nodeId, m] of this.perServerMetrics) {
+      result.set(nodeId, { requests: m.requests, errors: m.errors, totalLatency: m.totalLatency, rps: m.rps });
+    }
+    return result;
+  }
+
   getServerMetrics(nodeId: string): { throughput: number; errorRate: number } {
     const m = this.perServerMetrics.get(nodeId);
     if (!m || m.requests === 0) return { throughput: 0, errorRate: 0 };

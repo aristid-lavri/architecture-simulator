@@ -114,6 +114,12 @@ export class CircuitBreakerHandler implements NodeRequestHandler {
     return this.getOrCreateState(nodeId).state;
   }
 
+  getNodeState(nodeId: string): { state: CircuitBreakerState; failureCount: number } | null {
+    const s = this.nodeStates.get(nodeId);
+    if (!s) return null;
+    return { state: s.state, failureCount: s.failureCount };
+  }
+
   private getOrCreateState(nodeId: string): CircuitBreakerNodeState {
     let state = this.nodeStates.get(nodeId);
     if (!state) {
