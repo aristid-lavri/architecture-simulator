@@ -442,7 +442,7 @@ export function Header() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger
-                    disabled={getSnapshots().length === 0}
+                    disabled={mounted && getSnapshots().length === 0}
                     className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                   >
                     <History className="w-3 h-3" />

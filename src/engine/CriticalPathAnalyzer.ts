@@ -1,4 +1,4 @@
-import type { SimulationEvent, TraceSpan, RequestTrace, CriticalPathAnalysis } from '@/types';
+import type { SimulationEvent, TraceSpan, RequestTrace, CriticalPathAnalysis, HandlerDecisionAction } from '@/types';
 import { simulationEvents } from './events';
 
 const MAX_TRACES = 100;
@@ -6,7 +6,8 @@ const MAX_SPANS_PER_TRACE = 50;
 
 /**
  * Collecte les spans emis pendant la simulation et reconstruit les traces distribuees.
- * Ecoute les evenements SPAN_START/SPAN_END via le simulationEvents emitter.
+ * Ecoute les evenements SPAN_START/SPAN_END/HANDLER_DECISION/RESOURCE_SNAPSHOT
+ * via le simulationEvents emitter.
  * Fournit l'analyse du chemin critique (bottleneck, % temps, patterns N+1).
  */
 export class CriticalPathAnalyzer {
@@ -15,6 +16,10 @@ export class CriticalPathAnalyzer {
   private unsubscribers: (() => void)[] = [];
   private nodeLabels: Map<string, string> = new Map();
   private listeners: Set<() => void> = new Set();
+  /** Map spanKey (chainId:nodeId) → pending decision info to attach to spans. */
+  private pendingDecisions: Map<string, { decision: HandlerDecisionAction; reason?: string; targets?: string[] }> = new Map();
+  /** Map spanKey (chainId:nodeId) → resource snapshot to attach to spans. */
+  private pendingSnapshots: Map<string, { cpu: number; memory: number; activeConnections: number; queuedRequests: number }> = new Map();
 
   /** Demarre l'ecoute des evenements de span. */
   start(nodeLabels: Map<string, string>): void {
@@ -23,8 +28,10 @@ export class CriticalPathAnalyzer {
 
     const unsubStart = simulationEvents.on('SPAN_START', (event) => this.handleSpanStart(event));
     const unsubEnd = simulationEvents.on('SPAN_END', (event) => this.handleSpanEnd(event));
+    const unsubDecision = simulationEvents.on('HANDLER_DECISION', (event) => this.handleDecision(event));
+    const unsubResource = simulationEvents.on('RESOURCE_SNAPSHOT', (event) => this.handleResourceSnapshot(event));
 
-    this.unsubscribers.push(unsubStart, unsubEnd);
+    this.unsubscribers.push(unsubStart, unsubEnd, unsubDecision, unsubResource);
   }
 
   /** Arrete l'ecoute. */
@@ -37,6 +44,8 @@ export class CriticalPathAnalyzer {
   clear(): void {
     this.traces.clear();
     this.spanMap.clear();
+    this.pendingDecisions.clear();
+    this.pendingSnapshots.clear();
   }
 
   /** Retourne toutes les traces collectees, triees par startTime descendant. */
@@ -182,6 +191,21 @@ export class CriticalPathAnalyzer {
     span.duration = event.timestamp - span.startTime;
     span.status = event.data.isError ? 'error' : 'completed';
 
+    // Attach pending decision and resource snapshot to the span
+    const spanKey = `${span.chainId}:${span.nodeId}`;
+    const pendingDecision = this.pendingDecisions.get(spanKey);
+    if (pendingDecision) {
+      span.decision = pendingDecision.decision;
+      span.decisionReason = pendingDecision.reason;
+      span.forwardTargets = pendingDecision.targets;
+      this.pendingDecisions.delete(spanKey);
+    }
+    const pendingSnapshot = this.pendingSnapshots.get(spanKey);
+    if (pendingSnapshot) {
+      span.resourceSnapshot = pendingSnapshot;
+      this.pendingSnapshots.delete(spanKey);
+    }
+
     // Mettre a jour la trace
     const trace = this.traces.get(span.chainId);
     if (trace) {
@@ -196,6 +220,33 @@ export class CriticalPathAnalyzer {
     }
 
     this.notify();
+  }
+
+  /** Stocke la decision du handler pour l'attacher au span correspondant. */
+  private handleDecision(event: SimulationEvent): void {
+    const { chainId, sourceNodeId } = event;
+    if (!chainId) return;
+
+    const spanKey = `${chainId}:${sourceNodeId}`;
+    this.pendingDecisions.set(spanKey, {
+      decision: event.data.decision as HandlerDecisionAction,
+      reason: event.data.reason,
+      targets: event.data.targets,
+    });
+  }
+
+  /** Stocke le snapshot de ressources pour l'attacher au span correspondant. */
+  private handleResourceSnapshot(event: SimulationEvent): void {
+    const { chainId, sourceNodeId } = event;
+    if (!chainId) return;
+
+    const spanKey = `${chainId}:${sourceNodeId}`;
+    this.pendingSnapshots.set(spanKey, {
+      cpu: event.data.cpu ?? 0,
+      memory: event.data.memory ?? 0,
+      activeConnections: event.data.activeConnections ?? 0,
+      queuedRequests: event.data.queuedRequests ?? 0,
+    });
   }
 }
 

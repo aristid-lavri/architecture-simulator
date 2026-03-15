@@ -368,17 +368,21 @@ export function FlowCanvas() {
   const incrementRequestsSent = useSimulationStore((s) => s.incrementRequestsSent);
   const recordResponse = useSimulationStore((s) => s.recordResponse);
   const setMetrics = useSimulationStore((s) => s.setMetrics);
+  const setExtendedMetrics = useSimulationStore((s) => s.setExtendedMetrics);
   const setResourceUtilization = useSimulationStore((s) => s.setResourceUtilization);
   const addResourceSample = useSimulationStore((s) => s.addResourceSample);
   const updateClientGroupStats = useSimulationStore((s) => s.updateClientGroupStats);
   const addTimeSeriesSnapshot = useSimulationStore((s) => s.addTimeSeriesSnapshot);
   const stopSimulation = useSimulationStore((s) => s.stop);
+  const setBottleneckAnalysis = useSimulationStore((s) => s.setBottleneckAnalysis);
+  const bottleneckAnalysis = useSimulationStore((s) => s.bottleneckAnalysis);
   const faultInjections = useSimulationStore((s) => s.faultInjections);
   const isolatedNodes = useSimulationStore((s) => s.isolatedNodes);
 
   // Chaos mode — context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
   const registerEngineMetricsProvider = useSimulationStore((s) => s.registerEngineMetricsProvider);
+  const registerEngineReportDataProvider = useSimulationStore((s) => s.registerEngineReportDataProvider);
 
   // Get persisted nodes and edges from architecture store
   const {
@@ -568,31 +572,46 @@ export function FlowCanvas() {
     saveNodesAndEdges(nodes, edges);
   }, [nodes, edges, saveNodesAndEdges]);
 
-  // Sync node statuses from simulation store to node data
+  // Sync node statuses and bottleneck heatmap from simulation store to node data
   useEffect(() => {
-    if (nodeStates.size === 0) return;
+    if (nodeStates.size === 0 && !bottleneckAnalysis) return;
 
     setNodes((currentNodes) =>
       currentNodes.map((node) => {
         const nodeState = nodeStates.get(node.id);
-        if (nodeState && node.data.status !== nodeState.status) {
-          // Set className on React Flow node wrapper for CSS-based fault visuals
-          const faultClass =
-            nodeState.status === 'down'
-              ? 'node-fault-down'
-              : nodeState.status === 'degraded'
-              ? 'node-fault-degraded'
-              : '';
-          return {
-            ...node,
-            className: faultClass,
-            data: { ...node.data, status: nodeState.status },
-          };
+        const statusChanged = nodeState && node.data.status !== nodeState.status;
+        const bnInfo = bottleneckAnalysis?.allNodes.find((b) => b.nodeId === node.id);
+
+        if (!statusChanged && !bnInfo) return node;
+
+        // Fault classes take priority over heatmap
+        const faultClass =
+          nodeState?.status === 'down'
+            ? 'node-fault-down'
+            : nodeState?.status === 'degraded'
+            ? 'node-fault-degraded'
+            : '';
+
+        // Heatmap classes only when no fault
+        let heatmapClasses = '';
+        if (!faultClass && bnInfo) {
+          heatmapClasses = `node-heatmap-${bnInfo.heatmapLevel}`;
+          if (bnInfo.rank === 1) heatmapClasses += ' node-bottleneck-pulse';
+          if (bnInfo.isSpof) heatmapClasses += ' node-spof';
         }
-        return node;
+
+        const className = [faultClass, heatmapClasses].filter(Boolean).join(' ');
+
+        return {
+          ...node,
+          className,
+          data: statusChanged
+            ? { ...node.data, status: nodeState!.status }
+            : node.data,
+        };
       })
     );
-  }, [nodeStates, setNodes]);
+  }, [nodeStates, bottleneckAnalysis, setNodes]);
 
   // Simulation engine ref
   const engineRef = useRef<SimulationEngine | null>(null);
@@ -606,11 +625,13 @@ export function FlowCanvas() {
     incrementRequestsSent,
     recordResponse,
     setMetrics,
+    setExtendedMetrics,
     setResourceUtilization,
     addResourceSample,
     updateClientGroupStats,
     addTimeSeriesSnapshot,
     stopSimulation,
+    setBottleneckAnalysis,
   });
 
   // Update callbacks ref when they change
@@ -623,13 +644,15 @@ export function FlowCanvas() {
       incrementRequestsSent,
       recordResponse,
       setMetrics,
+      setExtendedMetrics,
       setResourceUtilization,
       addResourceSample,
       updateClientGroupStats,
       addTimeSeriesSnapshot,
       stopSimulation,
+      setBottleneckAnalysis,
     };
-  }, [addParticle, removeParticle, updateParticle, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setResourceUtilization, addResourceSample, updateClientGroupStats, addTimeSeriesSnapshot, stopSimulation]);
+  }, [addParticle, removeParticle, updateParticle, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setExtendedMetrics, setResourceUtilization, addResourceSample, updateClientGroupStats, addTimeSeriesSnapshot, stopSimulation, setBottleneckAnalysis]);
 
   // Initialize simulation engine once
   useEffect(() => {
@@ -653,8 +676,10 @@ export function FlowCanvas() {
           callbacksRef.current.setNodeStatus(nodeId, status);
         },
         onMetricsUpdate: (metrics) => {
-          console.log('Metrics update:', metrics);
           callbacksRef.current.setMetrics(metrics);
+        },
+        onExtendedMetricsUpdate: (extendedMetrics) => {
+          callbacksRef.current.setExtendedMetrics(extendedMetrics);
         },
         onResourceUpdate: (nodeId, utilization) => {
           callbacksRef.current.setResourceUtilization(nodeId, utilization);
@@ -682,22 +707,38 @@ export function FlowCanvas() {
             )
           );
         },
+        onApiGatewayUpdate: (nodeId, utilization) => {
+          setNodes((prevNodes) =>
+            prevNodes.map((node) =>
+              node.id === nodeId
+                ? { ...node, data: { ...node.data, utilization } }
+                : node
+            )
+          );
+        },
         onTimeSeriesSnapshot: (snapshot) => {
           callbacksRef.current.addTimeSeriesSnapshot(snapshot);
         },
         onSimulationComplete: () => {
           callbacksRef.current.stopSimulation('completed');
         },
+        onBottleneckUpdate: (analysis) => {
+          callbacksRef.current.setBottleneckAnalysis(analysis);
+        },
       });
 
       // Register metrics provider so store.stop() can pull fresh metrics from engine
       registerEngineMetricsProvider(() => engineRef.current!.getFinalMetrics().metrics);
+
+      // Register report data provider so store.stop() can pull extended data before cleanup
+      registerEngineReportDataProvider(() => engineRef.current!.getReportData());
     }
 
     return () => {
       registerEngineMetricsProvider(null);
+      registerEngineReportDataProvider(null);
     };
-  }, [registerEngineMetricsProvider]);
+  }, [registerEngineMetricsProvider, registerEngineReportDataProvider]);
 
   // Update engine with current nodes and edges
   useEffect(() => {

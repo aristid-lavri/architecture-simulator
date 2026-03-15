@@ -17,6 +17,11 @@ const EVENT_TYPE_CONFIG: Record<SimulationEventType, { label: string; color: str
   ERROR: { label: 'ERR', color: 'text-signal-critical' },
   SPAN_START: { label: 'SPAN→', color: 'text-purple-400' },
   SPAN_END: { label: 'SPAN←', color: 'text-purple-300' },
+  HANDLER_DECISION: { label: 'DECIDE', color: 'text-amber-400' },
+  QUEUE_ENTER: { label: 'Q.IN', color: 'text-orange-400' },
+  QUEUE_EXIT: { label: 'Q.OUT', color: 'text-orange-300' },
+  STATE_TRANSITION: { label: 'STATE', color: 'text-rose-400' },
+  RESOURCE_SNAPSHOT: { label: 'RES', color: 'text-cyan-400' },
 };
 
 type SortMode = 'time' | 'latency' | 'status';

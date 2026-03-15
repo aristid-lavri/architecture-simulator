@@ -391,6 +391,43 @@
 }
 
 /* ═══════════════════════════════════════
+   BOTTLENECK HEATMAP OVERLAY
+   ═══════════════════════════════════════ */
+
+.node-heatmap-green .node-instrument {
+  box-shadow: 0 0 8px oklch(0.72 0.19 155 / 0.3), var(--node-shadow);
+}
+.node-heatmap-yellow .node-instrument {
+  box-shadow: 0 0 8px oklch(0.85 0.18 85 / 0.4), var(--node-shadow);
+}
+.node-heatmap-orange .node-instrument {
+  box-shadow: 0 0 10px oklch(0.75 0.18 55 / 0.5), var(--node-shadow);
+}
+.node-heatmap-red .node-instrument {
+  box-shadow: 0 0 12px oklch(0.65 0.22 25 / 0.6), var(--node-shadow);
+}
+
+.node-heatmap-green .node-signal-bar { background-color: oklch(0.72 0.19 155) !important; }
+.node-heatmap-yellow .node-signal-bar { background-color: oklch(0.85 0.18 85) !important; }
+.node-heatmap-orange .node-signal-bar { background-color: oklch(0.75 0.18 55) !important; }
+.node-heatmap-red .node-signal-bar { background-color: oklch(0.65 0.22 25) !important; }
+
+/* Top bottleneck — pulsing red glow */
+.node-bottleneck-pulse .node-instrument {
+  animation: bottleneck-pulse 1.5s ease-in-out infinite;
+}
+@keyframes bottleneck-pulse {
+  0%, 100% { box-shadow: 0 0 12px oklch(0.65 0.22 25 / 0.6), var(--node-shadow); }
+  50% { box-shadow: 0 0 20px oklch(0.65 0.22 25 / 0.9), 0 0 30px oklch(0.65 0.22 25 / 0.3), var(--node-shadow); }
+}
+
+/* SPOF indicator — dashed border */
+.node-spof .node-instrument {
+  outline: 1px dashed oklch(0.65 0.22 25 / 0.6);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════
    LATENCY PATH HIGHLIGHTING
    ═══════════════════════════════════════ */
 

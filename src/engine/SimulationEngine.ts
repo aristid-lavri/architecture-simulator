@@ -13,6 +13,7 @@ import type {
   ApiGatewayNodeData,
   MessageQueueNodeData,
   MessageQueueUtilization,
+  ApiGatewayUtilization,
   IdentityProviderNodeData,
 } from '@/types';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
@@ -28,6 +29,11 @@ import {
   createErrorEvent,
   createSpanStartEvent,
   createSpanEndEvent,
+  createHandlerDecisionEvent,
+  createQueueEnterEvent,
+  createQueueExitEvent,
+  createStateTransitionEvent,
+  createResourceSnapshotEvent,
   simulationEvents,
 } from './events';
 import { MetricsCollector } from './metrics';
@@ -67,6 +73,8 @@ import {
 import { HierarchicalResourceManager } from './HierarchicalResourceManager';
 import { TokenStore, type SimulatedToken } from './TokenStore';
 import { criticalPathAnalyzer } from './CriticalPathAnalyzer';
+import { BottleneckAnalyzer } from './BottleneckAnalyzer';
+import type { BottleneckAnalysis } from '@/types';
 import { pluginRegistry } from '@/plugins';
 
 /**
@@ -83,10 +91,13 @@ interface SimulationCallbacks {
   onResourceUpdate?: (nodeId: string, utilization: ResourceUtilization) => void;
   onClientGroupUpdate?: (groupId: string, activeClients: number, requestsSent: number) => void;
   onMessageQueueUpdate?: (nodeId: string, utilization: MessageQueueUtilization) => void;
+  onApiGatewayUpdate?: (nodeId: string, utilization: ApiGatewayUtilization) => void;
   onHierarchicalResourceUpdate?(parentId: string, aggregated: ResourceUtilization, children: { childId: string; utilization: ResourceUtilization }[]): void;
   onError?: (error: Error) => void;
   onTimeSeriesSnapshot?: (snapshot: import('@/types').TimeSeriesSnapshot) => void;
   onSimulationComplete?: () => void;
+  onBottleneckUpdate?: (analysis: BottleneckAnalysis) => void;
+  onExtendedMetricsUpdate?: (metrics: ReturnType<MetricsCollector['getExtendedMetrics']>) => void;
 }
 
 /** Etat interne d'un serveur HTTP pendant la simulation (ressources, utilisation, requetes actives). */
@@ -229,6 +240,9 @@ export class SimulationEngine {
   private lastMetricsUpdateTime: number = 0;
   private metricsUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Extended metrics push interval (1s)
+  private extendedMetricsInterval: ReturnType<typeof setInterval> | null = null;
+
   // Handler infrastructure
   private handlerRegistry: HandlerRegistry;
   private loadBalancerManager: LoadBalancerManager;
@@ -238,12 +252,19 @@ export class SimulationEngine {
   private cacheHandler: CacheHandler;
   private httpServerHandler: HttpServerHandler;
   private messageQueueHandler: MessageQueueHandler;
+  private apiGatewayHandler: ApiGatewayHandler;
+  private databaseHandler: DatabaseHandler;
+  private circuitBreakerHandler: CircuitBreakerHandler;
 
   // Hierarchical resource management
   private hierarchicalResourceManager: HierarchicalResourceManager;
 
   // Token store for authentication flow (Issue #52)
   private tokenStore: TokenStore = new TokenStore();
+
+  // Bottleneck analysis
+  private bottleneckAnalyzer: BottleneckAnalyzer = new BottleneckAnalyzer();
+  private bottleneckTickCounter: number = 0;
 
   // Chaos mode — fault provider callback
   private faultProvider: (() => { faults: Map<string, 'down' | 'degraded'>; isolated: Set<string> }) | null = null;
@@ -268,6 +289,9 @@ export class SimulationEngine {
     this.cacheHandler = new CacheHandler(this.cacheManager);
     this.httpServerHandler = new HttpServerHandler();
     this.messageQueueHandler = new MessageQueueHandler();
+    this.apiGatewayHandler = new ApiGatewayHandler();
+    this.databaseHandler = new DatabaseHandler(this.databaseManager);
+    this.circuitBreakerHandler = new CircuitBreakerHandler();
 
     // Initialize handler registry
     this.handlerRegistry = new HandlerRegistry();
@@ -276,10 +300,10 @@ export class SimulationEngine {
       this.loadBalancerHandler,
       this.cacheHandler,
       this.httpServerHandler,
-      new ApiGatewayHandler(),
-      new DatabaseHandler(this.databaseManager),
+      this.apiGatewayHandler,
+      this.databaseHandler,
       this.messageQueueHandler,
-      new CircuitBreakerHandler(),
+      this.circuitBreakerHandler,
       new CDNHandler(),
       new WAFHandler(),
       new FirewallHandler(),
@@ -361,6 +385,59 @@ export class SimulationEngine {
     return {
       metrics: this.metrics.getMetrics(),
       extendedMetrics: this.metrics.getExtendedMetrics(),
+    };
+  }
+
+  /** Retourne toutes les donnees enrichies pour le rapport final (appeler AVANT stop). */
+  getReportData(): {
+    extendedMetrics: ReturnType<MetricsCollector['getExtendedMetrics']>;
+    traces: import('@/types').RequestTrace[];
+    resourceHistory: import('@/types').ResourceSample[];
+    apiGatewayStats: Record<string, import('@/types').ApiGatewayUtilization>;
+    messageQueueStats: Record<string, import('@/types').MessageQueueUtilization>;
+    cacheStats: Record<string, import('@/types').CacheUtilization>;
+    databaseStats: Record<string, import('@/types').DatabaseUtilization>;
+  } {
+    const apiGatewayStats: Record<string, import('@/types').ApiGatewayUtilization> = {};
+    const messageQueueStats: Record<string, import('@/types').MessageQueueUtilization> = {};
+    const cacheStats: Record<string, import('@/types').CacheUtilization> = {};
+    const databaseStats: Record<string, import('@/types').DatabaseUtilization> = {};
+
+    for (const node of this.nodes) {
+      if (node.type === 'api-gateway') {
+        const stats = this.apiGatewayHandler.getStats(node.id);
+        if (stats) {
+          apiGatewayStats[node.id] = {
+            totalRequests: stats.totalRequests,
+            blockedRequests: stats.blockedRequests,
+            authFailures: stats.authFailures,
+            rateLimitHits: stats.rateLimitHits,
+            activeConnections: stats.activeRequests,
+            avgLatency: 0,
+          };
+        }
+      } else if (node.type === 'message-queue') {
+        const stats = this.messageQueueHandler.getStats(node.id);
+        if (stats) {
+          messageQueueStats[node.id] = { ...stats, throughput: 0 };
+        }
+      } else if (node.type === 'cache') {
+        const util = this.cacheManager.getUtilization(node.id);
+        if (util) cacheStats[node.id] = util;
+      } else if (node.type === 'database') {
+        const util = this.databaseManager.getUtilization(node.id);
+        if (util) databaseStats[node.id] = util;
+      }
+    }
+
+    return {
+      extendedMetrics: this.metrics.getExtendedMetrics(),
+      traces: criticalPathAnalyzer.getTraces(),
+      resourceHistory: this.metrics.getResourceHistory(),
+      apiGatewayStats,
+      messageQueueStats,
+      cacheStats,
+      databaseStats,
     };
   }
 
@@ -494,6 +571,9 @@ export class SimulationEngine {
     // Start time-series snapshot capture (every 5s)
     this.startTimeSeriesCapture();
 
+    // Start extended metrics push (every 1s) for percentiles, rejections, etc.
+    this.startExtendedMetricsPush();
+
     // Start animation loop
     this.particleManager.startAnimationLoop(() => this.state);
   }
@@ -549,6 +629,12 @@ export class SimulationEngine {
     if (this.timeSeriesInterval) {
       clearInterval(this.timeSeriesInterval);
       this.timeSeriesInterval = null;
+    }
+
+    // Stop extended metrics push
+    if (this.extendedMetricsInterval) {
+      clearInterval(this.extendedMetricsInterval);
+      this.extendedMetricsInterval = null;
     }
 
     // Clear request queues, chains, spans and tokens
@@ -787,25 +873,23 @@ export class SimulationEngine {
   }
 
   /**
-   * Vérifie si la cible nécessite un token et prépare l'authentification.
-   * Retourne true si la requête est prise en charge (acquireToken en cours), false sinon.
+   * Résout le token d'authentification de manière synchrone si possible.
+   * Retourne:
+   * - { needsAsync: false, token?: SimulatedToken } si le token est dispo ou pas d'auth requise
+   * - { needsAsync: true, idp, idpEdge } si un acquireToken async est nécessaire
    */
-  private prepareAuthAndSend(
+  private resolveAuthToken(
     client: Node,
-    edge: Edge,
     targetNode: Node,
-    virtualClientId: number | undefined,
-    doSend: (token?: SimulatedToken) => void
-  ): boolean {
+    virtualClientId: number | undefined
+  ): { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: Node; idpEdge: Edge } {
     // Vérifier si la cible est un API Gateway avec auth activée
     if (targetNode.type !== 'api-gateway') {
-      doSend();
-      return false;
+      return { needsAsync: false };
     }
     const gwData = targetNode.data as ApiGatewayNodeData;
     if (gwData.authType === 'none') {
-      doSend();
-      return false;
+      return { needsAsync: false };
     }
 
     // Auth requise — chercher un IdP connecté au client
@@ -814,22 +898,17 @@ export class SimulationEngine {
       // Pas d'IdP — auto-générer un token
       const token = this.tokenStore.getValidToken(client.id, 'auto', virtualClientId)
         || this.createAutoToken(client.id);
-      doSend(token);
-      return false;
+      return { needsAsync: false, token };
     }
 
     // Vérifier si un token valide existe déjà
     const existingToken = this.tokenStore.getValidToken(client.id, idp.node.id, virtualClientId);
     if (existingToken) {
-      doSend(existingToken);
-      return false;
+      return { needsAsync: false, token: existingToken };
     }
 
-    // Acquérir un token via l'IdP (async avec particule visible)
-    this.acquireToken(client, idp.edge, idp.node, virtualClientId, (token) => {
-      doSend(token);
-    });
-    return true;
+    // Token non disponible — acquireToken async nécessaire
+    return { needsAsync: true, idp: idp.node, idpEdge: idp.edge };
   }
 
   /**
@@ -923,10 +1002,15 @@ export class SimulationEngine {
 
     // Si pas de token pré-acquis, vérifier si auth requise (peut déclencher acquireToken async)
     if (!preAcquiredToken) {
-      const handled = this.prepareAuthAndSend(client, edge, targetNode, undefined, (token) => {
-        this.sendRequest(client, edge, token);
-      });
-      if (handled) return; // acquireToken en cours, sendRequest sera rappelé
+      const authResult = this.resolveAuthToken(client, targetNode, undefined);
+      if (authResult.needsAsync) {
+        // Acquérir un token via l'IdP (async), puis relancer sendRequest
+        this.acquireToken(client, authResult.idpEdge, authResult.idp, undefined, (token) => {
+          this.sendRequest(client, edge, token);
+        });
+        return;
+      }
+      preAcquiredToken = authResult.token;
     }
 
     // Update client status
@@ -939,7 +1023,7 @@ export class SimulationEngine {
     // Generate chainId early so it can be tracked from the first event
     const chainId = generateParticleId();
 
-    // Create request event
+    // Create request event (enriched with full context)
     const event = createRequestSentEvent(
       client.id,
       edge.target,
@@ -947,7 +1031,18 @@ export class SimulationEngine {
       data.method,
       data.path,
       undefined,
-      chainId
+      chainId,
+      {
+        queryType: deriveQueryType(data.method),
+        contentType: inferContentType(data.path),
+        payloadSizeBytes: estimatePayloadSize(data.method),
+        sourceIP: generateSourceIP(),
+        authToken: preAcquiredToken ? {
+          tokenId: preAcquiredToken.tokenId,
+          format: preAcquiredToken.format,
+          issuerId: preAcquiredToken.idpId,
+        } : undefined,
+      }
     );
     simulationEvents.emit(event);
 
@@ -1049,6 +1144,7 @@ export class SimulationEngine {
       this.metrics.recordResponse(false, Date.now() - chain.startTime);
       this.pushMetricsUpdate();
       simulationEvents.emit(createErrorEvent(server.id, 'node-down', chainId));
+      simulationEvents.emit(createStateTransitionEvent(server.id, 'node-down', 'processing', 'down', chainId));
       // Emit error span for tracing
       this.emitSpanStart(server.id, server.type ?? 'default', chainId);
       this.emitSpanEnd(server.id, chainId, true);
@@ -1057,6 +1153,9 @@ export class SimulationEngine {
     }
 
     const effectiveFault = serverFault === 'degraded' ? 'degraded' : parentFault === 'degraded' ? 'degraded' : null;
+    if (effectiveFault === 'degraded') {
+      simulationEvents.emit(createStateTransitionEvent(server.id, 'node-degraded', 'processing', 'degraded', chainId));
+    }
     this.callbacks.onNodeStatusChange(server.id, effectiveFault === 'degraded' ? 'degraded' : 'processing');
 
     // Emit REQUEST_RECEIVED event
@@ -1337,6 +1436,38 @@ export class SimulationEngine {
     // Emit PROCESSING_END event
     simulationEvents.emit(createProcessingEndEvent(sourceNode.id, chainId));
 
+    // --- Emit HANDLER_DECISION event (traces every handler action) ---
+    const nodeType = sourceNode.type ?? 'default';
+    const decisionTargets = decision.action === 'forward' || decision.action === 'notify'
+      ? decision.targets.map((t) => t.nodeId) : undefined;
+    const decisionReason = decision.action === 'reject' ? decision.reason : undefined;
+    simulationEvents.emit(createHandlerDecisionEvent(
+      sourceNode.id, nodeType, decision.action, chainId, {
+        reason: decisionReason,
+        targets: decisionTargets,
+        httpMethod: context.httpMethod,
+        queryType: context.queryType,
+        contentType: context.contentType,
+        sourceIP: context.sourceIP,
+        virtualClientId: context.virtualClientId,
+      }
+    ));
+
+    // --- Emit RESOURCE_SNAPSHOT if server has tracked resources ---
+    const serverState = this.serverStates.get(sourceNode.id);
+    if (serverState) {
+      const queue = this.requestQueues.get(sourceNode.id) || [];
+      const serverMetrics = this.metrics.getServerMetrics(sourceNode.id);
+      simulationEvents.emit(createResourceSnapshotEvent(sourceNode.id, chainId, {
+        cpu: serverState.utilization.cpu,
+        memory: serverState.utilization.memory,
+        activeConnections: serverState.utilization.activeConnections,
+        queuedRequests: queue.length,
+        throughput: serverMetrics.throughput,
+        errorRate: serverMetrics.errorRate,
+      }));
+    }
+
     // Emit SPAN_END for distributed tracing
     const isErrorDecision = decision.action === 'reject' || (decision.action === 'respond' && decision.isError);
     this.emitSpanEnd(sourceNode.id, chainId, isErrorDecision);
@@ -1408,7 +1539,13 @@ export class SimulationEngine {
         this.pushMetricsUpdate();
         this.callbacks.onNodeStatusChange(sourceNode.id, 'error');
         simulationEvents.emit(createErrorEvent(sourceNode.id, decision.reason || 'rejected', chainId));
-        this.sendChainResponse(chainId, sourceNode);
+        this.sendChainResponse(chainId, sourceNode, true);
+        // Reset rapide du statut après rejet (le rejet est instantané, pas besoin d'attendre le response hop)
+        setTimeout(() => {
+          if (this.state === 'running') {
+            this.callbacks.onNodeStatusChange(sourceNode.id, 'idle');
+          }
+        }, 300 / this.speed);
         break;
 
       case 'queue':
@@ -1530,6 +1667,7 @@ export class SimulationEngine {
       this.metrics.recordResponse(false, Date.now() - chain.startTime);
       this.pushMetricsUpdate();
       simulationEvents.emit(createErrorEvent(targetNode.id, 'node-down', chainId));
+      simulationEvents.emit(createStateTransitionEvent(targetNode.id, 'node-down', 'processing', 'down', chainId));
       // Emit error span for tracing
       this.emitSpanStart(targetNode.id, targetNode.type ?? 'default', chainId);
       this.emitSpanEnd(targetNode.id, chainId, true);
@@ -1538,6 +1676,9 @@ export class SimulationEngine {
     }
 
     const effectiveTargetFault = targetFault === 'degraded' ? 'degraded' : targetParentFault === 'degraded' ? 'degraded' : null;
+    if (effectiveTargetFault === 'degraded') {
+      simulationEvents.emit(createStateTransitionEvent(targetNode.id, 'node-degraded', 'processing', 'degraded', chainId));
+    }
     this.callbacks.onNodeStatusChange(targetNode.id, effectiveTargetFault === 'degraded' ? 'degraded' : 'processing');
 
     // Emit REQUEST_RECEIVED event
@@ -1639,14 +1780,14 @@ export class SimulationEngine {
   /**
    * Send response back through the chain
    */
-  private sendChainResponse(chainId: string, terminalNode: Node): void {
+  private sendChainResponse(chainId: string, terminalNode: Node, forceError?: boolean): void {
     if (this.state !== 'running') return;
 
     const chain = this.activeChains.get(chainId);
     if (!chain) return;
 
-    // Determine success/error based on terminal node
-    const isError = this.shouldNodeError(terminalNode);
+    // Determine success/error based on terminal node (forceError overrides for reject cases)
+    const isError = forceError ?? this.shouldNodeError(terminalNode);
 
     // Update terminal node status
     this.callbacks.onNodeStatusChange(terminalNode.id, isError ? 'error' : 'success');
@@ -1805,7 +1946,12 @@ export class SimulationEngine {
    */
   private initializeServerStates(): void {
     // Types that should NOT be tracked as resource-consuming servers
-    const excludedTypes = new Set(['http-client', 'client-group', 'network-zone']);
+    const excludedTypes = new Set([
+      'http-client', 'client-group', 'network-zone',
+      'api-gateway', 'load-balancer', 'cdn', 'waf',
+      'service-discovery', 'dns', 'firewall',
+      'circuit-breaker', 'cache', 'message-queue',
+    ]);
 
     const servers = this.nodes.filter((n) => n.type && !excludedTypes.has(n.type as string));
 
@@ -1893,10 +2039,15 @@ export class SimulationEngine {
 
     // Si pas de token pré-acquis, vérifier si auth requise
     if (!preAcquiredToken) {
-      const handled = this.prepareAuthAndSend(group, edge, targetNode, virtualClientId, (token) => {
-        this.sendClientGroupRequest(group, edge, data, virtualClientId, token);
-      });
-      if (handled) return;
+      const authResult = this.resolveAuthToken(group, targetNode, virtualClientId);
+      if (authResult.needsAsync) {
+        // Acquérir un token via l'IdP (async), puis relancer sendClientGroupRequest
+        this.acquireToken(group, authResult.idpEdge, authResult.idp, virtualClientId, (token) => {
+          this.sendClientGroupRequest(group, edge, data, virtualClientId, token);
+        });
+        return;
+      }
+      preAcquiredToken = authResult.token;
     }
 
     // Check server capacity
@@ -1912,14 +2063,18 @@ export class SimulationEngine {
         this.metrics.recordRejection();
         this.pushMetricsUpdate();
         simulationEvents.emit(createErrorEvent(targetNode.id, 'capacity', undefined));
+        simulationEvents.emit(createHandlerDecisionEvent(
+          targetNode.id, targetNode.type ?? 'default', 'reject', 'capacity-reject', { reason: 'capacity' }
+        ));
         return;
       }
 
       if (decision === 'queue') {
         // Add to queue
         const queue = this.requestQueues.get(targetNode.id) || [];
+        const queuedRequestId = generateParticleId();
         queue.push({
-          id: generateParticleId(),
+          id: queuedRequestId,
           clientGroupId: group.id,
           virtualClientId,
           queuedAt: Date.now(),
@@ -1929,6 +2084,8 @@ export class SimulationEngine {
         this.requestQueues.set(targetNode.id, queue);
         serverState.utilization.queuedRequests = queue.length;
         this.metrics.recordQueued(queue.length);
+        // Emit QUEUE_ENTER event
+        simulationEvents.emit(createQueueEnterEvent(targetNode.id, queuedRequestId, queue.length));
         return;
       }
     }
@@ -1946,7 +2103,7 @@ export class SimulationEngine {
     // Create a request chain for tracking
     const chainId = generateParticleId();
 
-    // Create request event
+    // Create request event (enriched with full context)
     const event = createRequestSentEvent(
       group.id,
       edge.target,
@@ -1954,7 +2111,19 @@ export class SimulationEngine {
       reqType.method,
       reqType.path,
       reqType.body,
-      chainId
+      chainId,
+      {
+        queryType: deriveQueryType(reqType.method),
+        contentType: inferContentType(reqType.path),
+        payloadSizeBytes: estimatePayloadSize(reqType.method),
+        sourceIP: generateSourceIP(virtualClientId),
+        virtualClientId,
+        authToken: preAcquiredToken ? {
+          tokenId: preAcquiredToken.tokenId,
+          format: preAcquiredToken.format,
+          issuerId: preAcquiredToken.idpId,
+        } : undefined,
+      }
     );
     simulationEvents.emit(event);
     const chain: RequestChain = {
@@ -2180,6 +2349,8 @@ export class SimulationEngine {
     // Record queue time
     const waitTime = Date.now() - queuedRequest.queuedAt;
     this.metrics.recordDequeued(waitTime);
+    // Emit QUEUE_EXIT event
+    simulationEvents.emit(createQueueExitEvent(serverId, queuedRequest.id, waitTime, queue.length));
 
     // Find the edge and send the request
     const edge = this.edges.find((e) => e.id === queuedRequest.edgeId);
@@ -2220,6 +2391,16 @@ export class SimulationEngine {
   /** Get all captured time-series snapshots. */
   getTimeSeries(): import('@/types').TimeSeriesSnapshot[] {
     return this.metrics.getTimeSeries();
+  }
+
+  /**
+   * Start periodic extended metrics push (every 1s) for percentiles, rejections, etc.
+   */
+  private startExtendedMetricsPush(): void {
+    this.extendedMetricsInterval = setInterval(() => {
+      if (this.state !== 'running') return;
+      this.callbacks.onExtendedMetricsUpdate?.(this.metrics.getExtendedMetrics());
+    }, 1000);
   }
 
   /**
@@ -2290,6 +2471,24 @@ export class SimulationEngine {
           this.callbacks.onMessageQueueUpdate(node.id, utilization);
         }
       });
+
+      // Sample API Gateway stats
+      const apiGatewayNodes = this.nodes.filter((n) => n.type === 'api-gateway');
+      apiGatewayNodes.forEach((node) => {
+        const stats = this.apiGatewayHandler.getStats(node.id);
+        if (stats && this.callbacks.onApiGatewayUpdate) {
+          const utilization: ApiGatewayUtilization = {
+            totalRequests: stats.totalRequests,
+            blockedRequests: stats.blockedRequests,
+            authFailures: stats.authFailures,
+            rateLimitHits: stats.rateLimitHits,
+            avgLatency: 0,
+            activeConnections: stats.activeRequests,
+          };
+          this.callbacks.onApiGatewayUpdate(node.id, utilization);
+        }
+      });
+
       // Cleanup orphaned chains (TTL: 30s)
       const chainTTL = 30000;
       const now = Date.now();
@@ -2298,6 +2497,66 @@ export class SimulationEngine {
           this.activeChains.delete(chainId);
         }
       });
+
+      // Bottleneck analysis every 1s (every 10 ticks)
+      this.bottleneckTickCounter++;
+      if (this.bottleneckTickCounter % 10 === 0 && this.callbacks.onBottleneckUpdate) {
+        // Collecter les stats multi-composant
+        const apiGatewayStats = new Map<string, { totalRequests: number; blockedRequests: number; rateLimitHits: number; authFailures: number }>();
+        this.nodes.filter((n) => n.type === 'api-gateway').forEach((n) => {
+          const s = this.apiGatewayHandler.getStats(n.id);
+          if (s) apiGatewayStats.set(n.id, s);
+        });
+
+        const messageQueueStats = new Map<string, { queueDepth: number; messagesPublished: number; messagesConsumed: number; messagesDeadLettered: number; avgProcessingTime: number }>();
+        this.nodes.filter((n) => n.type === 'message-queue').forEach((n) => {
+          const s = this.messageQueueHandler.getStats(n.id);
+          if (s) messageQueueStats.set(n.id, s);
+        });
+
+        const databaseStats = new Map<string, { activeConnections: number; connectionPoolUsage: number; queriesPerSecond: number; avgQueryTime: number }>();
+        this.nodes.filter((n) => n.type === 'database').forEach((n) => {
+          const u = this.databaseHandler.getUtilization(n.id);
+          if (u) databaseStats.set(n.id, u);
+        });
+
+        const circuitBreakerStats = new Map<string, { state: string; failureCount: number }>();
+        this.nodes.filter((n) => n.type === 'circuit-breaker').forEach((n) => {
+          const s = this.circuitBreakerHandler.getNodeState(n.id);
+          if (s) circuitBreakerStats.set(n.id, s);
+        });
+
+        const loadBalancerStats = new Map<string, { totalRequests: number; unhealthyBackends: number; totalBackends: number }>();
+        this.nodes.filter((n) => n.type === 'load-balancer').forEach((n) => {
+          const u = this.loadBalancerManager.getUtilization(n.id);
+          if (u) {
+            const unhealthy = u.backends.filter((b) => !b.healthy).length;
+            loadBalancerStats.set(n.id, { totalRequests: u.totalRequests, unhealthyBackends: unhealthy, totalBackends: u.backends.length });
+          }
+        });
+
+        const cacheStats = new Map<string, { hitCount: number; missCount: number; hitRatio: number }>();
+        this.nodes.filter((n) => n.type === 'cache').forEach((n) => {
+          const u = this.cacheManager.getUtilization(n.id);
+          if (u) cacheStats.set(n.id, { hitCount: u.hitCount, missCount: u.missCount, hitRatio: u.hitRatio });
+        });
+
+        const analysis = this.bottleneckAnalyzer.analyze({
+          serverStates: this.serverStates,
+          perServerMetrics: this.metrics.getAllServerMetrics(),
+          resourceHistory: this.metrics.getResourceHistory(),
+          edges: this.edges,
+          nodes: this.nodes,
+          criticalPathAnalyzer,
+          apiGatewayStats,
+          messageQueueStats,
+          databaseStats,
+          circuitBreakerStats,
+          loadBalancerStats,
+          cacheStats,
+        });
+        this.callbacks.onBottleneckUpdate(analysis);
+      }
     }, 100); // Sample every 100ms
   }
 }

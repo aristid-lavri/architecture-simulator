@@ -18,11 +18,14 @@ import {
   ScrollText,
   ChevronDown,
   ChevronRight,
+  BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSimulationStore, type SimulationReport } from '@/store/simulation-store';
 import { useArchitectureStore } from '@/store/architecture-store';
 import { cn } from '@/lib/utils';
+import { calculateHealthScore, type HealthVerdict } from '@/lib/health-score';
+import { generateRecommendations, type Recommendation, type RecommendationSeverity } from '@/lib/simulation-recommendations';
 import type { SimulationEvent, SimulationEventType, TimeSeriesSnapshot } from '@/types';
 import { MetricSparkline } from './MetricSparkline';
 
@@ -81,6 +84,11 @@ const EVENT_TYPE_STYLES: Record<SimulationEventType, { label: string; color: str
   ERROR: { label: 'ERR', color: 'text-red-500' },
   SPAN_START: { label: 'SPAN→', color: 'text-purple-400' },
   SPAN_END: { label: 'SPAN←', color: 'text-purple-300' },
+  HANDLER_DECISION: { label: 'DECIDE', color: 'text-amber-400' },
+  QUEUE_ENTER: { label: 'Q.IN', color: 'text-orange-400' },
+  QUEUE_EXIT: { label: 'Q.OUT', color: 'text-orange-300' },
+  STATE_TRANSITION: { label: 'STATE', color: 'text-rose-400' },
+  RESOURCE_SNAPSHOT: { label: 'RES', color: 'text-cyan-400' },
 };
 
 interface ChainSummary {
@@ -264,6 +272,85 @@ interface ReportContentProps {
   report: SimulationReport;
 }
 
+function HealthScoreDisplay({ report }: { report: SimulationReport }) {
+  const health = useMemo(() => calculateHealthScore(report), [report]);
+  const verdictConfig: Record<HealthVerdict, { label: string; color: string; bg: string }> = {
+    healthy: { label: 'Architecture saine', color: 'text-green-500', bg: 'bg-green-500' },
+    degraded: { label: 'Dégradation détectée', color: 'text-yellow-500', bg: 'bg-yellow-500' },
+    critical: { label: 'Problèmes critiques', color: 'text-red-500', bg: 'bg-red-500' },
+  };
+  const config = verdictConfig[health.verdict];
+
+  return (
+    <div className="flex items-center gap-6 p-4 bg-muted/30 rounded-lg border">
+      {/* Score circle */}
+      <div className="relative w-16 h-16 shrink-0">
+        <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="4" className="text-muted/50" />
+          <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="4"
+            className={config.color}
+            strokeDasharray={`${health.score * 1.76} 176`}
+            strokeLinecap="round"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={cn('text-lg font-bold', config.color)}>{health.score}</span>
+        </div>
+      </div>
+      {/* Verdict + penalties */}
+      <div className="flex-1 min-w-0">
+        <div className={cn('text-sm font-semibold', config.color)}>{config.label}</div>
+        {health.penalties.length > 0 && (
+          <div className="mt-1 space-y-0.5">
+            {health.penalties.slice(0, 3).map((p, i) => (
+              <div key={i} className="text-xs text-muted-foreground flex items-center gap-1">
+                <span className="text-signal-critical">-{p.points}</span>
+                <span>{p.reason}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecommendationsSection({ report }: { report: SimulationReport }) {
+  const recommendations = useMemo(() => generateRecommendations(report), [report]);
+  const severityConfig: Record<RecommendationSeverity, { icon: string; color: string; bg: string }> = {
+    critical: { icon: '✗', color: 'text-red-500', bg: 'bg-red-500/10' },
+    warning: { icon: '⚠', color: 'text-yellow-500', bg: 'bg-yellow-500/10' },
+    info: { icon: 'ℹ', color: 'text-blue-400', bg: 'bg-blue-400/10' },
+  };
+
+  if (recommendations.length === 0) {
+    return (
+      <div className="p-4 bg-green-500/10 rounded-lg text-center">
+        <span className="text-green-500 font-medium">Aucun problème détecté</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {recommendations.map((rec, i) => {
+        const config = severityConfig[rec.severity];
+        return (
+          <div key={i} className={cn('p-3 rounded-lg', config.bg)}>
+            <div className="flex items-start gap-2">
+              <span className={cn('text-sm shrink-0', config.color)}>{config.icon}</span>
+              <div className="min-w-0">
+                <div className={cn('text-sm font-medium', config.color)}>{rec.message}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{rec.suggestion}</div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ReportContent({ report }: ReportContentProps) {
   const { metrics, resourceUtilizations, clientGroupStats, duration, endReason } = report;
 
@@ -304,6 +391,9 @@ function ReportContent({ report }: ReportContentProps) {
         </div>
       </div>
 
+      {/* 1. Executive Summary — Health Score */}
+      <HealthScoreDisplay report={report} />
+
       {/* Duration Info */}
       <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-lg">
         <Clock className="h-8 w-8 text-muted-foreground" />
@@ -343,26 +433,44 @@ function ReportContent({ report }: ReportContentProps) {
         />
       </div>
 
-      {/* Latency Metrics */}
+      {/* Latency Metrics with Percentiles */}
       <div className="space-y-2">
         <h4 className="font-medium flex items-center gap-2">
           <TrendingUp className="h-4 w-4" />
           Latence
         </h4>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
           <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="text-xs text-muted-foreground mb-1">Minimum</div>
+            <div className="text-xs text-muted-foreground mb-1">Min</div>
             <div className="text-lg font-semibold text-green-500">
               {metrics.minLatency === Infinity ? 0 : metrics.minLatency}ms
             </div>
           </div>
           <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="text-xs text-muted-foreground mb-1">Moyenne</div>
+            <div className="text-xs text-muted-foreground mb-1">P50</div>
+            <div className="text-lg font-semibold">
+              {Math.round(report.extendedMetrics?.p50Latency ?? avgLatency)}ms
+            </div>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-3 text-center">
+            <div className="text-xs text-muted-foreground mb-1">Moy</div>
             <div className="text-lg font-semibold">{avgLatency}ms</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="text-xs text-muted-foreground mb-1">Maximum</div>
-            <div className="text-lg font-semibold text-orange-500">{metrics.maxLatency}ms</div>
+            <div className="text-xs text-muted-foreground mb-1">P95</div>
+            <div className={cn('text-lg font-semibold', (report.extendedMetrics?.p95Latency ?? 0) > 500 ? 'text-yellow-500' : '')}>
+              {Math.round(report.extendedMetrics?.p95Latency ?? 0)}ms
+            </div>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-3 text-center">
+            <div className="text-xs text-muted-foreground mb-1">P99</div>
+            <div className={cn('text-lg font-semibold', (report.extendedMetrics?.p99Latency ?? 0) > 1000 ? 'text-orange-500' : '')}>
+              {Math.round(report.extendedMetrics?.p99Latency ?? 0)}ms
+            </div>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-3 text-center">
+            <div className="text-xs text-muted-foreground mb-1">Max</div>
+            <div className="text-lg font-semibold text-orange-500">{Math.round(metrics.maxLatency)}ms</div>
           </div>
         </div>
       </div>
@@ -537,6 +645,49 @@ function ReportContent({ report }: ReportContentProps) {
         </div>
       )}
 
+      {/* Bottleneck Summary */}
+      {report.bottleneckAnalysis && report.bottleneckAnalysis.topBottlenecks.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="font-medium flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Goulots d&apos;étranglement
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {report.bottleneckAnalysis.topBottlenecks.slice(0, 3).map((b, i) => (
+              <div key={b.nodeId} className="bg-muted/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm">{['🥇', '🥈', '🥉'][i]}</span>
+                  <span className="text-sm font-medium truncate">{b.nodeName}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Impact: <span className={cn(
+                    'font-semibold',
+                    b.impactScore >= 70 ? 'text-red-500' : b.impactScore >= 40 ? 'text-yellow-500' : 'text-green-500'
+                  )}>{Math.round(b.impactScore)}</span></span>
+                  <span>·</span>
+                  <SaturationBadge saturation={b.saturation} />
+                  {b.isSpof && <span className="text-red-500 font-medium">SPOF</span>}
+                </div>
+                {b.reasons.length > 0 && (
+                  <div className="mt-1 text-[10px] text-muted-foreground truncate">
+                    {b.reasons.slice(0, 2).join(' · ')}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recommendations */}
+      <div className="space-y-2">
+        <h4 className="font-medium flex items-center gap-2">
+          <ScrollText className="h-4 w-4" />
+          Recommandations
+        </h4>
+        <RecommendationsSection report={report} />
+      </div>
+
       {/* Request Traces */}
       {report.events && report.events.length > 0 && (
         <TracesSection events={report.events} />
@@ -550,6 +701,7 @@ export function SimulationReportDrawer() {
   const showReport = useSimulationStore((s) => s.showReport);
   const setShowReport = useSimulationStore((s) => s.setShowReport);
   const clearReport = useSimulationStore((s) => s.clearReport);
+  const setAnalysisMode = useSimulationStore((s) => s.setAnalysisMode);
   const reset = useSimulationStore((s) => s.reset);
 
   const handleClose = () => {
@@ -602,6 +754,10 @@ export function SimulationReportDrawer() {
             <div className="flex items-center justify-between p-4 border-b shrink-0">
               <h2 className="text-xl font-bold">Rapport de simulation</h2>
               <div className="flex items-center gap-2">
+                <Button variant="default" size="sm" onClick={() => { setShowReport(false); setAnalysisMode(true); }}>
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Analyser en détail
+                </Button>
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <Download className="h-4 w-4 mr-2" />
                   Exporter
