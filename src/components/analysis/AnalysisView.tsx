@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Download, BarChart3, Activity, Server, AlertTriangle, GitBranch, ScrollText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSimulationStore, type SimulationReport } from '@/store/simulation-store';
@@ -12,8 +12,9 @@ import { ResourcesTab } from './ResourcesTab';
 import { BottlenecksTab } from './BottlenecksTab';
 import { TracesTab } from './TracesTab';
 import { RecommendationsTab } from './RecommendationsTab';
+import { ComponentAnalyticsTab } from './ComponentAnalyticsTab';
 
-type AnalysisTab = 'overview' | 'performance' | 'resources' | 'bottlenecks' | 'traces' | 'recommendations';
+type AnalysisTab = 'overview' | 'performance' | 'resources' | 'bottlenecks' | 'traces' | 'recommendations' | 'analytics';
 
 const tabs: { id: AnalysisTab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Vue d\'ensemble', icon: <BarChart3 className="w-4 h-4" /> },
@@ -22,6 +23,7 @@ const tabs: { id: AnalysisTab; label: string; icon: React.ReactNode }[] = [
   { id: 'bottlenecks', label: 'Goulots', icon: <AlertTriangle className="w-4 h-4" /> },
   { id: 'traces', label: 'Traces', icon: <GitBranch className="w-4 h-4" /> },
   { id: 'recommendations', label: 'Recommandations', icon: <ScrollText className="w-4 h-4" /> },
+  { id: 'analytics', label: 'Analytics', icon: <Activity className="w-4 h-4" /> },
 ];
 
 export function AnalysisView() {
@@ -33,10 +35,11 @@ export function AnalysisView() {
   // Use stored report (post-stop) or generate live snapshot (pause/running)
   const report = storedReport ?? generateLiveReport();
 
-  if (!report) {
-    setAnalysisMode(false);
-    return null;
-  }
+  useEffect(() => {
+    if (!report) setAnalysisMode(false);
+  }, [report, setAnalysisMode]);
+
+  if (!report) return null;
 
   const health = calculateHealthScore(report);
 
@@ -112,6 +115,7 @@ export function AnalysisView() {
           {activeTab === 'bottlenecks' && <BottlenecksTab report={report} />}
           {activeTab === 'traces' && <TracesTab report={report} />}
           {activeTab === 'recommendations' && <RecommendationsTab report={report} />}
+          {activeTab === 'analytics' && <ComponentAnalyticsTab />}
         </main>
       </div>
     </div>

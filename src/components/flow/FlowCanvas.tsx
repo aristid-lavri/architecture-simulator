@@ -66,6 +66,8 @@ import type { BackgroundJobNodeData } from '@/components/nodes/BackgroundJobNode
 import { pluginRegistry } from '@/plugins';
 import { LatencyPathPanel } from '@/components/simulation/LatencyPathPanel';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
+import { AnalyticsEngine } from '@/analytics';
+import { useAnalyticsStore } from '@/store/analytics-store';
 
 // Built-in node types
 const builtinNodeTypes = {
@@ -379,6 +381,12 @@ export function FlowCanvas() {
   const faultInjections = useSimulationStore((s) => s.faultInjections);
   const isolatedNodes = useSimulationStore((s) => s.isolatedNodes);
 
+  // Analytics Engine
+  const analyticsEngineRef = useRef<AnalyticsEngine | null>(null);
+  const updateComponentAnalytics = useAnalyticsStore((s) => s.updateComponentAnalytics);
+  const setSynthesis = useAnalyticsStore((s) => s.setSynthesis);
+  const resetAnalytics = useAnalyticsStore((s) => s.reset);
+
   // Chaos mode — context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
   const registerEngineMetricsProvider = useSimulationStore((s) => s.registerEngineMetricsProvider);
@@ -632,6 +640,9 @@ export function FlowCanvas() {
     addTimeSeriesSnapshot,
     stopSimulation,
     setBottleneckAnalysis,
+    updateComponentAnalytics,
+    setSynthesis,
+    resetAnalytics,
   });
 
   // Update callbacks ref when they change
@@ -651,12 +662,20 @@ export function FlowCanvas() {
       addTimeSeriesSnapshot,
       stopSimulation,
       setBottleneckAnalysis,
+      updateComponentAnalytics,
+      setSynthesis,
+      resetAnalytics,
     };
-  }, [addParticle, removeParticle, updateParticle, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setExtendedMetrics, setResourceUtilization, addResourceSample, updateClientGroupStats, addTimeSeriesSnapshot, stopSimulation, setBottleneckAnalysis]);
+  }, [addParticle, removeParticle, updateParticle, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setExtendedMetrics, setResourceUtilization, addResourceSample, updateClientGroupStats, addTimeSeriesSnapshot, stopSimulation, setBottleneckAnalysis, updateComponentAnalytics, setSynthesis, resetAnalytics]);
 
   // Initialize simulation engine once
   useEffect(() => {
     if (!engineRef.current) {
+      // Créer l'AnalyticsEngine en parallèle
+      analyticsEngineRef.current = new AnalyticsEngine((event) => {
+        callbacksRef.current.updateComponentAnalytics(event);
+      });
+
       engineRef.current = new SimulationEngine({
         onStateChange: () => {
           // Don't sync back to store - store controls engine, not vice versa
@@ -693,6 +712,7 @@ export function FlowCanvas() {
             activeConnections: utilization.activeConnections,
             queuedRequests: utilization.queuedRequests,
           });
+          analyticsEngineRef.current?.handleResourceUpdate(nodeId, utilization);
         },
         onClientGroupUpdate: (groupId, activeClients, requestsSent) => {
           callbacksRef.current.updateClientGroupStats(groupId, activeClients, requestsSent);
@@ -706,6 +726,7 @@ export function FlowCanvas() {
                 : node
             )
           );
+          analyticsEngineRef.current?.handleMessageQueueUpdate(nodeId, utilization);
         },
         onApiGatewayUpdate: (nodeId, utilization) => {
           setNodes((prevNodes) =>
@@ -715,11 +736,18 @@ export function FlowCanvas() {
                 : node
             )
           );
+          analyticsEngineRef.current?.handleApiGatewayUpdate(nodeId, utilization);
         },
         onTimeSeriesSnapshot: (snapshot) => {
           callbacksRef.current.addTimeSeriesSnapshot(snapshot);
+          analyticsEngineRef.current?.handleTimeSeriesSnapshot(snapshot);
+        },
+        onHierarchicalResourceUpdate: (parentId, aggregated, children) => {
+          analyticsEngineRef.current?.handleHierarchicalResourceUpdate(parentId, aggregated, children);
         },
         onSimulationComplete: () => {
+          const synthesis = analyticsEngineRef.current?.synthesize();
+          if (synthesis) callbacksRef.current.setSynthesis(synthesis);
           callbacksRef.current.stopSimulation('completed');
         },
         onBottleneckUpdate: (analysis) => {
@@ -786,6 +814,9 @@ export function FlowCanvas() {
       const engineState = engineRef.current.getState();
       console.log('Starting engine, current state:', engineState);
       if (engineState === 'idle') {
+        // Effacer la synthèse précédente avant de démarrer une nouvelle simulation
+        callbacksRef.current.setSynthesis(null);
+        analyticsEngineRef.current?.initialize(nodesRef.current);
         engineRef.current.start();
       } else if (engineState === 'paused') {
         engineRef.current.resume();
@@ -794,6 +825,8 @@ export function FlowCanvas() {
       engineRef.current.pause();
     } else if (simulationState === 'idle') {
       engineRef.current.stop();
+      callbacksRef.current.resetAnalytics(); // nettoie components runtime, préserve synthesis
+      analyticsEngineRef.current?.reset();
     }
   }, [mode, simulationState]);
 
@@ -960,11 +993,18 @@ export function FlowCanvas() {
     [nodes, setNodes, reparentNode]
   );
 
+  const setSelectedComponentId = useAnalyticsStore((s) => s.setSelectedComponentId);
+
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      setSelectedNodeId(node.id);
+      if (mode === 'simulation') {
+        // En simulation : sélectionner dans le panel analytics, NE PAS ouvrir les propriétés
+        setSelectedComponentId(node.id);
+      } else {
+        setSelectedNodeId(node.id);
+      }
     },
-    [setSelectedNodeId]
+    [mode, setSelectedNodeId, setSelectedComponentId]
   );
 
   const onEdgeClick = useCallback(

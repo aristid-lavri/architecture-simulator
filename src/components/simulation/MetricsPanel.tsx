@@ -12,9 +12,11 @@ import { ValidationPanel } from './ValidationPanel';
 import { WaterfallView } from './WaterfallView';
 import { BottleneckPanel } from './BottleneckPanel';
 import { MetricSparkline } from './MetricSparkline';
+import { ComponentAnalyticsPanel } from './ComponentAnalyticsPanel';
+import { useAnalyticsStore } from '@/store/analytics-store';
 import { cn } from '@/lib/utils';
 
-type BottomTab = 'metrics' | 'output' | 'validation' | 'waterfall' | 'bottlenecks';
+type BottomTab = 'metrics' | 'output' | 'validation' | 'waterfall' | 'bottlenecks' | 'component';
 
 function SaturationBadge({ saturation }: { saturation: number }) {
   if (saturation >= 90) {
@@ -497,6 +499,15 @@ export function MetricsPanel() {
     }
   }, [validationResult]);
 
+  // Auto-switch to component tab when a node is clicked on canvas during simulation
+  const selectedComponentId = useAnalyticsStore((s) => s.selectedComponentId);
+  useEffect(() => {
+    if (selectedComponentId && state !== 'idle') {
+      setActiveTab('component');
+      setIsExpanded(true);
+    }
+  }, [selectedComponentId, state]);
+
   const hasSimData = state !== 'idle' || metrics.requestsSent > 0 || events.length > 0;
   const hasValidation = validationResult !== null;
 
@@ -690,11 +701,24 @@ export function MetricsPanel() {
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground/70'
                   )}
-                  style={{ borderRadius: '0 2px 2px 0' }}
                   onClick={(e) => { e.stopPropagation(); setActiveTab('bottlenecks'); setIsExpanded(true); }}
                 >
                   Goulots
                 </button>
+                {state !== 'idle' && (
+                  <button
+                    className={cn(
+                      'px-2 py-0.5 text-[10px] font-mono uppercase transition-colors border-l border-border/30',
+                      activeTab === 'component'
+                        ? 'text-foreground bg-muted/50'
+                        : 'text-muted-foreground hover:text-foreground/70'
+                    )}
+                    style={{ borderRadius: '0 2px 2px 0' }}
+                    onClick={(e) => { e.stopPropagation(); setActiveTab('component'); setIsExpanded(true); }}
+                  >
+                    Composant
+                  </button>
+                )}
               </div>
 
               <button className="text-muted-foreground hover:text-foreground transition-colors">
@@ -754,6 +778,7 @@ export function MetricsPanel() {
                   {activeTab === 'validation' && <ValidationPanel panelHeight={panelHeight} />}
                   {activeTab === 'waterfall' && <WaterfallView panelHeight={panelHeight} />}
                   {activeTab === 'bottlenecks' && <BottleneckPanel panelHeight={panelHeight} />}
+                  {activeTab === 'component' && <ComponentAnalyticsPanel panelHeight={panelHeight} />}
                 </div>
               </motion.div>
             )}
