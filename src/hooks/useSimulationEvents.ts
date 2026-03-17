@@ -17,6 +17,13 @@ export function useSimulationEvents() {
   const batchTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    // Load events already in the ring buffer (emitted before this component mounted)
+    const stored = simulationEvents.getEvents();
+    if (stored.length > 0) {
+      eventsRef.current = stored.slice(-MAX_EVENTS);
+      setEvents([...eventsRef.current]);
+    }
+
     const unsubscribe = simulationEvents.on('*' as SimulationEventType, (event: SimulationEvent) => {
       eventsRef.current.push(event);
       if (eventsRef.current.length > MAX_EVENTS) {

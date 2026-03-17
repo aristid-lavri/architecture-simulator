@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
@@ -495,29 +496,41 @@ export function Header() {
             </TooltipTrigger>
             <TooltipContent side="bottom">Templates d&apos;architecture</TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="end" className="min-w-48">
-            {architectureTemplates.map((template) => (
-              <DropdownMenuItem
-                key={template.id}
-                onClick={() => handleTemplateSelect(template)}
-                className="flex items-center gap-2"
-              >
-                <div className="flex-1 flex flex-col items-start gap-0.5">
-                  <span className="font-medium text-xs">{t(template.nameKey)}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {t(template.descriptionKey)}
-                  </span>
+          <DropdownMenuContent align="end" className="min-w-48 max-h-[70vh] overflow-y-auto">
+            {architectureTemplates.map((template) => {
+              const isFirstAdvanced = template.id === 'tax-system';
+              return (
+                <div key={template.id}>
+                  {isFirstAdvanced && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 py-1">
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Avancés</span>
+                      </div>
+                    </>
+                  )}
+                  <DropdownMenuItem
+                    onClick={() => handleTemplateSelect(template)}
+                    className="flex items-center gap-2"
+                  >
+                    <div className="flex-1 flex flex-col items-start gap-0.5">
+                      <span className="font-medium text-xs">{t(template.nameKey)}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {t(template.descriptionKey)}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleViewTemplateYaml(template); }}
+                      className="p-1 text-muted-foreground hover:text-signal-infra transition-colors shrink-0"
+                      aria-label={`Voir le YAML de ${t(template.nameKey)}`}
+                      title="Voir YAML"
+                    >
+                      <Code className="w-3 h-3" />
+                    </button>
+                  </DropdownMenuItem>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleViewTemplateYaml(template); }}
-                  className="p-1 text-muted-foreground hover:text-signal-infra transition-colors shrink-0"
-                  aria-label={`Voir le YAML de ${t(template.nameKey)}`}
-                  title="Voir YAML"
-                >
-                  <Code className="w-3 h-3" />
-                </button>
-              </DropdownMenuItem>
-            ))}
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
 

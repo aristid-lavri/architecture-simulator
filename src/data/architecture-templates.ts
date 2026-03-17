@@ -817,6 +817,8 @@ const ecommerceEdges: Edge[] = [
   { id: 'ecom-edge-gw-discovery', source: 'ecom-api-gateway', target: 'ecom-service-discovery', type: 'animated' },
 ];
 
+import { advancedTemplates } from './advanced-templates';
+
 export const architectureTemplates: ArchitectureTemplate[] = [
   {
     id: 'monolith',
@@ -853,6 +855,7 @@ export const architectureTemplates: ArchitectureTemplate[] = [
     nodes: ecommerceNodes,
     edges: ecommerceEdges,
   },
+  ...advancedTemplates,
 ];
 
 export function getTemplateById(id: string): ArchitectureTemplate | undefined {
