@@ -352,6 +352,18 @@
       "name": "E-Commerce Microservices",
       "description": "Plateforme e-commerce avec zones réseau, microservices et communication asynchrone"
     },
+    "taxSystem": {
+      "name": "Impôt Provincial",
+      "description": "Système fiscal : déclarations, calcul d'impôt, paiements, batch nocturne (35 nœuds)"
+    },
+    "medicalCentral": {
+      "name": "Centralisation Médicale",
+      "description": "DSQ avec 5 sous-groupes médicaux, séparation lecture/écriture, pipeline événementiel (42 nœuds)"
+    },
+    "bankingMultipole": {
+      "name": "Banque Multi-Pôles",
+      "description": "Groupe bancaire 3 pôles, 3 provinces, apps internes, réplication inter-provinciale (48 nœuds)"
+    },
     "confirmReplace": "Remplacer l'architecture actuelle?"
   },
   "chaos": {

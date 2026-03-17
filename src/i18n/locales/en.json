@@ -352,6 +352,18 @@
       "name": "E-Commerce Microservices",
       "description": "E-commerce platform with network zones, microservices and async communication"
     },
+    "taxSystem": {
+      "name": "Provincial Tax System",
+      "description": "Tax system: declarations, tax calculation, payments, nightly batch processing (35 nodes)"
+    },
+    "medicalCentral": {
+      "name": "Medical Data Centralization",
+      "description": "Health records with 5 medical subgroups, read/write separation, event pipeline (42 nodes)"
+    },
+    "bankingMultipole": {
+      "name": "Multi-Pole Banking Group",
+      "description": "Banking group with 3 poles, 3 provinces, internal apps, cross-province replication (48 nodes)"
+    },
     "confirmReplace": "Replace current architecture?"
   },
   "chaos": {

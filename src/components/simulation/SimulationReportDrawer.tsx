@@ -699,87 +699,28 @@ function ReportContent({ report }: ReportContentProps) {
 export function SimulationReportDrawer() {
   const report = useSimulationStore((s) => s.report);
   const showReport = useSimulationStore((s) => s.showReport);
-  const setShowReport = useSimulationStore((s) => s.setShowReport);
-  const clearReport = useSimulationStore((s) => s.clearReport);
   const setAnalysisMode = useSimulationStore((s) => s.setAnalysisMode);
-  const reset = useSimulationStore((s) => s.reset);
-
-  const handleClose = () => {
-    setShowReport(false);
-  };
-
-  const handleNewSimulation = () => {
-    clearReport();
-    reset();
-  };
-
-  const handleExport = () => {
-    if (!report) return;
-
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `simulation-report-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   return (
     <AnimatePresence>
       {showReport && report && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/50 z-50"
-            onClick={handleClose}
-          />
-
-          {/* Drawer */}
-          <motion.div
-            initial={{ y: '-100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '-100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 left-0 right-0 z-50 bg-background border-b shadow-xl max-h-[85vh] overflow-hidden flex flex-col"
-            data-tour="report-drawer"
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 8 }}
+          transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+          data-tour="report-drawer"
+        >
+          <Button
+            size="lg"
+            onClick={() => setAnalysisMode(true)}
+            className="shadow-lg gap-2 px-6"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b shrink-0">
-              <h2 className="text-xl font-bold">Rapport de simulation</h2>
-              <div className="flex items-center gap-2">
-                <Button variant="default" size="sm" onClick={() => { setShowReport(false); setAnalysisMode(true); }}>
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Analyser en détail
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleExport}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Exporter
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleNewSimulation}>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Nouvelle simulation
-                </Button>
-                <Button variant="ghost" size="icon" onClick={handleClose}>
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-auto p-6">
-              <div className="max-w-4xl mx-auto">
-                <ReportContent report={report} />
-              </div>
-            </div>
-          </motion.div>
-        </>
+            <BarChart3 className="h-5 w-5" />
+            Analyse détaillée
+          </Button>
+        </motion.div>
       )}
     </AnimatePresence>
   );

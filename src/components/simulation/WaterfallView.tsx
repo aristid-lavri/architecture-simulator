@@ -52,7 +52,7 @@ interface WaterfallViewProps {
 
 export function WaterfallView({ panelHeight }: WaterfallViewProps) {
   const { t } = useTranslation();
-  const [traces, setTraces] = useState<RequestTrace[]>([]);
+  const [traces, setTraces] = useState<RequestTrace[]>(() => criticalPathAnalyzer.getTraces());
   const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<CriticalPathAnalysis | null>(null);
   const simulationState = useSimulationStore((s) => s.state);
