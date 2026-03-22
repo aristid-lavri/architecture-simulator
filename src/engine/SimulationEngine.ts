@@ -69,7 +69,7 @@ interface SimulationCallbacks {
   onStateChange: (state: SimulationState) => void;
   onAddParticle: (particle: Particle) => void;
   onRemoveParticle: (particleId: string) => void;
-  onUpdateParticle: (particleId: string, updates: Partial<Particle>) => void;
+  onBatchUpdateProgress: (updates: Map<string, number>) => void;
   onNodeStatusChange: (nodeId: string, status: import('@/types').NodeStatus) => void;
   onMetricsUpdate: (metrics: ReturnType<MetricsCollector['getMetrics']>) => void;
   onResourceUpdate?: (nodeId: string, utilization: ResourceUtilization) => void;
@@ -173,6 +173,9 @@ export class SimulationEngine {
   // Chaos mode — fault provider callback
   private faultProvider: (() => { faults: Map<string, 'down' | 'degraded'>; isolated: Set<string> }) | null = null;
 
+  // O(1) node lookup map — rebuilt on setNodesAndEdges
+  private nodeMap: Map<string, Node> = new Map();
+
   // Sub-modules
   private serverStateManager: ServerStateManager;
   private chainManager: RequestChainManager;
@@ -186,7 +189,7 @@ export class SimulationEngine {
     this.particleManager = new ParticleManager({
       onAddParticle: callbacks.onAddParticle,
       onRemoveParticle: callbacks.onRemoveParticle,
-      onUpdateParticle: callbacks.onUpdateParticle,
+      onBatchUpdateProgress: callbacks.onBatchUpdateProgress,
     });
 
     // Initialize managers
@@ -341,12 +344,12 @@ export class SimulationEngine {
     if (!this.faultProvider) return false;
     const { isolated } = this.faultProvider();
     if (isolated.has(nodeId)) return true;
-    const node = this.nodes.find((n) => n.id === nodeId);
+    const node = this.nodeMap.get(nodeId);
     if (!node) return false;
     let currentId: string | undefined = node.parentId;
     while (currentId) {
       if (isolated.has(currentId)) return true;
-      const parent = this.nodes.find((n) => n.id === currentId);
+      const parent = this.nodeMap.get(currentId);
       if (!parent) return false;
       currentId = parent.parentId;
     }
@@ -354,14 +357,14 @@ export class SimulationEngine {
   }
 
   private isParentFaulted(nodeId: string): 'down' | 'degraded' | null {
-    const node = this.nodes.find((n) => n.id === nodeId);
+    const node = this.nodeMap.get(nodeId);
     if (!node) return null;
     let currentId: string | undefined = node.parentId;
     while (currentId) {
       const fault = this.getNodeFault(currentId);
       if (fault) return fault;
       if (this.isNodeIsolated(currentId)) return 'down';
-      const parent = this.nodes.find((n) => n.id === currentId);
+      const parent = this.nodeMap.get(currentId);
       if (!parent) return null;
       currentId = parent.parentId;
     }
@@ -384,7 +387,7 @@ export class SimulationEngine {
     const targetZoneId = this.hierarchicalResourceManager.findContainingZone(targetId);
     if (sourceZoneId && sourceZoneId === targetZoneId) return (1 + Math.random() * 4) / this.speed;
     if (sourceZoneId && targetZoneId && sourceZoneId !== targetZoneId) {
-      const sourceZone = this.nodes.find((n) => n.id === sourceZoneId);
+      const sourceZone = this.nodeMap.get(sourceZoneId);
       if (sourceZone) {
         const zoneData = sourceZone.data as { interZoneLatency?: number };
         return (zoneData.interZoneLatency || 10) / this.speed;
@@ -406,7 +409,7 @@ export class SimulationEngine {
   private findConnectedIdP(nodeId: string): { node: Node; edge: Edge } | null {
     const edges = this.edges.filter((e) => e.source === nodeId);
     for (const edge of edges) {
-      const target = this.nodes.find((n) => n.id === edge.target);
+      const target = this.nodeMap.get(edge.target);
       if (target && target.type === 'identity-provider') {
         return { node: target, edge };
       }
@@ -648,10 +651,15 @@ export class SimulationEngine {
   setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
     this.nodes = nodes;
     this.edges = edges;
+    // Build O(1) lookup map
+    this.nodeMap.clear();
+    for (const node of nodes) {
+      this.nodeMap.set(node.id, node);
+    }
     this.serverStateManager.setNodesAndEdges(nodes, edges);
-    this.chainManager.setNodesAndEdges(nodes, edges);
-    this.dispatcher.setNodesAndEdges(nodes, edges);
-    this.clientGroupSimulator.setNodesAndEdges(nodes, edges);
+    this.chainManager.setNodesAndEdges(nodes, edges, this.nodeMap);
+    this.dispatcher.setNodesAndEdges(nodes, edges, this.nodeMap);
+    this.clientGroupSimulator.setNodesAndEdges(nodes, edges, this.nodeMap);
   }
 
   /** Ajuste la vitesse de simulation. */
@@ -809,7 +817,7 @@ export class SimulationEngine {
 
   private sendRequest(client: Node, edge: Edge, preAcquiredToken?: SimulatedToken): void {
     const data = client.data as HttpClientNodeData;
-    const targetNode = this.nodes.find((n) => n.id === edge.target);
+    const targetNode = this.nodeMap.get(edge.target);
     if (!targetNode) return;
 
     if (!preAcquiredToken) {

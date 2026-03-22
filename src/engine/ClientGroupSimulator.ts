@@ -72,6 +72,7 @@ export interface ClientGroupSimulatorCallbacks {
 export class ClientGroupSimulator {
   private nodes: Node[] = [];
   private edges: Edge[] = [];
+  private nodeMap: Map<string, Node> = new Map();
   private speed: number = 1;
   private metrics: MetricsCollector;
   private callbacks: ClientGroupSimulatorCallbacks;
@@ -157,9 +158,10 @@ export class ClientGroupSimulator {
     this.findConnectedIdP = findConnectedIdP;
   }
 
-  setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
+  setNodesAndEdges(nodes: Node[], edges: Edge[], nodeMap?: Map<string, Node>): void {
     this.nodes = nodes;
     this.edges = edges;
+    if (nodeMap) this.nodeMap = nodeMap;
   }
 
   setSpeed(speed: number): void {
@@ -261,7 +263,7 @@ export class ClientGroupSimulator {
     virtualClientId: number,
     preAcquiredToken?: SimulatedToken,
   ): void {
-    const targetNode = this.nodes.find((n) => n.id === edge.target);
+    const targetNode = this.nodeMap.get(edge.target);
     if (!targetNode) return;
 
     if (!preAcquiredToken) {

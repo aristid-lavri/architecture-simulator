@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { HardDrive } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,7 +38,7 @@ function CloudStorageNode({ data, selected }: CloudStorageNodeProps) {
         style={{ backgroundColor: SIGNAL_CLOUD }}
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_CLOUD }} />
+      <NodeHandles color={SIGNAL_CLOUD} type="both" />
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -68,7 +68,6 @@ function CloudStorageNode({ data, selected }: CloudStorageNodeProps) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_CLOUD }} />
     </motion.div>
   );
 }

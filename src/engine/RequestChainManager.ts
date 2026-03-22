@@ -65,6 +65,7 @@ export class RequestChainManager {
   readonly activeChains: Map<string, RequestChain> = new Map();
 
   private nodes: Node[] = [];
+  private nodeMap: Map<string, Node> = new Map();
   private metrics: MetricsCollector;
   private callbacks: RequestChainCallbacks;
   private particleManager: ParticleManager;
@@ -105,8 +106,9 @@ export class RequestChainManager {
   }
 
   /** Met a jour le graphe et la vitesse. */
-  setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
+  setNodesAndEdges(nodes: Node[], edges: Edge[], nodeMap?: Map<string, Node>): void {
     this.nodes = nodes;
+    if (nodeMap) this.nodeMap = nodeMap;
   }
 
   setSpeed(speed: number): void {
@@ -174,7 +176,7 @@ export class RequestChainManager {
     if (!chain || currentEdgeIndex < 0) {
       // Reached the origin - cleanup
       if (chain) {
-        const originNode = this.nodes.find((n) => n.id === chain.originNodeId);
+        const originNode = this.nodeMap.get(chain.originNodeId);
         if (originNode) {
           this.callbacks.onNodeStatusChange(originNode.id, isError ? 'error' : 'success');
 
@@ -218,8 +220,8 @@ export class RequestChainManager {
     const previousNodeId = chain.currentPath[currentNodeIndex - 1];
     const edgeId = chain.edgePath[currentEdgeIndex];
 
-    const currentNode = this.nodes.find((n) => n.id === currentNodeId);
-    const previousNode = this.nodes.find((n) => n.id === previousNodeId);
+    const currentNode = this.nodeMap.get(currentNodeId);
+    const previousNode = this.nodeMap.get(previousNodeId);
 
     if (!currentNode || !previousNode) return;
 

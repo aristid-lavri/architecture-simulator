@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { Cloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -42,7 +42,7 @@ function ServerlessNode({ data, selected }: ServerlessNodeProps) {
         style={{ backgroundColor: SIGNAL_COMPUTE }}
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_COMPUTE }} />
+      <NodeHandles color={SIGNAL_COMPUTE} type="both" />
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -77,7 +77,6 @@ function ServerlessNode({ data, selected }: ServerlessNodeProps) {
         )}
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_COMPUTE }} />
     </motion.div>
   );
 }

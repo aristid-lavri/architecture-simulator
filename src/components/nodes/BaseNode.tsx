@@ -95,11 +95,30 @@ function BaseNode({ data, selected }: BaseNodeProps) {
         }}
       />
 
-      {/* Input Handle */}
+      {/* Target Handles — 4 sides */}
       <Handle
         type="target"
+        id="target-left"
         position={Position.Left}
         style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color }}
+      />
+      <Handle
+        type="target"
+        id="target-top"
+        position={Position.Top}
+        style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color, opacity: 0, width: 6, height: 6, minWidth: 0, minHeight: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        type="target"
+        id="target-right"
+        position={Position.Right}
+        style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color, opacity: 0, width: 6, height: 6, minWidth: 0, minHeight: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        type="target"
+        id="target-bottom"
+        position={Position.Bottom}
+        style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color, opacity: 0, width: 6, height: 6, minWidth: 0, minHeight: 0, pointerEvents: 'none' }}
       />
 
       {/* Header — instrument label */}
@@ -164,11 +183,30 @@ function BaseNode({ data, selected }: BaseNodeProps) {
         </div>
       )}
 
-      {/* Output Handle */}
+      {/* Source Handles — 4 sides */}
       <Handle
         type="source"
+        id="source-right"
         position={Position.Right}
         style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color }}
+      />
+      <Handle
+        type="source"
+        id="source-top"
+        position={Position.Top}
+        style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color, opacity: 0, width: 6, height: 6, minWidth: 0, minHeight: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        type="source"
+        id="source-left"
+        position={Position.Left}
+        style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color, opacity: 0, width: 6, height: 6, minWidth: 0, minHeight: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        type="source"
+        id="source-bottom"
+        position={Position.Bottom}
+        style={{ borderColor: isFaulted ? (isDown ? '#ef4444' : '#f97316') : color, opacity: 0, width: 6, height: 6, minWidth: 0, minHeight: 0, pointerEvents: 'none' }}
       />
     </motion.div>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { ShieldOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -37,7 +37,7 @@ function FirewallNode({ data, selected }: FirewallNodeProps) {
         style={{ backgroundColor: SIGNAL_SECURITY }}
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_SECURITY }} />
+      <NodeHandles color={SIGNAL_SECURITY} type="both" />
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -68,7 +68,6 @@ function FirewallNode({ data, selected }: FirewallNodeProps) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_SECURITY }} />
     </motion.div>
   );
 }

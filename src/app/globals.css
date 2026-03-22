@@ -121,8 +121,8 @@
   --node-shadow: 0 1px 3px oklch(0.15 0.035 250 / 8%);
 
   /* Edge colors — light */
-  --edge-color: oklch(0.15 0.035 250 / 25%);
-  --edge-color-active: oklch(0.15 0.035 250 / 35%);
+  --edge-color: oklch(0.15 0.035 250 / 50%);
+  --edge-color-active: oklch(0.15 0.035 250 / 65%);
 
   /* Grid colors — light */
   --grid-minor: oklch(0.15 0.035 250 / 5%);
@@ -186,8 +186,8 @@
   --node-shadow: 0 2px 8px oklch(0 0 0 / 30%);
 
   /* Edge colors — dark */
-  --edge-color: oklch(0.92 0.008 90 / 10%);
-  --edge-color-active: oklch(0.92 0.008 90 / 15%);
+  --edge-color: oklch(0.92 0.008 90 / 35%);
+  --edge-color-active: oklch(0.92 0.008 90 / 50%);
 
   /* Grid colors — dark */
   --grid-minor: oklch(0.92 0.008 90 / 5%);

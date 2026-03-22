@@ -45,12 +45,18 @@ import ApiServiceNode from '@/components/nodes/ApiServiceNode';
 import BackgroundJobNode from '@/components/nodes/BackgroundJobNode';
 import IdentityProviderNode from '@/components/nodes/IdentityProviderNode';
 import AnimatedEdge from '@/components/edges/AnimatedEdge';
+import { EdgeFilterBar } from '@/components/flow/EdgeFilterBar';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { cn } from '@/lib/utils';
-import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock, LayoutGrid } from 'lucide-react';
+import type { ConnectionProtocol } from '@/types';
+import { ZoomIn, ZoomOut, Maximize2, Lock, Unlock, LayoutGrid, Route } from 'lucide-react';
 import type { ComponentType } from '@/types';
 import { CONTAINER_TYPES, canBeChildOf } from '@/types';
 import { suggestProtocol } from '@/data/connector-compatibility';
+import { selectOptimalHandles, recalculateAllHandles } from '@/lib/handle-selector';
+import { distributeHandles } from '@/lib/port-distributor';
+import { computeOrthogonalRoute, parseHandleSide as parseRouteSide } from '@/lib/orthogonal-router';
+import type { RouteResult } from '@/lib/orthogonal-router';
 import { applyAutoLayout } from '@/lib/auto-layout';
 import { defaultClientGroupData, defaultServerResources, defaultDegradation, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultNetworkZoneData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultServerlessData, defaultServiceDiscoveryData, defaultCloudStorageData, defaultCloudFunctionData, defaultFirewallData, defaultContainerData, defaultDNSNodeData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData, defaultIdentityProviderData } from '@/types';
 import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
@@ -345,9 +351,21 @@ function getNodeAbsolutePosition(node: Node, nodes: Node[]): { x: number; y: num
   return { x: absX, y: absY };
 }
 
+function getHandlePoint(
+  obs: { x: number; y: number; width: number; height: number },
+  side: 'top' | 'right' | 'bottom' | 'left'
+): { x: number; y: number } {
+  switch (side) {
+    case 'right': return { x: obs.x + obs.width, y: obs.y + obs.height / 2 };
+    case 'left': return { x: obs.x, y: obs.y + obs.height / 2 };
+    case 'top': return { x: obs.x + obs.width / 2, y: obs.y };
+    case 'bottom': return { x: obs.x + obs.width / 2, y: obs.y + obs.height };
+  }
+}
+
 export function FlowCanvas() {
   const { t } = useTranslation();
-  const { mode, setSelectedNodeId, setSelectedEdgeId } = useAppStore();
+  const { mode, setSelectedNodeId, setSelectedEdgeId, selectedNodeId, edgeProtocolFilters, edgeRoutingMode } = useAppStore();
 
   // Merge built-in node types with plugin node types (réactif aux changements de plugins)
   const pluginSnapshot = useSyncExternalStore(
@@ -365,7 +383,7 @@ export function FlowCanvas() {
   const nodeStates = useSimulationStore((s) => s.nodeStates);
   const addParticle = useSimulationStore((s) => s.addParticle);
   const removeParticle = useSimulationStore((s) => s.removeParticle);
-  const updateParticle = useSimulationStore((s) => s.updateParticle);
+  const batchUpdateParticleProgress = useSimulationStore((s) => s.batchUpdateParticleProgress);
   const setNodeStatus = useSimulationStore((s) => s.setNodeStatus);
   const incrementRequestsSent = useSimulationStore((s) => s.incrementRequestsSent);
   const recordResponse = useSimulationStore((s) => s.recordResponse);
@@ -435,10 +453,28 @@ export function FlowCanvas() {
   const pendingSyncsRef = useRef(0);
 
   // Initialize from store only once after hydration
+  const handlesMigratedRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && (storedNodes.length > 0 || storedEdges.length > 0)) {
+      // Migrate existing edges: assign optimal handles to edges that lack them
+      const needsMigration = storedEdges.some((e) => !e.sourceHandle || !e.targetHandle);
+      let migratedEdges = storedEdges;
+      if (needsMigration && !handlesMigratedRef.current) {
+        const handleMap = recalculateAllHandles(storedEdges, storedNodes);
+        migratedEdges = storedEdges.map((edge) => {
+          if (edge.sourceHandle && edge.targetHandle) return edge;
+          const handles = handleMap.get(edge.id);
+          if (!handles) return edge;
+          return {
+            ...edge,
+            sourceHandle: edge.sourceHandle || handles.sourceHandle,
+            targetHandle: edge.targetHandle || handles.targetHandle,
+          };
+        });
+        handlesMigratedRef.current = true;
+      }
       setNodes(storedNodes);
-      setEdges(storedEdges);
+      setEdges(migratedEdges);
       initializedRef.current = true;
       pendingSyncsRef.current++;
     } else if (!initializedRef.current) {
@@ -628,7 +664,7 @@ export function FlowCanvas() {
   const callbacksRef = useRef({
     addParticle,
     removeParticle,
-    updateParticle,
+    batchUpdateParticleProgress,
     setNodeStatus,
     incrementRequestsSent,
     recordResponse,
@@ -650,7 +686,7 @@ export function FlowCanvas() {
     callbacksRef.current = {
       addParticle,
       removeParticle,
-      updateParticle,
+      batchUpdateParticleProgress,
       setNodeStatus,
       incrementRequestsSent,
       recordResponse,
@@ -666,7 +702,7 @@ export function FlowCanvas() {
       setSynthesis,
       resetAnalytics,
     };
-  }, [addParticle, removeParticle, updateParticle, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setExtendedMetrics, setResourceUtilization, addResourceSample, updateClientGroupStats, addTimeSeriesSnapshot, stopSimulation, setBottleneckAnalysis, updateComponentAnalytics, setSynthesis, resetAnalytics]);
+  }, [addParticle, removeParticle, batchUpdateParticleProgress, setNodeStatus, incrementRequestsSent, recordResponse, setMetrics, setExtendedMetrics, setResourceUtilization, addResourceSample, updateClientGroupStats, addTimeSeriesSnapshot, stopSimulation, setBottleneckAnalysis, updateComponentAnalytics, setSynthesis, resetAnalytics]);
 
   // Initialize simulation engine once
   useEffect(() => {
@@ -681,15 +717,13 @@ export function FlowCanvas() {
           // Don't sync back to store - store controls engine, not vice versa
         },
         onAddParticle: (particle) => {
-          console.log('Adding particle:', particle);
           callbacksRef.current.addParticle(particle);
         },
         onRemoveParticle: (id) => {
-          console.log('Removing particle:', id);
           callbacksRef.current.removeParticle(id);
         },
-        onUpdateParticle: (id, updates) => {
-          callbacksRef.current.updateParticle(id, updates);
+        onBatchUpdateProgress: (updates) => {
+          callbacksRef.current.batchUpdateParticleProgress(updates);
         },
         onNodeStatusChange: (nodeId, status) => {
           callbacksRef.current.setNodeStatus(nodeId, status);
@@ -847,12 +881,21 @@ export function FlowCanvas() {
         if (suggested) protocol = suggested;
       }
 
+      // Compute optimal handles based on node positions
+      let sourceHandle = params.sourceHandle ?? undefined;
+      let targetHandle = params.targetHandle ?? undefined;
+      if (sourceNode && targetNode) {
+        const optimal = selectOptimalHandles(sourceNode, targetNode, nodes);
+        sourceHandle = sourceHandle || optimal.sourceHandle;
+        targetHandle = targetHandle || optimal.targetHandle;
+      }
+
       const newEdge: Edge = {
         id: `edge-${params.source}-${params.target}-${Date.now()}`,
         source: params.source,
         target: params.target,
-        sourceHandle: params.sourceHandle ?? undefined,
-        targetHandle: params.targetHandle ?? undefined,
+        sourceHandle,
+        targetHandle,
         type: 'animated',
         ...(protocol ? { data: { protocol } } : {}),
       };
@@ -993,6 +1036,42 @@ export function FlowCanvas() {
     [nodes, setNodes, reparentNode]
   );
 
+  // Recalculate edge handles when nodes move (called after drag or layout)
+  const recalcEdgeHandles = useCallback(
+    (currentNodes: Node[]) => {
+      setEdges((currentEdges) => {
+        const handleMap = recalculateAllHandles(currentEdges, currentNodes);
+        let changed = false;
+        const updated = currentEdges.map((edge) => {
+          const handles = handleMap.get(edge.id);
+          if (!handles) return edge;
+          if (edge.sourceHandle === handles.sourceHandle && edge.targetHandle === handles.targetHandle) return edge;
+          changed = true;
+          return { ...edge, sourceHandle: handles.sourceHandle, targetHandle: handles.targetHandle };
+        });
+        return changed ? updated : currentEdges;
+      });
+    },
+    [setEdges]
+  );
+
+  // Recalculate handles after any node position change (debounced via onNodesChange)
+  const nodesChangeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrappedOnNodesChange = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      onNodesChange(changes);
+      // Check if any position change happened
+      const hasPositionChange = changes.some((c) => c.type === 'position' && c.position);
+      if (hasPositionChange) {
+        if (nodesChangeTimeoutRef.current) clearTimeout(nodesChangeTimeoutRef.current);
+        nodesChangeTimeoutRef.current = setTimeout(() => {
+          recalcEdgeHandles(nodes);
+        }, 100);
+      }
+    },
+    [onNodesChange, recalcEdgeHandles, nodes]
+  );
+
   const setSelectedComponentId = useAnalyticsStore((s) => s.setSelectedComponentId);
 
   const onNodeClick = useCallback(
@@ -1040,12 +1119,14 @@ export function FlowCanvas() {
     try {
       const layoutedNodes = await applyAutoLayout(nodes, edges);
       setNodes(layoutedNodes);
+      // Recalculate edge handles after layout
+      setTimeout(() => recalcEdgeHandles(layoutedNodes), 50);
     } catch (err) {
       console.error('Auto-layout failed:', err);
     } finally {
       setIsLayouting(false);
     }
-  }, [nodes, edges, setNodes, isLayouting]);
+  }, [nodes, edges, setNodes, isLayouting, recalcEdgeHandles]);
 
   // Latency path highlighting
   const [highlightedPath, setHighlightedPath] = useState<{ nodeIds: Set<string>; edgeIds: Set<string> } | null>(null);
@@ -1104,27 +1185,158 @@ export function FlowCanvas() {
     });
   }, [nodes, highlightedPath, validationNodeSeverity]);
 
-  const displayEdges = useMemo(() => {
-    return edges.map((edge) => {
-      let style = { ...edge.style };
+  // Protocol filtering: check if any filters are active
+  const hasActiveProtocolFilters = useMemo(() => {
+    return Object.values(edgeProtocolFilters).some((v) => v === false);
+  }, [edgeProtocolFilters]);
 
-      // Latency path highlighting
-      if (highlightedPath) {
-        if (highlightedPath.edgeIds.has(edge.id)) {
-          style = { ...style, stroke: 'oklch(0.70 0.15 220)', strokeWidth: 3 };
-        } else {
-          style = { ...style, opacity: 0.2 };
+  // Compute port distribution offsets
+  const portDistribution = useMemo(() => {
+    if (edges.length === 0) return null;
+    return distributeHandles(edges, nodes);
+  }, [edges, nodes]);
+
+  // Orthogonal routing computation
+  const orthogonalRoutes = useMemo(() => {
+    if (edgeRoutingMode !== 'orthogonal' || edges.length === 0 || nodes.length === 0) return null;
+
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+    // Build obstacle list from node bounding boxes
+    const obstacles = nodes
+      .filter((n) => n.type !== 'network-zone') // Zones are not obstacles
+      .map((n) => {
+        // Compute absolute position
+        let absX = n.position.x;
+        let absY = n.position.y;
+        let current = n;
+        while (current.parentId) {
+          const parent = nodeMap.get(current.parentId);
+          if (!parent) break;
+          absX += parent.position.x;
+          absY += parent.position.y;
+          current = parent;
         }
-      }
+        const width = (n.measured?.width ?? (n.style?.width as number | undefined)) || 160;
+        const height = (n.measured?.height ?? (n.style?.height as number | undefined)) || 60;
+        return { id: n.id, x: absX, y: absY, width, height };
+      });
 
-      // Validation edge highlighting
-      if (validationEdgeIds.has(edge.id)) {
-        style = { ...style, stroke: 'oklch(0.65 0.25 25)', strokeWidth: 2.5 };
-      }
+    const routes = new Map<string, RouteResult>();
 
-      return { ...edge, style };
-    });
-  }, [edges, highlightedPath, validationEdgeIds]);
+    for (const edge of edges) {
+      // Skip orthogonal routing for edges with user-defined anchors
+      const edgeAnchors = (edge.data as Record<string, unknown> | undefined)?.anchors as Array<{ x: number; y: number }> | undefined;
+      if (edgeAnchors && edgeAnchors.length > 0) continue;
+
+      const sourceNode = nodeMap.get(edge.source);
+      const targetNode = nodeMap.get(edge.target);
+      if (!sourceNode || !targetNode) continue;
+
+      // Get handle positions (approximate from node center + side)
+      const srcObs = obstacles.find((o) => o.id === edge.source);
+      const tgtObs = obstacles.find((o) => o.id === edge.target);
+      if (!srcObs || !tgtObs) continue;
+
+      const srcSide = parseRouteSide(edge.sourceHandle);
+      const tgtSide = parseRouteSide(edge.targetHandle);
+
+      const sourcePoint = getHandlePoint(srcObs, srcSide);
+      const targetPoint = getHandlePoint(tgtObs, tgtSide);
+
+      // Exclude source and target nodes from obstacles
+      const excludeIds = new Set([edge.source, edge.target]);
+      // Also exclude parent containers
+      if (sourceNode.parentId) excludeIds.add(sourceNode.parentId);
+      if (targetNode.parentId) excludeIds.add(targetNode.parentId);
+
+      const route = computeOrthogonalRoute(
+        { ...sourcePoint, side: srcSide },
+        { ...targetPoint, side: tgtSide },
+        obstacles,
+        excludeIds
+      );
+      routes.set(edge.id, route);
+    }
+
+    return routes;
+  }, [edgeRoutingMode, edges, nodes]);
+
+  const displayEdges = useMemo(() => {
+    return edges
+      .filter((edge) => {
+        // Protocol filtering
+        if (hasActiveProtocolFilters) {
+          const protocol = (edge.data as Record<string, unknown> | undefined)?.protocol as ConnectionProtocol | undefined;
+          const key = protocol || '_none';
+          if (edgeProtocolFilters[key] === false) return false;
+        }
+        return true;
+      })
+      .map((edge) => {
+        let style = { ...edge.style };
+        let dimmed = false;
+
+        // Latency path highlighting
+        if (highlightedPath) {
+          if (highlightedPath.edgeIds.has(edge.id)) {
+            style = { ...style, stroke: 'oklch(0.70 0.15 220)', strokeWidth: 3 };
+          } else {
+            style = { ...style, opacity: 0.2 };
+          }
+        }
+
+        // Node selection dimming: dim edges not connected to selected node
+        if (selectedNodeId && !highlightedPath) {
+          const isConnected = edge.source === selectedNodeId || edge.target === selectedNodeId;
+          if (!isConnected) {
+            dimmed = true;
+          }
+        }
+
+        // Validation edge highlighting
+        if (validationEdgeIds.has(edge.id)) {
+          style = { ...style, stroke: 'oklch(0.65 0.25 25)', strokeWidth: 2.5 };
+        }
+
+        // Port distribution offsets
+        let sourcePortOffset: number | undefined;
+        let targetPortOffset: number | undefined;
+        if (portDistribution) {
+          const srcPorts = portDistribution.get(edge.source);
+          const tgtPorts = portDistribution.get(edge.target);
+          if (srcPorts) {
+            for (const assignments of Object.values(srcPorts.source)) {
+              if (!assignments) continue;
+              const found = assignments.find((a) => a.edgeId === edge.id);
+              if (found) { sourcePortOffset = found.offset; break; }
+            }
+          }
+          if (tgtPorts) {
+            for (const assignments of Object.values(tgtPorts.target)) {
+              if (!assignments) continue;
+              const found = assignments.find((a) => a.edgeId === edge.id);
+              if (found) { targetPortOffset = found.offset; break; }
+            }
+          }
+        }
+
+        // Orthogonal routing waypoints
+        const route = orthogonalRoutes?.get(edge.id);
+        const waypoints = route?.waypoints;
+
+        // Override pathType when global routing mode is orthogonal
+        const effectivePathType = edgeRoutingMode === 'orthogonal'
+          ? 'smoothstep'
+          : (edge.data as Record<string, unknown> | undefined)?.pathType;
+
+        return {
+          ...edge,
+          style,
+          data: { ...edge.data, dimmed, sourcePortOffset, targetPortOffset, waypoints, pathType: effectivePathType },
+        };
+      });
+  }, [edges, nodes, highlightedPath, validationEdgeIds, selectedNodeId, hasActiveProtocolFilters, edgeProtocolFilters, portDistribution, orthogonalRoutes, edgeRoutingMode]);
 
   const isEditable = mode === 'edit';
 
@@ -1135,7 +1347,7 @@ export function FlowCanvas() {
         edges={displayEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodesChange={isEditable ? onNodesChange : undefined}
+        onNodesChange={isEditable ? wrappedOnNodesChange : undefined}
         onEdgesChange={isEditable ? onEdgesChange : undefined}
         onConnect={isEditable ? onConnect : undefined}
         onReconnect={isEditable ? onReconnect : undefined}
@@ -1195,6 +1407,9 @@ export function FlowCanvas() {
           maskColor="var(--minimap-mask)"
         />
 
+        {/* Edge Filter Bar */}
+        <EdgeFilterBar edges={edges} />
+
         {/* Custom Controls Panel with working zoom buttons */}
         <ZoomControls isEditable={isEditable} />
 
@@ -1225,6 +1440,24 @@ export function FlowCanvas() {
               >
                 <LayoutGrid className="w-3 h-3" />
                 {isLayouting ? '...' : 'LAYOUT'}
+              </button>
+            )}
+            {edges.length > 0 && (
+              <button
+                onClick={() => {
+                  const { edgeRoutingMode: current, setEdgeRoutingMode } = useAppStore.getState();
+                  setEdgeRoutingMode(current === 'bezier' ? 'orthogonal' : 'bezier');
+                }}
+                className={cn(
+                  'flex items-center gap-1 px-2 py-1 font-mono text-[10px] font-semibold border rounded-sm cursor-pointer transition-colors',
+                  edgeRoutingMode === 'orthogonal'
+                    ? 'text-signal-flux border-signal-flux/30 bg-signal-flux/10'
+                    : 'text-muted-foreground border-border hover:bg-muted/50'
+                )}
+                title={edgeRoutingMode === 'orthogonal' ? 'Mode : routage orthogonal' : 'Mode : courbes bézier'}
+              >
+                <Route className="w-3 h-3" />
+                {edgeRoutingMode === 'orthogonal' ? 'ORTHO' : 'BEZIER'}
               </button>
             )}
           </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { KeyRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -41,7 +41,7 @@ function IdentityProviderNode({ data, selected }: IdentityProviderNodeProps) {
         style={{ backgroundColor: SIGNAL_IDENTITY }}
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_IDENTITY }} />
+      <NodeHandles color={SIGNAL_IDENTITY} type="both" />
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -75,7 +75,6 @@ function IdentityProviderNode({ data, selected }: IdentityProviderNodeProps) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_IDENTITY }} />
     </motion.div>
   );
 }

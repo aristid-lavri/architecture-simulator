@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { Compass } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -37,7 +37,7 @@ function ServiceDiscoveryNode({ data, selected }: ServiceDiscoveryNodeProps) {
         style={{ backgroundColor: SIGNAL_DISCOVERY }}
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_DISCOVERY }} />
+      <NodeHandles color={SIGNAL_DISCOVERY} type="both" />
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -66,7 +66,6 @@ function ServiceDiscoveryNode({ data, selected }: ServiceDiscoveryNodeProps) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_DISCOVERY }} />
     </motion.div>
   );
 }
