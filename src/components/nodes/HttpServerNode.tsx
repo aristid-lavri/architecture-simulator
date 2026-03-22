@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { Server } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -83,12 +83,8 @@ function HttpServerNode({ data, selected }: HttpServerNodeProps) {
         style={{ backgroundColor: SIGNAL_SERVER }}
       />
 
-      {/* Input Handle */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{ borderColor: SIGNAL_SERVER }}
-      />
+      {/* Handles — 4 sides */}
+      <NodeHandles color={SIGNAL_SERVER} type="both" />
 
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2">
@@ -138,12 +134,6 @@ function HttpServerNode({ data, selected }: HttpServerNodeProps) {
         )}
       </div>
 
-      {/* Output Handle */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{ borderColor: SIGNAL_SERVER }}
-      />
     </motion.div>
   );
 }

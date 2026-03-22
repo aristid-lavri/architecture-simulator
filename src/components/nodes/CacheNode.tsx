@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -109,7 +109,7 @@ function CacheNode({ data, selected }: CacheNodeProps) {
         style={{ backgroundColor: SIGNAL_DATA }}
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_DATA }} />
+      <NodeHandles color={SIGNAL_DATA} type="both" />
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -141,7 +141,6 @@ function CacheNode({ data, selected }: CacheNodeProps) {
         {showGauges && <CacheGauges utilization={utilization} />}
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_DATA }} />
     </motion.div>
   );
 }

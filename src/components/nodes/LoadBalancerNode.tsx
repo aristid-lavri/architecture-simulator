@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { Share2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -97,7 +97,7 @@ function LoadBalancerNode({ data, selected }: LoadBalancerNodeProps) {
         style={{ backgroundColor: SIGNAL_INFRA }}
       />
 
-      <Handle type="target" position={Position.Left} style={{ borderColor: SIGNAL_INFRA }} />
+      <NodeHandles color={SIGNAL_INFRA} type="both" />
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -128,7 +128,6 @@ function LoadBalancerNode({ data, selected }: LoadBalancerNodeProps) {
         {showGauges && <LBGauges utilization={utilization} />}
       </div>
 
-      <Handle type="source" position={Position.Right} style={{ borderColor: SIGNAL_INFRA }} />
     </motion.div>
   );
 }

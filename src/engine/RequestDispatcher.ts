@@ -40,6 +40,7 @@ export interface RequestDispatcherCallbacks {
 export class RequestDispatcher {
   private nodes: Node[] = [];
   private edges: Edge[] = [];
+  private nodeMap: Map<string, Node> = new Map();
   private speed: number = 1;
   private metrics: MetricsCollector;
   private callbacks: RequestDispatcherCallbacks;
@@ -110,9 +111,10 @@ export class RequestDispatcher {
     this.validateTokenViaIdP = validateTokenViaIdP;
   }
 
-  setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
+  setNodesAndEdges(nodes: Node[], edges: Edge[], nodeMap?: Map<string, Node>): void {
     this.nodes = nodes;
     this.edges = edges;
+    if (nodeMap) this.nodeMap = nodeMap;
   }
 
   setSpeed(speed: number): void {
@@ -211,7 +213,7 @@ export class RequestDispatcher {
     switch (decision.action) {
       case 'forward':
         decision.targets.forEach((target, index) => {
-          const targetNode = this.nodes.find((n) => n.id === target.nodeId);
+          const targetNode = this.nodeMap.get(target.nodeId);
           if (!targetNode) return;
 
           let effectiveChainId = chainId;
@@ -288,7 +290,7 @@ export class RequestDispatcher {
           chain.cacheNodeId = decision.cacheNodeId;
         }
         const dbTarget = decision.dbTarget;
-        const dbNode = this.nodes.find((n) => n.id === dbTarget.nodeId);
+        const dbNode = this.nodeMap.get(dbTarget.nodeId);
         if (dbNode) {
           const requestDuration = 1500 / this.speed;
           const particle: Particle = {
@@ -316,7 +318,7 @@ export class RequestDispatcher {
         this.chainManager.sendChainResponse(chainId, sourceNode);
 
         decision.targets.forEach((target, index) => {
-          const targetNode = this.nodes.find((n) => n.id === target.nodeId);
+          const targetNode = this.nodeMap.get(target.nodeId);
           if (!targetNode) return;
 
           const notifyChainId = `${chainId}-notify-${index}`;
@@ -452,7 +454,7 @@ export class RequestDispatcher {
 
         // Handle cache-aside pattern: after DB responds, store in cache
         if (decision.action === 'respond' && chain.waitingForDb && chain.cacheNodeId) {
-          const cacheNode = this.nodes.find((n) => n.id === chain.cacheNodeId);
+          const cacheNode = this.nodeMap.get(chain.cacheNodeId);
           if (cacheNode) {
             this.callbacks.onNodeStatusChange(targetNode.id, 'success');
             this.callbacks.onNodeStatusChange(cacheNode.id, 'processing');

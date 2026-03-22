@@ -1,8 +1,10 @@
 import { create } from 'zustand';
-import type { AppMode } from '@/types';
+import type { AppMode, ConnectionProtocol } from '@/types';
 import type { ValidationResult } from '@/lib/simulation-validator';
 
 type Theme = 'dark' | 'light';
+
+export type EdgeRoutingMode = 'bezier' | 'orthogonal';
 
 interface AppState {
   // Mode
@@ -28,6 +30,19 @@ interface AppState {
   // Selected edge
   selectedEdgeId: string | null;
   setSelectedEdgeId: (id: string | null) => void;
+
+  // Edge hover
+  hoveredEdgeId: string | null;
+  setHoveredEdgeId: (id: string | null) => void;
+
+  // Edge protocol filters
+  edgeProtocolFilters: Partial<Record<ConnectionProtocol | '_none', boolean>>;
+  toggleEdgeProtocolFilter: (protocol: ConnectionProtocol | '_none') => void;
+  resetEdgeProtocolFilters: () => void;
+
+  // Edge routing mode
+  edgeRoutingMode: EdgeRoutingMode;
+  setEdgeRoutingMode: (mode: EdgeRoutingMode) => void;
 
   // Validation
   validationResult: ValidationResult | null;
@@ -95,6 +110,28 @@ export const useAppStore = create<AppState>((set) => {
         selectedNodeId: null,
         isPropertiesPanelOpen: id !== null,
       }),
+
+    // Edge hover
+    hoveredEdgeId: null,
+    setHoveredEdgeId: (id) => set({ hoveredEdgeId: id }),
+
+    // Edge protocol filters (all visible by default — empty object means no filters)
+    edgeProtocolFilters: {},
+    toggleEdgeProtocolFilter: (protocol) =>
+      set((state) => {
+        const current = state.edgeProtocolFilters[protocol];
+        return {
+          edgeProtocolFilters: {
+            ...state.edgeProtocolFilters,
+            [protocol]: current === undefined ? false : !current,
+          },
+        };
+      }),
+    resetEdgeProtocolFilters: () => set({ edgeProtocolFilters: {} }),
+
+    // Edge routing mode
+    edgeRoutingMode: 'bezier',
+    setEdgeRoutingMode: (mode) => set({ edgeRoutingMode: mode }),
 
     // Validation
     validationResult: null,

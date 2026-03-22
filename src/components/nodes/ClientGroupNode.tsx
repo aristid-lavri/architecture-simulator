@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { motion } from 'framer-motion';
 import { Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -136,12 +136,8 @@ function ClientGroupNode({ data, selected }: ClientGroupNodeProps) {
         </div>
       </div>
 
-      {/* Output Handle */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{ borderColor: SIGNAL_CLIENT }}
-      />
+      {/* Output Handles — 4 sides */}
+      <NodeHandles color={SIGNAL_CLIENT} type="source-only" />
     </motion.div>
   );
 }

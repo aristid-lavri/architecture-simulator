@@ -1,7 +1,8 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
+import { NodeResizer } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { Box } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ContainerNodeData } from '@/types';
@@ -49,12 +50,8 @@ function ContainerNode({ data, selected }: ContainerNodeProps) {
         handleClassName="!bg-ring !w-2 !h-2"
       />
 
-      {/* Input Handle */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{ borderColor: color }}
-      />
+      {/* Handles — 4 sides */}
+      <NodeHandles color={color} type="both" />
 
       {/* Header */}
       <div
@@ -90,12 +87,6 @@ function ContainerNode({ data, selected }: ContainerNodeProps) {
       {/* Interior zone for child services — extra padding at bottom */}
       <div className="px-2 pt-2 pb-8" />
 
-      {/* Output Handle */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{ borderColor: color }}
-      />
     </div>
   );
 }

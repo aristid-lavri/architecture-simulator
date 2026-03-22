@@ -58,8 +58,10 @@ interface SimulationStore {
   duration: number | null; // in seconds
   elapsedTime: number; // in ms
 
-  // Particles for animation
-  particles: Particle[];
+  // Particles for animation (indexed by id and by edge for O(1) lookups)
+  particles: Map<string, Particle>;
+  particlesByEdge: Map<string, Set<string>>;
+  particleProgressTick: number;
 
   // Node states
   nodeStates: Map<string, NodeState>;
@@ -134,7 +136,7 @@ interface SimulationStore {
   // Actions - Particles
   addParticle: (particle: Particle) => void;
   removeParticle: (particleId: string) => void;
-  updateParticle: (particleId: string, updates: Partial<Particle>) => void;
+  batchUpdateParticleProgress: (updates: Map<string, number>) => void;
   clearParticles: () => void;
 
   // Actions - Node states
@@ -255,7 +257,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   speed: 1,
   duration: null,
   elapsedTime: 0,
-  particles: [],
+  particles: new Map(),
+  particlesByEdge: new Map(),
+  particleProgressTick: 0,
   nodeStates: new Map(),
   metrics: { ...initialMetrics },
   extendedMetrics: null,
@@ -348,7 +352,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
     set({
       state: 'idle',
-      particles: [],
+      particles: new Map(),
+      particlesByEdge: new Map(),
+      particleProgressTick: 0,
       nodeStates: new Map(),
       bottleneckAnalysis: null,
       faultInjections: new Map(),
@@ -361,7 +367,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   reset: () => set({
     state: 'idle',
     elapsedTime: 0,
-    particles: [],
+    particles: new Map(),
+    particlesByEdge: new Map(),
+    particleProgressTick: 0,
     nodeStates: new Map(),
     metrics: { ...initialMetrics },
     extendedMetrics: null,
@@ -428,21 +436,44 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   },
 
   // Particles
-  addParticle: (particle) => set((state) => ({
-    particles: [...state.particles, particle],
-  })),
+  addParticle: (particle) => set((state) => {
+    // Mutate the main particles map in place (structural change signaled by new particlesByEdge ref)
+    state.particles.set(particle.id, particle);
+    // Only copy the Set for the affected edge, not the entire Map
+    const newByEdge = new Map(state.particlesByEdge);
+    const edgeSet = newByEdge.get(particle.edgeId);
+    const newEdgeSet = edgeSet ? new Set(edgeSet) : new Set<string>();
+    newEdgeSet.add(particle.id);
+    newByEdge.set(particle.edgeId, newEdgeSet);
+    return { particlesByEdge: newByEdge };
+  }),
 
-  removeParticle: (particleId) => set((state) => ({
-    particles: state.particles.filter((p) => p.id !== particleId),
-  })),
+  removeParticle: (particleId) => set((state) => {
+    const particle = state.particles.get(particleId);
+    if (!particle) return state;
+    state.particles.delete(particleId);
+    const newByEdge = new Map(state.particlesByEdge);
+    const edgeSet = newByEdge.get(particle.edgeId);
+    if (edgeSet) {
+      const newEdgeSet = new Set(edgeSet);
+      newEdgeSet.delete(particleId);
+      if (newEdgeSet.size === 0) newByEdge.delete(particle.edgeId);
+      else newByEdge.set(particle.edgeId, newEdgeSet);
+    }
+    return { particlesByEdge: newByEdge };
+  }),
 
-  updateParticle: (particleId, updates) => set((state) => ({
-    particles: state.particles.map((p) =>
-      p.id === particleId ? { ...p, ...updates } : p
-    ),
-  })),
+  batchUpdateParticleProgress: (updates) => set((state) => {
+    // Mutate particles in-place — progress is a hot path (60fps).
+    // We bump particleProgressTick to signal subscribers; no need to copy the Map.
+    for (const [id, progress] of updates) {
+      const p = state.particles.get(id);
+      if (p) p.progress = progress;
+    }
+    return { particleProgressTick: state.particleProgressTick + 1 };
+  }),
 
-  clearParticles: () => set({ particles: [] }),
+  clearParticles: () => set({ particles: new Map(), particlesByEdge: new Map(), particleProgressTick: 0 }),
 
   // Node states
   setNodeStatus: (nodeId, status) => set((state) => {

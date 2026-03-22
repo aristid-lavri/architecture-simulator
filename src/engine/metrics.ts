@@ -12,6 +12,7 @@ export class MetricsCollector {
 
   private metrics: SimulationMetrics;
   private latencies: number[] = [];
+  private sortedCache: number[] | null = null;
 
   // Extended metrics for stress testing
   private resourceHistory: ResourceSample[] = [];
@@ -69,6 +70,7 @@ export class MetricsCollector {
   recordResponse(success: boolean, latency: number): void {
     this.metrics.responsesReceived++;
     this.latencies.push(latency);
+    this.sortedCache = null; // invalidate percentile cache
     // Rotate oldest samples to prevent unbounded growth
     if (this.latencies.length > MetricsCollector.MAX_LATENCY_SAMPLES) {
       this.latencies = this.latencies.slice(-MetricsCollector.MAX_LATENCY_SAMPLES);
@@ -116,9 +118,11 @@ export class MetricsCollector {
   getPercentile(p: number): number {
     if (this.latencies.length === 0) return 0;
 
-    const sorted = [...this.latencies].sort((a, b) => a - b);
-    const index = Math.ceil((p / 100) * sorted.length) - 1;
-    return sorted[Math.max(0, index)];
+    if (!this.sortedCache) {
+      this.sortedCache = [...this.latencies].sort((a, b) => a - b);
+    }
+    const index = Math.ceil((p / 100) * this.sortedCache.length) - 1;
+    return this.sortedCache[Math.max(0, index)];
   }
 
   getP50(): number {

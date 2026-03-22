@@ -6,7 +6,7 @@ import type { Particle } from '@/types';
 export interface ParticleCallbacks {
   onAddParticle: (particle: Particle) => void;
   onRemoveParticle: (particleId: string) => void;
-  onUpdateParticle: (particleId: string, updates: Partial<Particle>) => void;
+  onBatchUpdateProgress: (updates: Map<string, number>) => void;
 }
 
 /**
@@ -50,20 +50,32 @@ export class ParticleManager {
     return this.activeParticles.size;
   }
 
-  /** Demarre la boucle d'animation a 60fps. Met a jour la progression de chaque particule. */
+  /** Demarre la boucle d'animation throttlee a ~30fps. */
   startAnimationLoop(getState: () => string): void {
+    let lastUpdate = 0;
+    const FRAME_INTERVAL = 33; // ~30fps — enough for smooth particle motion
+
     const animate = () => {
       if (getState() !== 'running') return;
 
       const now = Date.now();
 
-      this.activeParticles.forEach((particle, id) => {
-        const elapsed = now - particle.startTime;
-        const progress = Math.min(1, elapsed / particle.duration);
+      // Throttle store updates to ~30fps to halve React reconciliation work
+      if (now - lastUpdate >= FRAME_INTERVAL) {
+        lastUpdate = now;
+        const progressBatch = new Map<string, number>();
 
-        this.callbacks.onUpdateParticle(id, { progress });
-        particle.progress = progress;
-      });
+        this.activeParticles.forEach((particle, id) => {
+          const elapsed = now - particle.startTime;
+          const progress = Math.min(1, elapsed / particle.duration);
+          particle.progress = progress;
+          progressBatch.set(id, progress);
+        });
+
+        if (progressBatch.size > 0) {
+          this.callbacks.onBatchUpdateProgress(progressBatch);
+        }
+      }
 
       this.animationFrameId = requestAnimationFrame(animate);
     };

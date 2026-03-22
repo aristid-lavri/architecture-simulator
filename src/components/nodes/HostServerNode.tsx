@@ -1,7 +1,8 @@
 'use client';
 
 import { memo } from 'react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
+import { NodeResizer } from '@xyflow/react';
+import { NodeHandles } from '@/components/nodes/NodeHandles';
 import { Monitor, Container } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ResourceGauges from './ResourceGauges';
@@ -56,12 +57,8 @@ function HostServerNode({ data, selected }: HostServerNodeProps) {
         handleClassName="!bg-ring !w-2 !h-2"
       />
 
-      {/* Input Handle */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{ borderColor: color }}
-      />
+      {/* Handles — 4 sides */}
+      <NodeHandles color={color} type="both" />
 
       {/* Header */}
       <div
@@ -115,12 +112,6 @@ function HostServerNode({ data, selected }: HostServerNodeProps) {
         </div>
       )}
 
-      {/* Output Handle */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{ borderColor: color }}
-      />
     </div>
   );
 }

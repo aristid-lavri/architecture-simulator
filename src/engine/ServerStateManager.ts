@@ -83,6 +83,9 @@ export class ServerStateManager {
   private resourceSamplingInterval: ReturnType<typeof setInterval> | null = null;
   private bottleneckTickCounter: number = 0;
 
+  // Cached node lists by type — rebuilt on setNodesAndEdges
+  private nodesByType: Map<string, Node[]> = new Map();
+
   // Handlers and managers needed for resource sampling
   private messageQueueHandler: MessageQueueHandler;
   private apiGatewayHandler: ApiGatewayHandler;
@@ -118,6 +121,14 @@ export class ServerStateManager {
   setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
     this.nodes = nodes;
     this.edges = edges;
+    // Rebuild type-indexed cache for O(1) lookup during sampling
+    this.nodesByType.clear();
+    for (const node of nodes) {
+      const type = node.type ?? 'default';
+      let list = this.nodesByType.get(type);
+      if (!list) { list = []; this.nodesByType.set(type, list); }
+      list.push(node);
+    }
   }
 
   /**
@@ -243,6 +254,9 @@ export class ServerStateManager {
     activeChains: Map<string, { startTime: number }>,
     speed: number,
   ): void {
+    // Adaptive sampling: scale interval with server count to reduce overhead
+    const serverCount = this.serverStates.size;
+    const samplingInterval = serverCount > 50 ? 500 : serverCount > 20 ? 200 : 100;
     this.resourceSamplingInterval = setInterval(() => {
       if (getState() !== 'running') return;
 
@@ -261,9 +275,18 @@ export class ServerStateManager {
         utilization.throughput = serverMetrics.throughput;
         utilization.errorRate = serverMetrics.errorRate;
 
+        const prev = state.utilization;
         state.utilization = utilization;
 
-        this.callbacks.onResourceUpdate?.(nodeId, utilization);
+        // Only push to React if values changed meaningfully (>1% delta)
+        const changed = !prev
+          || Math.abs(utilization.cpu - prev.cpu) > 1
+          || Math.abs(utilization.memory - prev.memory) > 1
+          || utilization.activeConnections !== prev.activeConnections
+          || utilization.queuedRequests !== prev.queuedRequests;
+        if (changed) {
+          this.callbacks.onResourceUpdate?.(nodeId, utilization);
+        }
 
         this.metrics.recordResourceSample({
           timestamp: Date.now(),
@@ -278,7 +301,7 @@ export class ServerStateManager {
       });
 
       // Sample Message Queue stats
-      const messageQueueNodes = this.nodes.filter((n) => n.type === 'message-queue');
+      const messageQueueNodes = (this.nodesByType.get('message-queue') || []);
       messageQueueNodes.forEach((node) => {
         this.messageQueueHandler.tick(node.id);
 
@@ -304,7 +327,7 @@ export class ServerStateManager {
       });
 
       // Sample API Gateway stats
-      const apiGatewayNodes = this.nodes.filter((n) => n.type === 'api-gateway');
+      const apiGatewayNodes = (this.nodesByType.get('api-gateway') || []);
       apiGatewayNodes.forEach((node) => {
         const stats = this.apiGatewayHandler.getStats(node.id);
         if (stats && this.callbacks.onApiGatewayUpdate) {
@@ -333,31 +356,31 @@ export class ServerStateManager {
       this.bottleneckTickCounter++;
       if (this.bottleneckTickCounter % 10 === 0 && this.callbacks.onBottleneckUpdate) {
         const apiGatewayStats = new Map<string, { totalRequests: number; blockedRequests: number; rateLimitHits: number; authFailures: number }>();
-        this.nodes.filter((n) => n.type === 'api-gateway').forEach((n) => {
+        (this.nodesByType.get('api-gateway') || []).forEach((n) => {
           const s = this.apiGatewayHandler.getStats(n.id);
           if (s) apiGatewayStats.set(n.id, s);
         });
 
         const messageQueueStats = new Map<string, { queueDepth: number; messagesPublished: number; messagesConsumed: number; messagesDeadLettered: number; avgProcessingTime: number }>();
-        this.nodes.filter((n) => n.type === 'message-queue').forEach((n) => {
+        (this.nodesByType.get('message-queue') || []).forEach((n) => {
           const s = this.messageQueueHandler.getStats(n.id);
           if (s) messageQueueStats.set(n.id, s);
         });
 
         const databaseStats = new Map<string, { activeConnections: number; connectionPoolUsage: number; queriesPerSecond: number; avgQueryTime: number }>();
-        this.nodes.filter((n) => n.type === 'database').forEach((n) => {
+        (this.nodesByType.get('database') || []).forEach((n) => {
           const u = this.databaseHandler.getUtilization(n.id);
           if (u) databaseStats.set(n.id, u);
         });
 
         const circuitBreakerStats = new Map<string, { state: string; failureCount: number }>();
-        this.nodes.filter((n) => n.type === 'circuit-breaker').forEach((n) => {
+        (this.nodesByType.get('circuit-breaker') || []).forEach((n) => {
           const s = this.circuitBreakerHandler.getNodeState(n.id);
           if (s) circuitBreakerStats.set(n.id, s);
         });
 
         const loadBalancerStats = new Map<string, { totalRequests: number; unhealthyBackends: number; totalBackends: number }>();
-        this.nodes.filter((n) => n.type === 'load-balancer').forEach((n) => {
+        (this.nodesByType.get('load-balancer') || []).forEach((n) => {
           const u = this.loadBalancerManager.getUtilization(n.id);
           if (u) {
             const unhealthy = u.backends.filter((b) => !b.healthy).length;
@@ -366,7 +389,7 @@ export class ServerStateManager {
         });
 
         const cacheStats = new Map<string, { hitCount: number; missCount: number; hitRatio: number }>();
-        this.nodes.filter((n) => n.type === 'cache').forEach((n) => {
+        (this.nodesByType.get('cache') || []).forEach((n) => {
           const u = this.cacheManager.getUtilization(n.id);
           if (u) cacheStats.set(n.id, { hitCount: u.hitCount, missCount: u.missCount, hitRatio: u.hitRatio });
         });
@@ -387,7 +410,7 @@ export class ServerStateManager {
         });
         this.callbacks.onBottleneckUpdate(analysis);
       }
-    }, 100);
+    }, samplingInterval);
   }
 
   /** Arrete l'echantillonnage des ressources. */
