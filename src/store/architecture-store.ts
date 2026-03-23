@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Node, Edge } from '@xyflow/react';
-import type { ArchitectureSnapshot } from '@/types';
+import type { GraphNode, GraphEdge, ArchitectureSnapshot } from '@/types';
 
 const MAX_HISTORY = 50;
 
@@ -9,12 +8,12 @@ const MAX_HISTORY = 50;
  * Tri topologique des noeuds : les parents sont toujours avant leurs enfants.
  * React Flow exige cet ordre pour le rendu correct des groupes.
  */
-function ensureNodeOrdering(nodes: Node[]): Node[] {
+function ensureNodeOrdering(nodes: GraphNode[]): GraphNode[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const visited = new Set<string>();
-  const result: Node[] = [];
+  const result: GraphNode[] = [];
 
-  function visit(node: Node) {
+  function visit(node: GraphNode) {
     if (visited.has(node.id)) return;
     if (node.parentId) {
       const parent = nodeMap.get(node.parentId);
@@ -34,7 +33,7 @@ function ensureNodeOrdering(nodes: Node[]): Node[] {
 /**
  * Trouve tous les descendants d'un noeud (enfants, petits-enfants, etc.) via parentId.
  */
-function findAllDescendants(nodeId: string, nodes: Node[]): string[] {
+function findAllDescendants(nodeId: string, nodes: GraphNode[]): string[] {
   const descendants: string[] = [];
   const queue = [nodeId];
   while (queue.length > 0) {
@@ -60,8 +59,8 @@ function generateId(): string {
  * Persiste dans localStorage via le middleware Zustand persist.
  */
 interface ArchitectureState {
-  nodes: Node[];
-  edges: Edge[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
   lastSaved: number | null;
 
   // Undo/redo (non persiste)
@@ -75,16 +74,16 @@ interface ArchitectureState {
   snapshots: ArchitectureSnapshot[];
 
   // Actions
-  setNodes: (nodes: Node[]) => void;
-  setEdges: (edges: Edge[]) => void;
+  setNodes: (nodes: GraphNode[]) => void;
+  setEdges: (edges: GraphEdge[]) => void;
   /** Sets both nodes and edges in a single operation (single pushHistory). */
-  setNodesAndEdges: (nodes: Node[], edges: Edge[]) => void;
-  updateNode: (nodeId: string, data: Partial<Node['data']>) => void;
+  setNodesAndEdges: (nodes: GraphNode[], edges: GraphEdge[]) => void;
+  updateNode: (nodeId: string, data: Partial<GraphNode['data']>) => void;
   removeNode: (nodeId: string) => void;
   reparentNode: (nodeId: string, newParentId: string | null) => void;
-  addNode: (node: Node) => void;
-  addEdge: (edge: Edge) => void;
-  updateEdge: (edgeId: string, data: Partial<Edge['data']>) => void;
+  addNode: (node: GraphNode) => void;
+  addEdge: (edge: GraphEdge) => void;
+  updateEdge: (edgeId: string, data: Partial<GraphEdge['data']>) => void;
   removeEdge: (edgeId: string) => void;
   clear: () => void;
   save: () => void;
@@ -188,7 +187,7 @@ export const useArchitectureStore = create<ArchitectureState>()(
             if (!node) return state;
 
             // Calculer la position absolue du noeud
-            function getAbsolutePos(n: Node): { x: number; y: number } {
+            function getAbsolutePos(n: GraphNode): { x: number; y: number } {
               let x = n.position.x;
               let y = n.position.y;
               let current = n;
@@ -218,7 +217,6 @@ export const useArchitectureStore = create<ArchitectureState>()(
                     y: absPos.y - parentAbsPos.y,
                   },
                   parentId: newParentId,
-                  extent: 'parent' as const,
                 };
               } else {
                 // Détacher du parent
@@ -226,7 +224,6 @@ export const useArchitectureStore = create<ArchitectureState>()(
                   ...n,
                   position: absPos,
                   parentId: undefined,
-                  extent: undefined,
                 };
               }
             });

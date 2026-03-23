@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { ApiGatewayNodeData } from '@/types';
 
@@ -33,12 +33,12 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
   private gatewayStates: Map<string, GatewayState> = new Map();
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as ApiGatewayNodeData;
     return data.baseLatencyMs / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     this.gatewayStates.set(node.id, this.createInitialState());
   }
 
@@ -47,10 +47,10 @@ export class ApiGatewayHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as ApiGatewayNodeData;
     const state = this.getOrCreateState(node.id);
@@ -161,10 +161,10 @@ export class ApiGatewayHandler implements NodeRequestHandler {
    */
   private findTargetEdge(
     data: ApiGatewayNodeData,
-    outgoingEdges: Edge[],
-    allNodes: Node[],
+    outgoingEdges: GraphEdge[],
+    allNodes: GraphNode[],
     context: RequestContext
-  ): Edge {
+  ): GraphEdge {
     const routeRules = data.routeRules || [];
     const requestPath = context.requestPath || '/';
 
@@ -177,7 +177,7 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     const sortedRules = [...routeRules].sort((a, b) => a.priority - b.priority);
 
     // Créer un mapping des serviceName vers les edges
-    const serviceToEdge = new Map<string, Edge>();
+    const serviceToEdge = new Map<string, GraphEdge>();
     for (const edge of outgoingEdges) {
       const targetNode = allNodes.find((n) => n.id === edge.target);
       if (targetNode && (targetNode.type === 'http-server' || targetNode.type === 'api-service')) {
@@ -263,7 +263,7 @@ export class ApiGatewayHandler implements NodeRequestHandler {
    * Décrémente le compteur de requêtes actives.
    */
   handleResponsePassthrough(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
     isError: boolean
   ): ResponseDecision {

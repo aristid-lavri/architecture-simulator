@@ -1,20 +1,20 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { WAFNodeData } from '@/types';
 
 export class WAFHandler implements NodeRequestHandler {
   readonly nodeType = 'waf';
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as WAFNodeData;
     return data.inspectionLatencyMs / speed;
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as WAFNodeData;
 

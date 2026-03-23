@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HttpServerHandler } from '../HttpServerHandler';
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { RequestContext } from '../types';
 import { defaultServerResources, defaultDegradation } from '@/types';
 
-function createServerNode(overrides: Record<string, unknown> = {}): Node {
+function createServerNode(overrides: Record<string, unknown> = {}): GraphNode {
   return {
     id: 'server-1',
     type: 'http-server',
@@ -31,7 +31,7 @@ function createContext(): RequestContext {
   };
 }
 
-function createEdge(target: string): Edge {
+function createEdge(target: string): GraphEdge {
   return { id: `e-${target}`, source: 'server-1', target };
 }
 

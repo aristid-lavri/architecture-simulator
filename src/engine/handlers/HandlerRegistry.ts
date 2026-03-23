@@ -1,4 +1,4 @@
-import type { Node } from '@xyflow/react';
+import type { GraphNode } from '@/types/graph';
 import type { NodeRequestHandler } from './types';
 
 /**
@@ -66,7 +66,7 @@ export class HandlerRegistry {
    * Appelé au démarrage de la simulation
    * @param nodes Liste des nœuds à initialiser
    */
-  initializeAll(nodes: Node[]): void {
+  initializeAll(nodes: GraphNode[]): void {
     nodes.forEach((node) => {
       const nodeType = node.type ?? 'unknown';
       const handler = this.handlers.get(nodeType) ?? this.defaultHandler;

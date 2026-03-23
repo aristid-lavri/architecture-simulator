@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useMemo } from 'react';
-import { useReactFlow } from '@xyflow/react';
 import { XCircle, AlertTriangle, Info, CheckCircle2, Crosshair } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useTranslation } from '@/i18n';
@@ -26,7 +25,7 @@ function formatMessage(template: string, params?: Record<string, string | number
 
 function IssueRow({ issue }: { issue: ValidationIssue }) {
   const { t } = useTranslation();
-  const reactFlow = useReactFlow();
+  const setSelectedNodeId = useAppStore((s) => s.setSelectedNodeId);
   const config = severityConfig[issue.severity];
   const Icon = config.icon;
 
@@ -34,14 +33,8 @@ function IssueRow({ issue }: { issue: ValidationIssue }) {
 
   const handleLocate = useCallback(() => {
     if (!issue.nodeIds?.length) return;
-    const nodes = reactFlow.getNodes().filter((n) => issue.nodeIds!.includes(n.id));
-    if (nodes.length === 0) return;
-    reactFlow.fitView({
-      nodes,
-      duration: 400,
-      padding: 0.5,
-    });
-  }, [issue.nodeIds, reactFlow]);
+    setSelectedNodeId(issue.nodeIds[0]);
+  }, [issue.nodeIds, setSelectedNodeId]);
 
   return (
     <div className="flex items-start gap-2 px-3 py-1.5 hover:bg-muted/30 transition-colors group">

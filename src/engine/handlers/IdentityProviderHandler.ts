@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { IdentityProviderNodeData } from '@/types';
 
@@ -18,7 +18,7 @@ export class IdentityProviderHandler implements NodeRequestHandler {
 
   private states: Map<string, IdentityProviderState> = new Map();
 
-  getProcessingDelay(node: Node, speed: number, context?: RequestContext): number {
+  getProcessingDelay(node: GraphNode, speed: number, context?: RequestContext): number {
     const data = node.data as IdentityProviderNodeData;
     const state = this.getOrCreateState(node.id);
 
@@ -49,7 +49,7 @@ export class IdentityProviderHandler implements NodeRequestHandler {
     return latency / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     this.states.set(node.id, {
       sessionCache: new Map(),
       loginAttempts: new Map(),
@@ -61,10 +61,10 @@ export class IdentityProviderHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as IdentityProviderNodeData;
     const state = this.getOrCreateState(node.id);

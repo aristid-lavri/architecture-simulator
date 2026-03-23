@@ -1,5 +1,5 @@
 import YAML from 'yaml';
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NetworkZoneNodeData, HostServerNodeData } from '@/types';
 
 interface YamlArchitecture {
@@ -24,7 +24,7 @@ function cleanData(data: Record<string, unknown>): Record<string, unknown> {
   return cleaned;
 }
 
-export function exportToYaml(nodes: Node[], edges: Edge[], name = 'Architecture'): string {
+export function exportToYaml(nodes: GraphNode[], edges: GraphEdge[], name = 'Architecture'): string {
   const arch: YamlArchitecture = {
     version: 1,
     name,
@@ -45,7 +45,7 @@ export function exportToYaml(nodes: Node[], edges: Edge[], name = 'Architecture'
         ...(data.subdomains?.length ? { subdomains: data.subdomains } : {}),
         interZoneLatency: data.interZoneLatency,
         position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-        ...(node.style ? { size: { width: (node.style as Record<string, number>).width, height: (node.style as Record<string, number>).height } } : {}),
+        ...(node.width != null && node.height != null ? { size: { width: node.width, height: node.height } } : {}),
       };
     }
   }
@@ -70,7 +70,7 @@ export function exportToYaml(nodes: Node[], edges: Edge[], name = 'Architecture'
         position: node.parentId
           ? { x: Math.round(node.position.x), y: Math.round(node.position.y) }
           : { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-        ...(node.style ? { size: { width: (node.style as Record<string, number>).width, height: (node.style as Record<string, number>).height } } : {}),
+        ...(node.width != null && node.height != null ? { size: { width: node.width, height: node.height } } : {}),
       };
     }
   }

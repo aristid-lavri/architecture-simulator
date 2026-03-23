@@ -23,16 +23,12 @@ import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerReso
 import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
 import type { ApiServiceNodeData, BackgroundJobNodeData, ApiServiceProtocol, BackgroundJobType, IdentityProviderNodeData, IdentityProviderType, IdPProtocol, IdPTokenFormat } from '@/types';
 import { defaultIdentityProviderData, IDP_PROVIDER_CAPABILITIES } from '@/types';
-import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
-import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
-import type { ProcessingComplexity } from '@/types';
+import type { HttpServerNodeData, HttpClientNodeData, ProcessingComplexity, ClientGroupNodeData, AnimatedEdgeData } from '@/types';
 import { complexityMultipliers } from '@/types';
-import type { ClientGroupNodeData } from '@/components/nodes/ClientGroupNode';
-import type { AnimatedEdgeData } from '@/components/edges/AnimatedEdge';
 import type { ConnectionProtocol, ComponentType } from '@/types';
 import { validateConnection } from '@/lib/connection-validator';
 import { useTranslation } from '@/i18n';
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode } from '@/types/graph';
 
 export function PropertiesPanel() {
   const { t } = useTranslation();
@@ -113,7 +109,7 @@ export function PropertiesPanel() {
     const edgeData = (selectedEdge.data || {}) as AnimatedEdgeData;
 
     return (
-      <div className="border-l bg-background flex flex-col h-full overflow-hidden relative" style={{ width: panelWidth }}>
+      <div className="absolute top-0 right-0 h-full z-30 border-l bg-background flex flex-col overflow-hidden shadow-xl" style={{ width: panelWidth }}>
         {/* Resize handle */}
         <div
           onMouseDown={handleResizeStart}
@@ -311,15 +307,14 @@ export function PropertiesPanel() {
                   <Label>Type de tracé</Label>
                   <Select
                     value={edgeData.pathType || 'bezier'}
-                    onValueChange={(value) => updateEdgeData({ pathType: value as 'bezier' | 'smoothstep' | 'straight' })}
+                    onValueChange={(value) => updateEdgeData({ pathType: value as 'bezier' | 'orthogonal' })}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="bezier">Courbe (Bézier)</SelectItem>
-                      <SelectItem value="smoothstep">Angles arrondis</SelectItem>
-                      <SelectItem value="straight">Ligne droite</SelectItem>
+                      <SelectItem value="orthogonal">Orthogonal</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -373,7 +368,7 @@ export function PropertiesPanel() {
   const isIdentityProvider = selectedNode.type === 'identity-provider';
 
   return (
-    <div className="border-l bg-background flex flex-col h-full overflow-hidden relative" style={{ width: panelWidth }} data-tour="properties-panel">
+    <div className="absolute top-0 right-0 h-full z-30 border-l bg-background flex flex-col overflow-hidden shadow-xl" style={{ width: panelWidth }} data-tour="properties-panel">
       {/* Resize handle */}
       <div
         onMouseDown={handleResizeStart}
@@ -446,7 +441,7 @@ export function PropertiesPanel() {
           {/* HTTP Client Configuration */}
           {isHttpClient && (
             <HttpClientConfig
-              data={selectedNode.data as HttpClientNodeData}
+              data={selectedNode.data as unknown as HttpClientNodeData}
               onUpdate={updateNodeData}
             />
           )}
@@ -497,7 +492,7 @@ export function PropertiesPanel() {
               data={selectedNode.data as ApiGatewayNodeData}
               onUpdate={updateNodeData}
               availableServices={nodes
-                .filter((n): n is Node & { data: HttpServerNodeData } =>
+                .filter((n): n is typeof n & { data: HttpServerNodeData } =>
                   n.type === 'http-server' &&
                   typeof (n.data as HttpServerNodeData).serviceName === 'string' &&
                   (n.data as HttpServerNodeData).serviceName !== ''
@@ -505,7 +500,7 @@ export function PropertiesPanel() {
                 .map((n) => ({
                   id: n.id,
                   serviceName: n.data.serviceName as string,
-                  label: n.data.label,
+                  label: n.data.label as string,
                 }))}
             />
           )}
@@ -596,7 +591,7 @@ export function PropertiesPanel() {
               <HostServerConfig
                 data={selectedNode.data as HostServerNodeData}
                 onUpdate={updateNodeData}
-                childNodes={nodes.filter((n) => (n as Node & { parentId?: string }).parentId === selectedNode.id)}
+                childNodes={nodes.filter((n) => n.parentId === selectedNode.id)}
               />
               <ServerResourcesConfig
                 data={selectedNode.data as { resources?: ServerResources; degradation?: DegradationSettings }}
@@ -3516,7 +3511,7 @@ function NetworkZoneConfig({ data, onUpdate }: { data: NetworkZoneNodeData; onUp
   );
 }
 
-function HostServerConfig({ data, onUpdate, childNodes }: { data: HostServerNodeData; onUpdate: (u: Partial<HostServerNodeData>) => void; childNodes: Node[] }) {
+function HostServerConfig({ data, onUpdate, childNodes }: { data: HostServerNodeData; onUpdate: (u: Partial<HostServerNodeData>) => void; childNodes: GraphNode[] }) {
   const config = { ...defaultHostServerData, ...data };
   const mappings = config.portMappings || [];
 

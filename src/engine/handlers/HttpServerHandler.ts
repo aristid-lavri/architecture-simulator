@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { HttpServerNodeData, ResourceUtilization } from '@/types';
 import { complexityMultipliers } from '@/types';
@@ -25,7 +25,7 @@ export class HttpServerHandler implements NodeRequestHandler {
 
   private serverStates: Map<string, ServerState> = new Map();
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as HttpServerNodeData;
     const state = this.getOrCreateState(node.id);
 
@@ -52,7 +52,7 @@ export class HttpServerHandler implements NodeRequestHandler {
     return (degradedDelay * complexityFactor) / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     this.serverStates.set(node.id, this.createInitialState());
   }
 
@@ -61,10 +61,10 @@ export class HttpServerHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as HttpServerNodeData;
     const state = this.getOrCreateState(node.id);

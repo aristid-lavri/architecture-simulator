@@ -512,7 +512,10 @@ function AnimatedStat({ value, label, color }: { value: string; label: string; c
 // ── Main Page ──
 export default function LandingPage() {
   const [heroLoaded, setHeroLoaded] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const { theme, toggleTheme } = useAppStore();
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setHeroLoaded(true), 100);
@@ -548,9 +551,9 @@ export default function LandingPage() {
           <button
             onClick={toggleTheme}
             className="hover:text-foreground transition-colors"
-            aria-label={theme === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre'}
+            aria-label={mounted && theme === 'dark' ? 'Passer au thème clair' : 'Passer au thème sombre'}
           >
-            {theme === 'dark' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+            {mounted && theme === 'dark' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
           </button>
         </div>
       </div>

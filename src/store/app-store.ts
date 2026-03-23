@@ -99,7 +99,7 @@ export const useAppStore = create<AppState>((set) => {
       set({
         selectedNodeId: id,
         selectedEdgeId: null,
-        isPropertiesPanelOpen: id !== null,
+        // Properties panel opened explicitly via cog icon, not on node click
       }),
 
     // Selected edge

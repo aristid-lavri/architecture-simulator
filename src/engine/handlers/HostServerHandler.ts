@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { HostServerNodeData, ResourceUtilization } from '@/types';
 import { ResourceManager } from '../ResourceManager';
@@ -24,12 +24,12 @@ export class HostServerHandler implements NodeRequestHandler {
 
   private serverStates: Map<string, ServerState> = new Map();
 
-  getProcessingDelay(_node: Node, speed: number): number {
+  getProcessingDelay(_node: GraphNode, speed: number): number {
     // Petit overhead fixe pour le routage du host (~1ms)
     return 1 / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     this.serverStates.set(node.id, this.createInitialState());
   }
 
@@ -38,10 +38,10 @@ export class HostServerHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as HostServerNodeData;
     const state = this.getOrCreateState(node.id);
@@ -93,7 +93,7 @@ export class HostServerHandler implements NodeRequestHandler {
     if (data.portMappings.length === 1 && outgoingEdges.length > 0) {
       const mapping = data.portMappings[0];
       const childNodes = allNodes.filter(
-        (n) => (n as Node & { parentId?: string }).parentId === node.id
+        (n) => (n as GraphNode & { parentId?: string }).parentId === node.id
       );
       const targetEdge = outgoingEdges.find(
         (e) => e.target === mapping.containerNodeId && childNodes.some((c) => c.id === e.target)

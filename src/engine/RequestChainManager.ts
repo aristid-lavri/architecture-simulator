@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { Particle, ParticleType } from '@/types';
 import type { MetricsCollector } from './metrics';
 import { ParticleManager } from './ParticleManager';
@@ -64,8 +64,8 @@ export interface RequestChainCallbacks {
 export class RequestChainManager {
   readonly activeChains: Map<string, RequestChain> = new Map();
 
-  private nodes: Node[] = [];
-  private nodeMap: Map<string, Node> = new Map();
+  private nodes: GraphNode[] = [];
+  private nodeMap: Map<string, GraphNode> = new Map();
   private metrics: MetricsCollector;
   private callbacks: RequestChainCallbacks;
   private particleManager: ParticleManager;
@@ -106,7 +106,7 @@ export class RequestChainManager {
   }
 
   /** Met a jour le graphe et la vitesse. */
-  setNodesAndEdges(nodes: Node[], edges: Edge[], nodeMap?: Map<string, Node>): void {
+  setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[], nodeMap?: Map<string, GraphNode>): void {
     this.nodes = nodes;
     if (nodeMap) this.nodeMap = nodeMap;
   }
@@ -139,7 +139,7 @@ export class RequestChainManager {
   }
 
   /** Verifie si un noeud doit retourner une erreur (en fonction de son errorRate). */
-  shouldNodeError(node: Node): boolean {
+  shouldNodeError(node: GraphNode): boolean {
     const data = node.data as { errorRate?: number };
     return data.errorRate ? Math.random() * 100 < data.errorRate : false;
   }
@@ -147,7 +147,7 @@ export class RequestChainManager {
   /**
    * Envoie une reponse en retour a travers la chaine depuis le noeud terminal.
    */
-  sendChainResponse(chainId: string, terminalNode: Node, forceError?: boolean): void {
+  sendChainResponse(chainId: string, terminalNode: GraphNode, forceError?: boolean): void {
     if (this.getState() !== 'running') return;
 
     const chain = this.activeChains.get(chainId);

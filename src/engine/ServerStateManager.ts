@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type {
   ServerResources,
   ResourceUtilization,
@@ -48,7 +48,7 @@ export interface QueuedRequest {
   virtualClientId?: number;
   queuedAt: number;
   edgeId: string;
-  sourceNode: Node;
+  sourceNode: GraphNode;
 }
 
 /**
@@ -60,7 +60,7 @@ export interface ServerStateCallbacks {
   onApiGatewayUpdate?: (nodeId: string, utilization: ApiGatewayUtilization) => void;
   onBottleneckUpdate?: (analysis: import('@/types').BottleneckAnalysis) => void;
   /** Envoie une requete dequeued (appele par processQueuedRequest). */
-  onSendQueuedRequest: (sourceNode: Node, edge: Edge, data: ClientGroupNodeData, virtualClientId: number) => void;
+  onSendQueuedRequest: (sourceNode: GraphNode, edge: GraphEdge, data: ClientGroupNodeData, virtualClientId: number) => void;
 }
 
 /**
@@ -76,15 +76,15 @@ export class ServerStateManager {
   readonly serverStates: Map<string, ServerState> = new Map();
   readonly requestQueues: Map<string, QueuedRequest[]> = new Map();
 
-  private nodes: Node[] = [];
-  private edges: Edge[] = [];
+  private nodes: GraphNode[] = [];
+  private edges: GraphEdge[] = [];
   private metrics: MetricsCollector;
   private callbacks: ServerStateCallbacks;
   private resourceSamplingInterval: ReturnType<typeof setInterval> | null = null;
   private bottleneckTickCounter: number = 0;
 
   // Cached node lists by type — rebuilt on setNodesAndEdges
-  private nodesByType: Map<string, Node[]> = new Map();
+  private nodesByType: Map<string, GraphNode[]> = new Map();
 
   // Handlers and managers needed for resource sampling
   private messageQueueHandler: MessageQueueHandler;
@@ -118,7 +118,7 @@ export class ServerStateManager {
   }
 
   /** Met a jour le graphe (appele par l'engine quand setNodesAndEdges est appele). */
-  setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
+  setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[]): void {
     this.nodes = nodes;
     this.edges = edges;
     // Rebuild type-indexed cache for O(1) lookup during sampling
@@ -201,7 +201,7 @@ export class ServerStateManager {
    */
   enqueueRequest(
     serverId: string,
-    sourceNode: Node,
+    sourceNode: GraphNode,
     edgeId: string,
     clientGroupId: string,
     virtualClientId: number,

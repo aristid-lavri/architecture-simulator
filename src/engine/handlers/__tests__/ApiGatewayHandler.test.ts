@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ApiGatewayHandler } from '../ApiGatewayHandler';
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { RequestContext } from '../types';
 
-function createGatewayNode(overrides: Record<string, unknown> = {}): Node {
+function createGatewayNode(overrides: Record<string, unknown> = {}): GraphNode {
   return {
     id: 'gw-1',
     type: 'api-gateway',
@@ -37,7 +37,7 @@ function createContext(path?: string): RequestContext {
   };
 }
 
-function createEdge(target: string): Edge {
+function createEdge(target: string): GraphEdge {
   return { id: `e-${target}`, source: 'gw-1', target };
 }
 
@@ -134,7 +134,7 @@ describe('ApiGatewayHandler', () => {
       handler.initialize(node);
 
       const edges = [createEdge('server-1'), createEdge('server-2')];
-      const allNodes: Node[] = [
+      const allNodes: GraphNode[] = [
         { id: 'server-1', type: 'http-server', position: { x: 0, y: 0 }, data: { serviceName: 'user-service' } },
         { id: 'server-2', type: 'http-server', position: { x: 0, y: 0 }, data: { serviceName: 'order-service' } },
       ];

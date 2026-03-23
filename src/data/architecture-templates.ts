@@ -1,530 +1,425 @@
-import type { Node, Edge } from '@xyflow/react';
-import {
-  defaultClientGroupData,
-  defaultServerResources,
-  defaultDegradation,
-  defaultDatabaseNodeData,
-  defaultCacheNodeData,
-  defaultLoadBalancerNodeData,
-  defaultMessageQueueNodeData,
-  defaultApiGatewayNodeData,
-  defaultApiServiceData,
-  defaultServiceDiscoveryData,
-  defaultWAFNodeData,
-  zoneColors,
-} from '@/types';
+/**
+ * Templates d'architecture chargés via YAML parser.
+ * Chaque template est défini comme une string YAML, parsée au chargement
+ * pour générer les GraphNode[]/GraphEdge[] utilisés par le moteur PixiJS.
+ */
+import type { GraphNode, GraphEdge } from '@/types/graph';
+import { parseYamlArchitecture } from '@/lib/yaml-parser';
 
 export interface ArchitectureTemplate {
   id: string;
   nameKey: string;
   descriptionKey: string;
-  nodes: Node[];
-  edges: Edge[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
-// Template 1: Monolith Simple
+function createTemplateFromYaml(
+  id: string,
+  nameKey: string,
+  descriptionKey: string,
+  yaml: string
+): ArchitectureTemplate | null {
+  const result = parseYamlArchitecture(yaml);
+  if ('error' in result) {
+    console.warn(`[Template] Failed to parse "${id}":`, result.error);
+    return null;
+  }
+  return { id, nameKey, descriptionKey, nodes: result.nodes, edges: result.edges };
+}
+
+// ============================================
+// Template 1 : Monolith Simple
 // [Client Group] → [HTTP Server] → [Cache] → [Database]
 // Architecture cache-aside : le serveur consulte le cache, puis la DB si miss
-const monolithNodes: Node[] = [
-  {
-    id: 'monolith-client-group',
-    type: 'client-group',
-    position: { x: 100, y: 200 },
-    data: {
-      ...defaultClientGroupData,
-      label: 'Clients',
-      virtualClients: 20,
-      baseInterval: 500,
-    },
-  },
-  {
-    id: 'monolith-http-server',
-    type: 'http-server',
-    position: { x: 350, y: 200 },
-    data: {
-      label: 'Serveur Principal',
-      port: 8080,
-      responseStatus: 200,
-      responseBody: '{"success": true}',
-      responseDelay: 50,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'monolith-cache',
-    type: 'cache',
-    position: { x: 600, y: 200 },
-    data: {
-      ...defaultCacheNodeData,
-      label: 'Cache Redis',
-    },
-  },
-  {
-    id: 'monolith-database',
-    type: 'database',
-    position: { x: 850, y: 200 },
-    data: {
-      ...defaultDatabaseNodeData,
-      label: 'Base de données',
-    },
-  },
-];
+// ============================================
+const monolithYaml = `
+version: 1
+name: "Monolith Simple"
 
-const monolithEdges: Edge[] = [
-  {
-    id: 'monolith-edge-client-server',
-    source: 'monolith-client-group',
-    target: 'monolith-http-server',
-    type: 'animated',
-  },
-  {
-    id: 'monolith-edge-server-cache',
-    source: 'monolith-http-server',
-    target: 'monolith-cache',
-    type: 'animated',
-  },
-  {
-    id: 'monolith-edge-cache-db',
-    source: 'monolith-cache',
-    target: 'monolith-database',
-    type: 'animated',
-  },
-];
+components:
+  clients:
+    type: client-group
+    position: { x: 100, y: 200 }
+    config:
+      label: "Clients"
+      virtualClients: 20
+      baseInterval: 500
 
-// Template 2: Load Balanced
+  serveur-principal:
+    type: http-server
+    position: { x: 350, y: 200 }
+    config:
+      label: "Serveur Principal"
+      port: 8080
+      responseStatus: 200
+      responseBody: '{"success": true}'
+      responseDelay: 50
+      errorRate: 0
+
+  cache-redis:
+    type: cache
+    position: { x: 600, y: 200 }
+    config:
+      label: "Cache Redis"
+
+  base-de-donnees:
+    type: database
+    position: { x: 850, y: 200 }
+    config:
+      label: "Base de données"
+
+connections:
+  - from: clients
+    to: serveur-principal
+  - from: serveur-principal
+    to: cache-redis
+  - from: cache-redis
+    to: base-de-donnees
+`;
+
+// ============================================
+// Template 2 : Load Balanced
 //                     ┌→ [Server 1] ─┐
 // [Client Group] → [Load Balancer] → [Server 2] → [Database]
 //                     └→ [Server 3] ─┘
-const loadBalancedNodes: Node[] = [
-  {
-    id: 'lb-client-group',
-    type: 'client-group',
-    position: { x: 50, y: 250 },
-    data: {
-      ...defaultClientGroupData,
-      label: 'Clients',
-      virtualClients: 50,
-      baseInterval: 300,
-      rampUpEnabled: true,
-      rampUpDuration: 15000,
-      rampUpCurve: 'linear' as const,
-    },
-  },
-  {
-    id: 'lb-load-balancer',
-    type: 'load-balancer',
-    position: { x: 300, y: 250 },
-    data: {
-      ...defaultLoadBalancerNodeData,
-      label: 'Load Balancer',
-    },
-  },
-  {
-    id: 'lb-http-server-1',
-    type: 'http-server',
-    position: { x: 550, y: 100 },
-    data: {
-      label: 'Serveur 1',
-      port: 8081,
-      responseStatus: 200,
-      responseBody: '{"server": 1}',
-      responseDelay: 50,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'lb-http-server-2',
-    type: 'http-server',
-    position: { x: 550, y: 250 },
-    data: {
-      label: 'Serveur 2',
-      port: 8082,
-      responseStatus: 200,
-      responseBody: '{"server": 2}',
-      responseDelay: 50,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'lb-http-server-3',
-    type: 'http-server',
-    position: { x: 550, y: 400 },
-    data: {
-      label: 'Serveur 3',
-      port: 8083,
-      responseStatus: 200,
-      responseBody: '{"server": 3}',
-      responseDelay: 50,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'lb-database',
-    type: 'database',
-    position: { x: 800, y: 250 },
-    data: {
-      ...defaultDatabaseNodeData,
-      label: 'Base de données',
-    },
-  },
-];
+// Avec zone backend pour les serveurs et zone données pour la DB
+// ============================================
+const loadBalancedYaml = `
+version: 1
+name: "Load Balanced"
 
-const loadBalancedEdges: Edge[] = [
-  {
-    id: 'lb-edge-client-lb',
-    source: 'lb-client-group',
-    target: 'lb-load-balancer',
-    type: 'animated',
-  },
-  {
-    id: 'lb-edge-lb-server1',
-    source: 'lb-load-balancer',
-    target: 'lb-http-server-1',
-    type: 'animated',
-  },
-  {
-    id: 'lb-edge-lb-server2',
-    source: 'lb-load-balancer',
-    target: 'lb-http-server-2',
-    type: 'animated',
-  },
-  {
-    id: 'lb-edge-lb-server3',
-    source: 'lb-load-balancer',
-    target: 'lb-http-server-3',
-    type: 'animated',
-  },
-  {
-    id: 'lb-edge-server1-db',
-    source: 'lb-http-server-1',
-    target: 'lb-database',
-    type: 'animated',
-  },
-  {
-    id: 'lb-edge-server2-db',
-    source: 'lb-http-server-2',
-    target: 'lb-database',
-    type: 'animated',
-  },
-  {
-    id: 'lb-edge-server3-db',
-    source: 'lb-http-server-3',
-    target: 'lb-database',
-    type: 'animated',
-  },
-];
+zones:
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 450, y: 50 }
+    size: { width: 350, height: 500 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 850, y: 50 }
+    size: { width: 250, height: 500 }
 
-// Template 3: Microservices
-// [Client Group] → [API Gateway] → [Service A] → [Database A]
-//                                       ↓
-//                                  [Service B] → [Cache]
-const microservicesNodes: Node[] = [
-  {
-    id: 'ms-client-group',
-    type: 'client-group',
-    position: { x: 50, y: 200 },
-    data: {
-      ...defaultClientGroupData,
-      label: 'Clients',
-      virtualClients: 30,
-      baseInterval: 300,
-      paths: ['/api/service-a', '/api/service-b'],
-    },
-  },
-  {
-    id: 'ms-api-gateway',
-    type: 'api-gateway',
-    position: { x: 300, y: 200 },
-    data: {
-      ...defaultApiGatewayNodeData,
-      label: 'API Gateway',
-      routeRules: [
-        { id: 'ms-rule-1', pathPattern: '/api/service-a', targetServiceName: 'service-a', priority: 1 },
-        { id: 'ms-rule-2', pathPattern: '/api/service-a/**', targetServiceName: 'service-a', priority: 2 },
-        { id: 'ms-rule-3', pathPattern: '/api/service-b', targetServiceName: 'service-b', priority: 3 },
-        { id: 'ms-rule-4', pathPattern: '/api/service-b/**', targetServiceName: 'service-b', priority: 4 },
-      ],
-    },
-  },
-  {
-    id: 'ms-service-a',
-    type: 'http-server',
-    position: { x: 550, y: 100 },
-    data: {
-      label: 'Service A',
-      serviceName: 'service-a',
-      basePath: '/api/service-a',
-      port: 8081,
-      responseStatus: 200,
-      responseBody: '{"service": "A"}',
-      responseDelay: 30,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'ms-service-b',
-    type: 'http-server',
-    position: { x: 550, y: 300 },
-    data: {
-      label: 'Service B',
-      serviceName: 'service-b',
-      basePath: '/api/service-b',
-      port: 8082,
-      responseStatus: 200,
-      responseBody: '{"service": "B"}',
-      responseDelay: 40,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'ms-database',
-    type: 'database',
-    position: { x: 800, y: 100 },
-    data: {
-      ...defaultDatabaseNodeData,
-      label: 'Database',
-    },
-  },
-  {
-    id: 'ms-cache',
-    type: 'cache',
-    position: { x: 800, y: 300 },
-    data: {
-      ...defaultCacheNodeData,
-      label: 'Cache',
-    },
-  },
-];
+components:
+  clients:
+    type: client-group
+    position: { x: 50, y: 250 }
+    config:
+      label: "Clients"
+      virtualClients: 50
+      baseInterval: 300
+      rampUpEnabled: true
+      rampUpDuration: 15000
+      rampUpCurve: linear
 
-const microservicesEdges: Edge[] = [
-  {
-    id: 'ms-edge-client-gateway',
-    source: 'ms-client-group',
-    target: 'ms-api-gateway',
-    type: 'animated',
-  },
-  {
-    id: 'ms-edge-gateway-serviceA',
-    source: 'ms-api-gateway',
-    target: 'ms-service-a',
-    type: 'animated',
-  },
-  {
-    id: 'ms-edge-gateway-serviceB',
-    source: 'ms-api-gateway',
-    target: 'ms-service-b',
-    type: 'animated',
-  },
-  {
-    id: 'ms-edge-serviceA-db',
-    source: 'ms-service-a',
-    target: 'ms-database',
-    type: 'animated',
-  },
-  {
-    id: 'ms-edge-serviceB-cache',
-    source: 'ms-service-b',
-    target: 'ms-cache',
-    type: 'animated',
-  },
-];
+  load-balancer:
+    type: load-balancer
+    position: { x: 250, y: 250 }
+    config:
+      label: "Load Balancer"
 
-// Template 4: Event-Driven Microservices with Message Queue
-// [Client Group] → [API Gateway] → [Order Service] → [Message Queue] → [Notification Service]
-//                                        ↓                    ↓
-//                                   [Database]         [Inventory Service] → [Cache]
-const eventDrivenNodes: Node[] = [
-  {
-    id: 'ev-client-group',
-    type: 'client-group',
-    position: { x: 50, y: 200 },
-    data: {
-      ...defaultClientGroupData,
-      label: 'Clients',
-      virtualClients: 25,
-      baseInterval: 400,
-      paths: ['/api/orders', '/api/products'],
-    },
-  },
-  {
-    id: 'ev-api-gateway',
-    type: 'api-gateway',
-    position: { x: 280, y: 200 },
-    data: {
-      ...defaultApiGatewayNodeData,
-      label: 'API Gateway',
-      routeRules: [
-        { id: 'rule-1', pathPattern: '/api/orders', targetServiceName: 'order-service', priority: 1 },
-        { id: 'rule-2', pathPattern: '/api/orders/**', targetServiceName: 'order-service', priority: 2 },
-        { id: 'rule-3', pathPattern: '/api/products', targetServiceName: 'product-service', priority: 3 },
-        { id: 'rule-4', pathPattern: '/api/products/**', targetServiceName: 'product-service', priority: 4 },
-      ],
-    },
-  },
-  {
-    id: 'ev-product-service',
-    type: 'http-server',
-    position: { x: 510, y: 50 },
-    data: {
-      label: 'Product Service',
-      serviceName: 'product-service',
-      basePath: '/api/products',
-      port: 8084,
-      responseStatus: 200,
-      responseBody: '{"productId": "P-001", "name": "Widget"}',
-      responseDelay: 20,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'ev-order-service',
-    type: 'http-server',
-    position: { x: 510, y: 200 },
-    data: {
-      label: 'Order Service',
-      serviceName: 'order-service',
-      basePath: '/api/orders',
-      port: 8081,
-      responseStatus: 201,
-      responseBody: '{"orderId": "12345", "status": "created"}',
-      responseDelay: 25,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'ev-database',
-    type: 'database',
-    position: { x: 510, y: 380 },
-    data: {
-      ...defaultDatabaseNodeData,
-      label: 'Orders DB',
-    },
-  },
-  {
-    id: 'ev-message-queue',
-    type: 'message-queue',
-    position: { x: 740, y: 200 },
-    data: {
-      ...defaultMessageQueueNodeData,
-      label: 'Event Bus',
-      queueType: 'kafka',
-      mode: 'pubsub',
-      consumerCount: 2,
-    },
-  },
-  {
-    id: 'ev-notification-service',
-    type: 'http-server',
-    position: { x: 970, y: 100 },
-    data: {
-      label: 'Notification Service',
-      serviceName: 'notification-service',
-      basePath: '/notifications',
-      port: 8082,
-      responseStatus: 200,
-      responseBody: '{"sent": true}',
-      responseDelay: 15,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'ev-inventory-service',
-    type: 'http-server',
-    position: { x: 970, y: 300 },
-    data: {
-      label: 'Inventory Service',
-      serviceName: 'inventory-service',
-      basePath: '/inventory',
-      port: 8083,
-      responseStatus: 200,
-      responseBody: '{"updated": true}',
-      responseDelay: 20,
-      errorRate: 0,
-      resources: defaultServerResources,
-      degradation: defaultDegradation,
-    },
-  },
-  {
-    id: 'ev-cache',
-    type: 'cache',
-    position: { x: 1200, y: 300 },
-    data: {
-      ...defaultCacheNodeData,
-      label: 'Inventory Cache',
-    },
-  },
-];
+  serveur-1:
+    type: api-service
+    zone: backend
+    config:
+      label: "Serveur 1"
+      serviceName: "server-1"
+      basePath: "/api"
+      responseTime: 50
 
-const eventDrivenEdges: Edge[] = [
-  {
-    id: 'ev-edge-client-gateway',
-    source: 'ev-client-group',
-    target: 'ev-api-gateway',
-    type: 'animated',
-  },
-  {
-    id: 'ev-edge-gateway-order',
-    source: 'ev-api-gateway',
-    target: 'ev-order-service',
-    type: 'animated',
-  },
-  {
-    id: 'ev-edge-gateway-product',
-    source: 'ev-api-gateway',
-    target: 'ev-product-service',
-    type: 'animated',
-  },
-  {
-    id: 'ev-edge-order-db',
-    source: 'ev-order-service',
-    target: 'ev-database',
-    type: 'animated',
-  },
-  {
-    id: 'ev-edge-order-queue',
-    source: 'ev-order-service',
-    target: 'ev-message-queue',
-    type: 'animated',
-  },
-  {
-    id: 'ev-edge-queue-notification',
-    source: 'ev-message-queue',
-    target: 'ev-notification-service',
-    type: 'animated',
-  },
-  {
-    id: 'ev-edge-queue-inventory',
-    source: 'ev-message-queue',
-    target: 'ev-inventory-service',
-    type: 'animated',
-  },
-  {
-    id: 'ev-edge-inventory-cache',
-    source: 'ev-inventory-service',
-    target: 'ev-cache',
-    type: 'animated',
-  },
-];
+  serveur-2:
+    type: api-service
+    zone: backend
+    config:
+      label: "Serveur 2"
+      serviceName: "server-2"
+      basePath: "/api"
+      responseTime: 50
 
-// Template 5: E-Commerce Microservices avec Zones Réseau
+  serveur-3:
+    type: api-service
+    zone: backend
+    config:
+      label: "Serveur 3"
+      serviceName: "server-3"
+      basePath: "/api"
+      responseTime: 50
+
+  database:
+    type: database
+    zone: data
+    config:
+      label: "Base de données"
+
+connections:
+  - from: clients
+    to: load-balancer
+  - from: load-balancer
+    to: serveur-1
+  - from: load-balancer
+    to: serveur-2
+  - from: load-balancer
+    to: serveur-3
+  - from: serveur-1
+    to: database
+  - from: serveur-2
+    to: database
+  - from: serveur-3
+    to: database
+`;
+
+// ============================================
+// Template 3 : Microservices
+// [Client Group] → [Zone DMZ: API Gateway]
+//                       ↓
+//                  [Zone Backend: Service A + Service B]
+//                       ↓
+//                  [Zone Données: Database + Cache]
+// ============================================
+const microservicesYaml = `
+version: 1
+name: "Microservices"
+
+zones:
+  dmz:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 250, y: 30 }
+    size: { width: 250, height: 200 }
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 250, y: 280 }
+    size: { width: 500, height: 220 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 250, y: 550 }
+    size: { width: 500, height: 200 }
+
+components:
+  clients:
+    type: client-group
+    position: { x: 50, y: 100 }
+    config:
+      label: "Clients"
+      virtualClients: 30
+      baseInterval: 300
+      paths:
+        - /api/service-a
+        - /api/service-b
+
+  api-gateway:
+    type: api-gateway
+    zone: dmz
+    config:
+      label: "API Gateway"
+      routeRules:
+        - id: rule-1
+          pathPattern: "/api/service-a"
+          targetServiceName: "service-a"
+          priority: 1
+        - id: rule-2
+          pathPattern: "/api/service-a/**"
+          targetServiceName: "service-a"
+          priority: 2
+        - id: rule-3
+          pathPattern: "/api/service-b"
+          targetServiceName: "service-b"
+          priority: 3
+        - id: rule-4
+          pathPattern: "/api/service-b/**"
+          targetServiceName: "service-b"
+          priority: 4
+
+  service-a:
+    type: api-service
+    zone: backend
+    config:
+      label: "Service A"
+      serviceName: "service-a"
+      basePath: "/api/service-a"
+      responseTime: 30
+
+  service-b:
+    type: api-service
+    zone: backend
+    config:
+      label: "Service B"
+      serviceName: "service-b"
+      basePath: "/api/service-b"
+      responseTime: 40
+
+  database:
+    type: database
+    zone: data
+    config:
+      label: "Database"
+
+  cache:
+    type: cache
+    zone: data
+    config:
+      label: "Cache"
+
+connections:
+  - from: clients
+    to: api-gateway
+  - from: api-gateway
+    to: service-a
+  - from: api-gateway
+    to: service-b
+  - from: service-a
+    to: database
+  - from: service-b
+    to: cache
+`;
+
+// ============================================
+// Template 4 : Event-Driven Microservices
+// [Client Group] → [Zone DMZ: API Gateway]
+//                       ↓
+//                  [Zone Backend: Order Service + Product Service]
+//                       ↓
+//                  [Zone Données: DB + Message Queue + Cache]
+//                       ↓ (async)
+//                  [Notification Service + Inventory Service]
+// ============================================
+const eventDrivenYaml = `
+version: 1
+name: "Event-Driven Microservices"
+
+zones:
+  dmz:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 230, y: 30 }
+    size: { width: 250, height: 200 }
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 100, y: 280 }
+    size: { width: 700, height: 250 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 100, y: 580 }
+    size: { width: 700, height: 200 }
+
+components:
+  clients:
+    type: client-group
+    position: { x: 30, y: 100 }
+    config:
+      label: "Clients"
+      virtualClients: 25
+      baseInterval: 400
+      paths:
+        - /api/orders
+        - /api/products
+
+  api-gateway:
+    type: api-gateway
+    zone: dmz
+    config:
+      label: "API Gateway"
+      routeRules:
+        - id: rule-1
+          pathPattern: "/api/orders"
+          targetServiceName: "order-service"
+          priority: 1
+        - id: rule-2
+          pathPattern: "/api/orders/**"
+          targetServiceName: "order-service"
+          priority: 2
+        - id: rule-3
+          pathPattern: "/api/products"
+          targetServiceName: "product-service"
+          priority: 3
+        - id: rule-4
+          pathPattern: "/api/products/**"
+          targetServiceName: "product-service"
+          priority: 4
+
+  product-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Product Service"
+      serviceName: "product-service"
+      basePath: "/api/products"
+      responseTime: 20
+
+  order-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Order Service"
+      serviceName: "order-service"
+      basePath: "/api/orders"
+      responseTime: 25
+
+  notification-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Notification Service"
+      serviceName: "notification-service"
+      basePath: "/notifications"
+      responseTime: 15
+
+  inventory-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Inventory Service"
+      serviceName: "inventory-service"
+      basePath: "/inventory"
+      responseTime: 20
+
+  orders-db:
+    type: database
+    zone: data
+    config:
+      label: "Orders DB"
+
+  event-bus:
+    type: message-queue
+    zone: data
+    config:
+      label: "Event Bus"
+      queueType: kafka
+      mode: pubsub
+      consumerCount: 2
+
+  inventory-cache:
+    type: cache
+    zone: data
+    config:
+      label: "Inventory Cache"
+
+connections:
+  - from: clients
+    to: api-gateway
+  - from: api-gateway
+    to: order-service
+  - from: api-gateway
+    to: product-service
+  - from: order-service
+    to: orders-db
+  - from: order-service
+    to: event-bus
+  - from: event-bus
+    to: notification-service
+  - from: event-bus
+    to: inventory-service
+  - from: inventory-service
+    to: inventory-cache
+`;
+
+// ============================================
+// Template 5 : E-Commerce Microservices avec Zones Réseau
 // Architecture hiérarchique avec 3 zones : DMZ, Backend, Données
 //
 // [Client Group] → [Zone DMZ: WAF → LB → API Gateway]
@@ -532,329 +427,275 @@ const eventDrivenEdges: Edge[] = [
 //                  [Zone Backend: 6 microservices + Service Discovery]
 //                       ↓
 //                  [Zone Données: 2 DB + 2 Cache + Message Queue]
-const ecommerceNodes: Node[] = [
-  // --- Hors zones (non-nestable) ---
-  {
-    id: 'ecom-client-group',
-    type: 'client-group',
-    position: { x: 30, y: 300 },
-    data: {
-      ...defaultClientGroupData,
-      label: 'Clients E-Commerce',
-      virtualClients: 40,
-      baseInterval: 300,
-      paths: ['/api/users', '/api/products', '/api/cart', '/api/orders', '/api/payments'],
-    },
-  },
+// ============================================
+const ecommerceYaml = `
+version: 1
+name: "E-Commerce Microservices"
 
-  // --- Zone DMZ ---
-  {
-    id: 'ecom-zone-dmz',
-    type: 'network-zone',
-    position: { x: 250, y: 150 },
-    style: { width: 350, height: 350 },
-    data: {
-      label: 'Zone DMZ',
-      zoneType: 'dmz' as const,
-      color: zoneColors.dmz,
-      interZoneLatency: 2,
-    },
-  },
-  {
-    id: 'ecom-waf',
-    type: 'waf',
-    position: { x: 30, y: 60 },
-    parentId: 'ecom-zone-dmz',
-    extent: 'parent' as const,
-    data: {
-      ...defaultWAFNodeData,
-      label: 'WAF',
-    },
-  },
-  {
-    id: 'ecom-load-balancer',
-    type: 'load-balancer',
-    position: { x: 30, y: 190 },
-    parentId: 'ecom-zone-dmz',
-    extent: 'parent' as const,
-    data: {
-      ...defaultLoadBalancerNodeData,
-      label: 'Load Balancer',
-    },
-  },
-  {
-    id: 'ecom-api-gateway',
-    type: 'api-gateway',
-    position: { x: 180, y: 120 },
-    parentId: 'ecom-zone-dmz',
-    extent: 'parent' as const,
-    data: {
-      ...defaultApiGatewayNodeData,
-      label: 'API Gateway',
-      routeRules: [
-        { id: 'ecom-rule-1', pathPattern: '/api/users', targetServiceName: 'user-service', priority: 1 },
-        { id: 'ecom-rule-2', pathPattern: '/api/users/**', targetServiceName: 'user-service', priority: 2 },
-        { id: 'ecom-rule-3', pathPattern: '/api/products', targetServiceName: 'product-service', priority: 3 },
-        { id: 'ecom-rule-4', pathPattern: '/api/products/**', targetServiceName: 'product-service', priority: 4 },
-        { id: 'ecom-rule-5', pathPattern: '/api/cart', targetServiceName: 'cart-service', priority: 5 },
-        { id: 'ecom-rule-6', pathPattern: '/api/cart/**', targetServiceName: 'cart-service', priority: 6 },
-        { id: 'ecom-rule-7', pathPattern: '/api/orders', targetServiceName: 'order-service', priority: 7 },
-        { id: 'ecom-rule-8', pathPattern: '/api/orders/**', targetServiceName: 'order-service', priority: 8 },
-        { id: 'ecom-rule-9', pathPattern: '/api/payments', targetServiceName: 'payment-service', priority: 9 },
-        { id: 'ecom-rule-10', pathPattern: '/api/payments/**', targetServiceName: 'payment-service', priority: 10 },
-        { id: 'ecom-rule-11', pathPattern: '/api/notifications', targetServiceName: 'notification-service', priority: 11 },
-        { id: 'ecom-rule-12', pathPattern: '/api/notifications/**', targetServiceName: 'notification-service', priority: 12 },
-      ],
-    },
-  },
+zones:
+  dmz:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 250, y: 150 }
+    size: { width: 350, height: 350 }
+  backend:
+    type: backend
+    interZoneLatency: 2
+    position: { x: 650, y: 30 }
+    size: { width: 500, height: 680 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 1200, y: 30 }
+    size: { width: 280, height: 680 }
 
-  // --- Zone Backend ---
-  {
-    id: 'ecom-zone-backend',
-    type: 'network-zone',
-    position: { x: 650, y: 30 },
-    style: { width: 500, height: 680 },
-    data: {
-      label: 'Zone Backend',
-      zoneType: 'backend' as const,
-      color: zoneColors.backend,
-      interZoneLatency: 2,
-    },
-  },
-  {
-    id: 'ecom-user-service',
-    type: 'api-service',
-    position: { x: 30, y: 60 },
-    parentId: 'ecom-zone-backend',
-    extent: 'parent' as const,
-    data: {
-      ...defaultApiServiceData,
-      label: 'Service Utilisateurs',
-      serviceName: 'user-service',
-      basePath: '/api/users',
-      responseTime: 30,
-    },
-  },
-  {
-    id: 'ecom-product-service',
-    type: 'api-service',
-    position: { x: 260, y: 60 },
-    parentId: 'ecom-zone-backend',
-    extent: 'parent' as const,
-    data: {
-      ...defaultApiServiceData,
-      label: 'Service Produits',
-      serviceName: 'product-service',
-      basePath: '/api/products',
-      responseTime: 25,
-    },
-  },
-  {
-    id: 'ecom-cart-service',
-    type: 'api-service',
-    position: { x: 30, y: 200 },
-    parentId: 'ecom-zone-backend',
-    extent: 'parent' as const,
-    data: {
-      ...defaultApiServiceData,
-      label: 'Service Panier',
-      serviceName: 'cart-service',
-      basePath: '/api/cart',
-      responseTime: 20,
-    },
-  },
-  {
-    id: 'ecom-order-service',
-    type: 'api-service',
-    position: { x: 260, y: 200 },
-    parentId: 'ecom-zone-backend',
-    extent: 'parent' as const,
-    data: {
-      ...defaultApiServiceData,
-      label: 'Service Commandes',
-      serviceName: 'order-service',
-      basePath: '/api/orders',
-      responseTime: 35,
-    },
-  },
-  {
-    id: 'ecom-payment-service',
-    type: 'api-service',
-    position: { x: 30, y: 340 },
-    parentId: 'ecom-zone-backend',
-    extent: 'parent' as const,
-    data: {
-      ...defaultApiServiceData,
-      label: 'Service Paiements',
-      serviceName: 'payment-service',
-      basePath: '/api/payments',
-      responseTime: 50,
-    },
-  },
-  {
-    id: 'ecom-notification-service',
-    type: 'api-service',
-    position: { x: 260, y: 340 },
-    parentId: 'ecom-zone-backend',
-    extent: 'parent' as const,
-    data: {
-      ...defaultApiServiceData,
-      label: 'Service Notifications',
-      serviceName: 'notification-service',
-      basePath: '/api/notifications',
-      responseTime: 15,
-    },
-  },
-  {
-    id: 'ecom-service-discovery',
-    type: 'service-discovery',
-    position: { x: 150, y: 490 },
-    parentId: 'ecom-zone-backend',
-    extent: 'parent' as const,
-    data: {
-      ...defaultServiceDiscoveryData,
-      label: 'Service Discovery',
-      provider: 'consul',
-    },
-  },
+components:
+  clients-ecommerce:
+    type: client-group
+    position: { x: 30, y: 300 }
+    config:
+      label: "Clients E-Commerce"
+      virtualClients: 40
+      baseInterval: 300
+      paths:
+        - /api/users
+        - /api/products
+        - /api/cart
+        - /api/orders
+        - /api/payments
 
-  // --- Zone Données ---
-  {
-    id: 'ecom-zone-data',
-    type: 'network-zone',
-    position: { x: 1200, y: 30 },
-    style: { width: 280, height: 680 },
-    data: {
-      label: 'Zone Données',
-      zoneType: 'data' as const,
-      color: zoneColors.data,
-      interZoneLatency: 1,
-    },
-  },
-  {
-    id: 'ecom-users-db',
-    type: 'database',
-    position: { x: 50, y: 60 },
-    parentId: 'ecom-zone-data',
-    extent: 'parent' as const,
-    data: {
-      ...defaultDatabaseNodeData,
-      label: 'Base Utilisateurs',
-    },
-  },
-  {
-    id: 'ecom-products-db',
-    type: 'database',
-    position: { x: 50, y: 180 },
-    parentId: 'ecom-zone-data',
-    extent: 'parent' as const,
-    data: {
-      ...defaultDatabaseNodeData,
-      label: 'Base Produits',
-    },
-  },
-  {
-    id: 'ecom-product-cache',
-    type: 'cache',
-    position: { x: 50, y: 300 },
-    parentId: 'ecom-zone-data',
-    extent: 'parent' as const,
-    data: {
-      ...defaultCacheNodeData,
-      label: 'Cache Produits',
-    },
-  },
-  {
-    id: 'ecom-cart-cache',
-    type: 'cache',
-    position: { x: 50, y: 420 },
-    parentId: 'ecom-zone-data',
-    extent: 'parent' as const,
-    data: {
-      ...defaultCacheNodeData,
-      label: 'Cache Panier',
-    },
-  },
-  {
-    id: 'ecom-message-queue',
-    type: 'message-queue',
-    position: { x: 50, y: 540 },
-    parentId: 'ecom-zone-data',
-    extent: 'parent' as const,
-    data: {
-      ...defaultMessageQueueNodeData,
-      label: "Bus d'événements",
-      queueType: 'rabbitmq',
-      mode: 'pubsub',
-      consumerCount: 2,
-    },
-  },
-];
+  waf:
+    type: waf
+    zone: dmz
+    position: { x: 30, y: 60 }
+    config:
+      label: "WAF"
 
-const ecommerceEdges: Edge[] = [
-  // Client → Zone DMZ
-  { id: 'ecom-edge-client-waf', source: 'ecom-client-group', target: 'ecom-waf', type: 'animated' },
-  { id: 'ecom-edge-waf-lb', source: 'ecom-waf', target: 'ecom-load-balancer', type: 'animated' },
-  { id: 'ecom-edge-lb-gateway', source: 'ecom-load-balancer', target: 'ecom-api-gateway', type: 'animated' },
-  // API Gateway → Microservices (Zone Backend)
-  { id: 'ecom-edge-gw-users', source: 'ecom-api-gateway', target: 'ecom-user-service', type: 'animated' },
-  { id: 'ecom-edge-gw-products', source: 'ecom-api-gateway', target: 'ecom-product-service', type: 'animated' },
-  { id: 'ecom-edge-gw-cart', source: 'ecom-api-gateway', target: 'ecom-cart-service', type: 'animated' },
-  { id: 'ecom-edge-gw-orders', source: 'ecom-api-gateway', target: 'ecom-order-service', type: 'animated' },
-  { id: 'ecom-edge-gw-payments', source: 'ecom-api-gateway', target: 'ecom-payment-service', type: 'animated' },
-  // Microservices → Zone Données
-  { id: 'ecom-edge-users-db', source: 'ecom-user-service', target: 'ecom-users-db', type: 'animated' },
-  { id: 'ecom-edge-products-db', source: 'ecom-product-service', target: 'ecom-products-db', type: 'animated' },
-  { id: 'ecom-edge-products-cache', source: 'ecom-product-service', target: 'ecom-product-cache', type: 'animated' },
-  { id: 'ecom-edge-cart-cache', source: 'ecom-cart-service', target: 'ecom-cart-cache', type: 'animated' },
-  { id: 'ecom-edge-orders-db', source: 'ecom-order-service', target: 'ecom-users-db', type: 'animated' },
-  { id: 'ecom-edge-orders-queue', source: 'ecom-order-service', target: 'ecom-message-queue', type: 'animated' },
-  // Async : Message Queue → Notification Service
-  { id: 'ecom-edge-queue-notif', source: 'ecom-message-queue', target: 'ecom-notification-service', type: 'animated' },
-  // Inter-service
-  { id: 'ecom-edge-payment-order', source: 'ecom-payment-service', target: 'ecom-order-service', type: 'animated' },
-  // Service Discovery
-  { id: 'ecom-edge-gw-discovery', source: 'ecom-api-gateway', target: 'ecom-service-discovery', type: 'animated' },
-];
+  load-balancer:
+    type: load-balancer
+    zone: dmz
+    position: { x: 30, y: 190 }
+    config:
+      label: "Load Balancer"
+
+  api-gateway:
+    type: api-gateway
+    zone: dmz
+    position: { x: 180, y: 120 }
+    config:
+      label: "API Gateway"
+      routeRules:
+        - id: ecom-rule-1
+          pathPattern: "/api/users"
+          targetServiceName: "user-service"
+          priority: 1
+        - id: ecom-rule-2
+          pathPattern: "/api/users/**"
+          targetServiceName: "user-service"
+          priority: 2
+        - id: ecom-rule-3
+          pathPattern: "/api/products"
+          targetServiceName: "product-service"
+          priority: 3
+        - id: ecom-rule-4
+          pathPattern: "/api/products/**"
+          targetServiceName: "product-service"
+          priority: 4
+        - id: ecom-rule-5
+          pathPattern: "/api/cart"
+          targetServiceName: "cart-service"
+          priority: 5
+        - id: ecom-rule-6
+          pathPattern: "/api/cart/**"
+          targetServiceName: "cart-service"
+          priority: 6
+        - id: ecom-rule-7
+          pathPattern: "/api/orders"
+          targetServiceName: "order-service"
+          priority: 7
+        - id: ecom-rule-8
+          pathPattern: "/api/orders/**"
+          targetServiceName: "order-service"
+          priority: 8
+        - id: ecom-rule-9
+          pathPattern: "/api/payments"
+          targetServiceName: "payment-service"
+          priority: 9
+        - id: ecom-rule-10
+          pathPattern: "/api/payments/**"
+          targetServiceName: "payment-service"
+          priority: 10
+        - id: ecom-rule-11
+          pathPattern: "/api/notifications"
+          targetServiceName: "notification-service"
+          priority: 11
+        - id: ecom-rule-12
+          pathPattern: "/api/notifications/**"
+          targetServiceName: "notification-service"
+          priority: 12
+
+  user-service:
+    type: api-service
+    zone: backend
+    position: { x: 30, y: 60 }
+    config:
+      label: "Service Utilisateurs"
+      serviceName: "user-service"
+      basePath: "/api/users"
+      responseTime: 30
+
+  product-service:
+    type: api-service
+    zone: backend
+    position: { x: 260, y: 60 }
+    config:
+      label: "Service Produits"
+      serviceName: "product-service"
+      basePath: "/api/products"
+      responseTime: 25
+
+  cart-service:
+    type: api-service
+    zone: backend
+    position: { x: 30, y: 200 }
+    config:
+      label: "Service Panier"
+      serviceName: "cart-service"
+      basePath: "/api/cart"
+      responseTime: 20
+
+  order-service:
+    type: api-service
+    zone: backend
+    position: { x: 260, y: 200 }
+    config:
+      label: "Service Commandes"
+      serviceName: "order-service"
+      basePath: "/api/orders"
+      responseTime: 35
+
+  payment-service:
+    type: api-service
+    zone: backend
+    position: { x: 30, y: 340 }
+    config:
+      label: "Service Paiements"
+      serviceName: "payment-service"
+      basePath: "/api/payments"
+      responseTime: 50
+
+  notification-service:
+    type: api-service
+    zone: backend
+    position: { x: 260, y: 340 }
+    config:
+      label: "Service Notifications"
+      serviceName: "notification-service"
+      basePath: "/api/notifications"
+      responseTime: 15
+
+  service-discovery:
+    type: service-discovery
+    zone: backend
+    position: { x: 150, y: 490 }
+    config:
+      label: "Service Discovery"
+      provider: consul
+
+  users-db:
+    type: database
+    zone: data
+    position: { x: 50, y: 60 }
+    config:
+      label: "Base Utilisateurs"
+
+  products-db:
+    type: database
+    zone: data
+    position: { x: 50, y: 180 }
+    config:
+      label: "Base Produits"
+
+  product-cache:
+    type: cache
+    zone: data
+    position: { x: 50, y: 300 }
+    config:
+      label: "Cache Produits"
+
+  cart-cache:
+    type: cache
+    zone: data
+    position: { x: 50, y: 420 }
+    config:
+      label: "Cache Panier"
+
+  message-queue:
+    type: message-queue
+    zone: data
+    position: { x: 50, y: 540 }
+    config:
+      label: "Bus d'événements"
+      queueType: rabbitmq
+      mode: pubsub
+      consumerCount: 2
+
+connections:
+  - from: clients-ecommerce
+    to: waf
+  - from: waf
+    to: load-balancer
+  - from: load-balancer
+    to: api-gateway
+  - from: api-gateway
+    to: user-service
+  - from: api-gateway
+    to: product-service
+  - from: api-gateway
+    to: cart-service
+  - from: api-gateway
+    to: order-service
+  - from: api-gateway
+    to: payment-service
+  - from: user-service
+    to: users-db
+  - from: product-service
+    to: products-db
+  - from: product-service
+    to: product-cache
+  - from: cart-service
+    to: cart-cache
+  - from: order-service
+    to: users-db
+  - from: order-service
+    to: message-queue
+  - from: message-queue
+    to: notification-service
+  - from: payment-service
+    to: order-service
+  - from: api-gateway
+    to: service-discovery
+`;
+
+// ============================================
+// Build template list
+// ============================================
+const basicTemplateConfigs = [
+  { id: 'monolith', nameKey: 'templates.monolith.name', descriptionKey: 'templates.monolith.description', yaml: monolithYaml },
+  { id: 'load-balanced', nameKey: 'templates.loadBalanced.name', descriptionKey: 'templates.loadBalanced.description', yaml: loadBalancedYaml },
+  { id: 'microservices', nameKey: 'templates.microservices.name', descriptionKey: 'templates.microservices.description', yaml: microservicesYaml },
+  { id: 'event-driven', nameKey: 'templates.eventDriven.name', descriptionKey: 'templates.eventDriven.description', yaml: eventDrivenYaml },
+  { id: 'ecommerce', nameKey: 'templates.ecommerce.name', descriptionKey: 'templates.ecommerce.description', yaml: ecommerceYaml },
+] as const;
+
+const basicTemplates: ArchitectureTemplate[] = basicTemplateConfigs
+  .map(({ id, nameKey, descriptionKey, yaml }) => createTemplateFromYaml(id, nameKey, descriptionKey, yaml))
+  .filter((t): t is ArchitectureTemplate => t !== null);
 
 import { advancedTemplates } from './advanced-templates';
 
 export const architectureTemplates: ArchitectureTemplate[] = [
-  {
-    id: 'monolith',
-    nameKey: 'templates.monolith.name',
-    descriptionKey: 'templates.monolith.description',
-    nodes: monolithNodes,
-    edges: monolithEdges,
-  },
-  {
-    id: 'load-balanced',
-    nameKey: 'templates.loadBalanced.name',
-    descriptionKey: 'templates.loadBalanced.description',
-    nodes: loadBalancedNodes,
-    edges: loadBalancedEdges,
-  },
-  {
-    id: 'microservices',
-    nameKey: 'templates.microservices.name',
-    descriptionKey: 'templates.microservices.description',
-    nodes: microservicesNodes,
-    edges: microservicesEdges,
-  },
-  {
-    id: 'event-driven',
-    nameKey: 'templates.eventDriven.name',
-    descriptionKey: 'templates.eventDriven.description',
-    nodes: eventDrivenNodes,
-    edges: eventDrivenEdges,
-  },
-  {
-    id: 'ecommerce',
-    nameKey: 'templates.ecommerce.name',
-    descriptionKey: 'templates.ecommerce.description',
-    nodes: ecommerceNodes,
-    edges: ecommerceEdges,
-  },
+  ...basicTemplates,
   ...advancedTemplates,
 ];
 

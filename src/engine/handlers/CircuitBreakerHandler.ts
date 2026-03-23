@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { CircuitBreakerNodeData, CircuitBreakerState } from '@/types';
 
@@ -15,11 +15,11 @@ export class CircuitBreakerHandler implements NodeRequestHandler {
 
   private nodeStates: Map<string, CircuitBreakerNodeState> = new Map();
 
-  getProcessingDelay(_node: Node, speed: number): number {
+  getProcessingDelay(_node: GraphNode, speed: number): number {
     return 2 / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     this.nodeStates.set(node.id, {
       state: 'closed',
       failureCount: 0,
@@ -34,10 +34,10 @@ export class CircuitBreakerHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as CircuitBreakerNodeData;
     const cbState = this.getOrCreateState(node.id);
@@ -74,7 +74,7 @@ export class CircuitBreakerHandler implements NodeRequestHandler {
   }
 
   handleResponsePassthrough(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
     isError: boolean
   ): ResponseDecision {

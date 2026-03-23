@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { ServerlessNodeData } from '@/types';
 
@@ -12,7 +12,7 @@ export class ServerlessHandler implements NodeRequestHandler {
 
   private nodeStates: Map<string, ServerlessState> = new Map();
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as ServerlessNodeData;
     const state = this.getOrCreateState(node.id);
 
@@ -24,7 +24,7 @@ export class ServerlessHandler implements NodeRequestHandler {
     return latency / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     const data = node.data as ServerlessNodeData;
     this.nodeStates.set(node.id, {
       activeInstances: data.minInstances,
@@ -37,10 +37,10 @@ export class ServerlessHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as ServerlessNodeData;
     const state = this.getOrCreateState(node.id);

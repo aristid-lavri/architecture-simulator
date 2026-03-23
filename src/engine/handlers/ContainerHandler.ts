@@ -1,20 +1,20 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { ContainerNodeData } from '@/types';
 
 export class ContainerHandler implements NodeRequestHandler {
   readonly nodeType = 'container';
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as ContainerNodeData;
     return data.responseDelayMs / speed;
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     if (outgoingEdges.length === 0) {
       return { action: 'respond', isError: false };

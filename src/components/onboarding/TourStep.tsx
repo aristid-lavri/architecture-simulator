@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from '@/i18n';
 import type { TourStepConfig } from './steps';
 import { TOUR_STEPS } from './steps';
@@ -127,15 +126,11 @@ export function TourStep({ step, stepIndex, onNext }: TourStepProps) {
   const isCentered = step.targetSelector === null;
 
   return (
-    <AnimatePresence>
+    <>
       {visible && (
-        <motion.div
+        <div
           ref={tooltipRef}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed z-[9999]"
+          className="fixed z-[9999] animate-in fade-in zoom-in-95 duration-250"
           style={
             isCentered
               ? {
@@ -201,17 +196,15 @@ export function TourStep({ step, stepIndex, onNext }: TourStepProps) {
 
             {/* Progress bar */}
             <div className="h-0.5 bg-muted overflow-hidden" style={{ borderRadius: '0 0 8px 8px' }}>
-              <motion.div
-                className="h-full bg-foreground/40"
-                initial={{ width: 0 }}
-                animate={{ width: `${((stepIndex + 1) / TOUR_STEPS.length) * 100}%` }}
-                transition={{ duration: 0.5 }}
+              <div
+                className="h-full bg-foreground/40 transition-all duration-500"
+                style={{ width: `${((stepIndex + 1) / TOUR_STEPS.length) * 100}%` }}
               />
             </div>
           </div>
-        </motion.div>
+        </div>
       )}
-    </AnimatePresence>
+    </>
   );
 }
 

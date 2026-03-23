@@ -1,4 +1,4 @@
-import type { Node } from '@xyflow/react';
+import type { GraphNode } from '@/types/graph';
 
 type HandleSide = 'top' | 'right' | 'bottom' | 'left';
 
@@ -9,7 +9,7 @@ interface NodeRect {
   height: number;
 }
 
-function getNodeRect(node: Node, allNodes: Node[]): NodeRect {
+function getNodeRect(node: GraphNode, allNodes: GraphNode[]): NodeRect {
   // Compute absolute position by walking up the parentId chain
   let absX = node.position.x;
   let absY = node.position.y;
@@ -21,8 +21,8 @@ function getNodeRect(node: Node, allNodes: Node[]): NodeRect {
     absY += parent.position.y;
     current = parent;
   }
-  const width = (node.measured?.width ?? (node.style?.width as number | undefined)) || 160;
-  const height = (node.measured?.height ?? (node.style?.height as number | undefined)) || 60;
+  const width = node.width || 160;
+  const height = node.height || 60;
   return { x: absX, y: absY, width, height };
 }
 
@@ -55,9 +55,9 @@ function selectSide(sourceRect: NodeRect, targetRect: NodeRect): { sourceSide: H
 }
 
 export function selectOptimalHandles(
-  sourceNode: Node,
-  targetNode: Node,
-  allNodes: Node[]
+  sourceNode: GraphNode,
+  targetNode: GraphNode,
+  allNodes: GraphNode[]
 ): { sourceHandle: string; targetHandle: string } {
   const sourceRect = getNodeRect(sourceNode, allNodes);
   const targetRect = getNodeRect(targetNode, allNodes);
@@ -74,7 +74,7 @@ export function selectOptimalHandles(
  */
 export function recalculateAllHandles(
   edges: Array<{ id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }>,
-  nodes: Node[]
+  nodes: GraphNode[]
 ): Map<string, { sourceHandle: string; targetHandle: string }> {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const result = new Map<string, { sourceHandle: string; targetHandle: string }>();

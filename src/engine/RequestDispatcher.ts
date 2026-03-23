@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { Particle } from '@/types';
 import type { MetricsCollector } from './metrics';
 import { ParticleManager } from './ParticleManager';
@@ -38,9 +38,9 @@ export interface RequestDispatcherCallbacks {
  * - Gestion du chaos mode (faults, isolation)
  */
 export class RequestDispatcher {
-  private nodes: Node[] = [];
-  private edges: Edge[] = [];
-  private nodeMap: Map<string, Node> = new Map();
+  private nodes: GraphNode[] = [];
+  private edges: GraphEdge[] = [];
+  private nodeMap: Map<string, GraphNode> = new Map();
   private speed: number = 1;
   private metrics: MetricsCollector;
   private callbacks: RequestDispatcherCallbacks;
@@ -50,16 +50,16 @@ export class RequestDispatcher {
   private cacheManager: CacheManager;
   private getState: () => string;
   private getHandlerForNode: (nodeType: string) => NodeRequestHandler;
-  private getNodeProcessingDelay: (node: Node, context?: RequestContext) => number;
+  private getNodeProcessingDelay: (node: GraphNode, context?: RequestContext) => number;
   private getHierarchicalLatency: (sourceId: string, targetId: string) => number;
   private getNodeFault: (nodeId: string) => 'down' | 'degraded' | null;
   private isNodeIsolated: (nodeId: string) => boolean;
   private isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null;
-  private findConnectedIdP: (nodeId: string) => { node: Node; edge: Edge } | null;
+  private findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null;
   private validateTokenViaIdP: (
-    gateway: Node,
-    idpNode: Node,
-    idpEdge: Edge,
+    gateway: GraphNode,
+    idpNode: GraphNode,
+    idpEdge: GraphEdge,
     chainId: string,
     context: RequestContext,
     onValid: () => void,
@@ -78,16 +78,16 @@ export class RequestDispatcher {
     cacheManager: CacheManager,
     getState: () => string,
     getHandlerForNode: (nodeType: string) => NodeRequestHandler,
-    getNodeProcessingDelay: (node: Node, context?: RequestContext) => number,
+    getNodeProcessingDelay: (node: GraphNode, context?: RequestContext) => number,
     getHierarchicalLatency: (sourceId: string, targetId: string) => number,
     getNodeFault: (nodeId: string) => 'down' | 'degraded' | null,
     isNodeIsolated: (nodeId: string) => boolean,
     isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null,
-    findConnectedIdP: (nodeId: string) => { node: Node; edge: Edge } | null,
+    findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null,
     validateTokenViaIdP: (
-      gateway: Node,
-      idpNode: Node,
-      idpEdge: Edge,
+      gateway: GraphNode,
+      idpNode: GraphNode,
+      idpEdge: GraphEdge,
       chainId: string,
       context: RequestContext,
       onValid: () => void,
@@ -111,7 +111,7 @@ export class RequestDispatcher {
     this.validateTokenViaIdP = validateTokenViaIdP;
   }
 
-  setNodesAndEdges(nodes: Node[], edges: Edge[], nodeMap?: Map<string, Node>): void {
+  setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[], nodeMap?: Map<string, GraphNode>): void {
     this.nodes = nodes;
     this.edges = edges;
     if (nodeMap) this.nodeMap = nodeMap;
@@ -157,7 +157,7 @@ export class RequestDispatcher {
    * Transmet la requete depuis un noeud intermediaire vers ses cibles.
    * Utilise les handlers pour determiner la strategie de forwarding.
    */
-  forwardRequest(sourceNode: Node, outgoingEdges: Edge[], chainId: string): void {
+  forwardRequest(sourceNode: GraphNode, outgoingEdges: GraphEdge[], chainId: string): void {
     if (this.getState() !== 'running') return;
 
     const chain = this.chainManager.getChain(chainId);
@@ -181,7 +181,7 @@ export class RequestDispatcher {
    */
   executeDecision(
     decision: RequestDecision,
-    sourceNode: Node,
+    sourceNode: GraphNode,
     chainId: string,
     context: RequestContext,
   ): void {
@@ -250,7 +250,7 @@ export class RequestDispatcher {
 
           setTimeout(() => {
             this.handleChainRequestArrival(particle, sourceNode, targetNode,
-              { id: target.edgeId } as Edge, effectiveChainId);
+              { id: target.edgeId } as GraphEdge, effectiveChainId);
           }, requestDuration);
         });
         break;
@@ -308,7 +308,7 @@ export class RequestDispatcher {
 
           setTimeout(() => {
             this.handleChainRequestArrival(particle, sourceNode, dbNode,
-              { id: dbTarget.edgeId } as Edge, chainId);
+              { id: dbTarget.edgeId } as GraphEdge, chainId);
           }, requestDuration);
         }
         break;
@@ -348,7 +348,7 @@ export class RequestDispatcher {
 
           setTimeout(() => {
             this.handleChainRequestArrival(particle, sourceNode, targetNode,
-              { id: target.edgeId } as Edge, notifyChainId);
+              { id: target.edgeId } as GraphEdge, notifyChainId);
           }, requestDuration);
         });
         break;
@@ -360,9 +360,9 @@ export class RequestDispatcher {
    */
   handleChainRequestArrival(
     requestParticle: Particle,
-    sourceNode: Node,
-    targetNode: Node,
-    edge: Edge,
+    sourceNode: GraphNode,
+    targetNode: GraphNode,
+    edge: GraphEdge,
     chainId: string,
   ): void {
     if (this.getState() !== 'running') return;

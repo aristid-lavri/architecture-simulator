@@ -80,6 +80,18 @@
   --signal-server: oklch(0.68 0.18 290);
   --signal-data: oklch(0.72 0.19 155);
   --signal-infra: oklch(0.75 0.18 75);
+  --signal-security: oklch(0.75 0.18 75);
+
+  /* Edge Protocol Colors */
+  --edge-http: oklch(0.70 0.14 220);
+  --edge-grpc: oklch(0.68 0.16 170);
+  --edge-ws: oklch(0.70 0.16 290);
+  --edge-tcp: oklch(0.60 0.08 250);
+  --edge-mq: oklch(0.75 0.15 75);
+  --edge-db: oklch(0.72 0.16 155);
+
+  /* Saturation high (non-error) — amber intense */
+  --signal-saturation-high: oklch(0.70 0.20 55);
 
   /* Light mode — Craie × Abysse inversé */
   --background: oklch(0.97 0.005 250);
@@ -227,26 +239,27 @@
    REACT FLOW — Instrument Style
    ═══════════════════════════════════════ */
 
-/* Handles — small, precise, angular */
-.react-flow__handle {
+/* Handles — small, precise, RECTANGULAR (override React Flow 100% radius) */
+.react-flow .react-flow__handle {
   width: 10px !important;
   height: 10px !important;
-  border-radius: 2px !important;
+  border-radius: 1px !important;
   border: 1.5px solid var(--border) !important;
   background: var(--background) !important;
   transition: all 0.15s ease;
 }
 
-.react-flow__handle:hover {
+.react-flow .react-flow__handle:hover {
   border-color: var(--signal-active) !important;
   box-shadow: 0 0 6px var(--signal-active) !important;
 }
 
-/* Vertical handles */
-.react-flow__handle.react-flow__handle-left,
-.react-flow__handle.react-flow__handle-right {
+/* Vertical handles — taller rectangles */
+.react-flow .react-flow__handle.react-flow__handle-left,
+.react-flow .react-flow__handle.react-flow__handle-right {
   width: 8px !important;
   height: 14px !important;
+  border-radius: 1px !important;
 }
 
 /* Edge styling — thin, precise */
@@ -305,7 +318,7 @@
 .node-instrument {
   background: var(--node-bg);
   border: 1px solid var(--node-border);
-  border-radius: 3px;
+  border-radius: 2px;
   transition: border-color 0.2s ease;
   box-shadow: var(--node-shadow);
 }
@@ -324,8 +337,15 @@
   left: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
-  border-radius: 3px 0 0 3px;
+  width: 2px;
+  border-radius: 2px 0 0 2px;
+}
+
+/* Node header-content separator */
+.node-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0;
 }
 
 /* Status pulse animation */
@@ -622,16 +642,36 @@
    PARTICLE GLOW
    ═══════════════════════════════════════ */
 .particle-glow-request {
-  filter: drop-shadow(0 0 4px oklch(0.70 0.15 220 / 60%));
+  filter: drop-shadow(0 0 3px oklch(0.70 0.15 220 / 60%));
 }
 
 .particle-glow-success {
-  filter: drop-shadow(0 0 4px oklch(0.72 0.19 155 / 60%));
+  filter: drop-shadow(0 0 2px oklch(0.75 0.20 155 / 50%));
 }
 
 .particle-glow-error {
-  filter: drop-shadow(0 0 4px oklch(0.65 0.22 25 / 60%));
+  filter: drop-shadow(0 0 5px oklch(0.65 0.25 25 / 80%));
+  animation: particle-error-pulse 0.4s ease-in-out infinite;
 }
+
+.particle-glow-token {
+  filter: drop-shadow(0 0 2px oklch(0.78 0.18 55 / 40%));
+}
+
+@keyframes particle-error-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ═══════════════════════════════════════
+   EDGE PROTOCOL GLOW (on hover/selection)
+   ═══════════════════════════════════════ */
+.edge-glow-http { filter: drop-shadow(0 0 4px oklch(0.70 0.14 220 / 50%)); }
+.edge-glow-grpc { filter: drop-shadow(0 0 4px oklch(0.68 0.16 170 / 50%)); }
+.edge-glow-ws { filter: drop-shadow(0 0 4px oklch(0.70 0.16 290 / 50%)); }
+.edge-glow-tcp { filter: drop-shadow(0 0 4px oklch(0.60 0.08 250 / 50%)); }
+.edge-glow-mq { filter: drop-shadow(0 0 4px oklch(0.75 0.15 75 / 50%)); }
+.edge-glow-db { filter: drop-shadow(0 0 4px oklch(0.72 0.16 155 / 50%)); }
 
 /* ═══════════════════════════════════════
    YAML EDITOR — Mission Control Terminal

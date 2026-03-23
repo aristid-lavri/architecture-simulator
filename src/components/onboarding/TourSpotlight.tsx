@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 interface SpotlightRect {
   x: number;
@@ -67,13 +66,8 @@ export function TourSpotlight({ targetSelector, allowInteraction, visible }: Tou
   const hasTarget = rect !== null && targetSelector !== null;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.3 }}
-        className="fixed inset-0"
+    <div
+        className="fixed inset-0 animate-in fade-in duration-300"
         style={{
           zIndex: 9998,
           pointerEvents: allowInteraction ? 'none' : 'auto',
@@ -89,19 +83,15 @@ export function TourSpotlight({ targetSelector, allowInteraction, visible }: Tou
             <mask id="tour-spotlight-mask">
               <rect width="100%" height="100%" fill="white" />
               {hasTarget && (
-                <motion.rect
-                  initial={{ opacity: 0 }}
-                  animate={{
-                    x: rect.x,
-                    y: rect.y,
-                    width: rect.width,
-                    height: rect.height,
-                    opacity: 1,
-                  }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                <rect
+                  x={rect.x}
+                  y={rect.y}
+                  width={rect.width}
+                  height={rect.height}
                   rx={BORDER_RADIUS}
                   ry={BORDER_RADIUS}
                   fill="black"
+                  style={{ transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)' }}
                 />
               )}
             </mask>
@@ -114,43 +104,35 @@ export function TourSpotlight({ targetSelector, allowInteraction, visible }: Tou
           />
           {/* Highlight border around spotlight */}
           {hasTarget && (
-            <motion.rect
-              initial={{ opacity: 0 }}
-              animate={{
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: rect.height,
-                opacity: 1,
-              }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            <rect
+              x={rect.x}
+              y={rect.y}
+              width={rect.width}
+              height={rect.height}
               rx={BORDER_RADIUS}
               ry={BORDER_RADIUS}
               fill="none"
               stroke="oklch(0.70 0.15 220)"
               strokeWidth={2}
-              style={{ pointerEvents: 'none' }}
+              style={{ pointerEvents: 'none', transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)' }}
             />
           )}
         </svg>
 
         {/* Clickable hole: allow clicking through the spotlight area */}
         {hasTarget && !allowInteraction && (
-          <motion.div
+          <div
             className="absolute"
-            initial={{ opacity: 0 }}
-            animate={{
+            style={{
               left: rect.x,
               top: rect.y,
               width: rect.width,
               height: rect.height,
-              opacity: 1,
+              pointerEvents: 'none',
+              transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            style={{ pointerEvents: 'none' }}
           />
         )}
-      </motion.div>
-    </AnimatePresence>
+      </div>
   );
 }

@@ -1,6 +1,5 @@
 'use client';
 
-import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useSimulationStore, selectAverageLatency, selectSuccessRate } from '@/store/simulation-store';
@@ -517,13 +516,8 @@ export function MetricsPanel() {
   }
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ y: 48, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 48, opacity: 0 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="absolute bottom-0 left-0 right-0 z-10"
+    <div
+        className="absolute bottom-0 left-0 right-0 z-10 animate-in slide-in-from-bottom-12 fade-in duration-300"
         data-tour="metrics-panel"
       >
         <div className="bg-card/95 backdrop-blur-sm border-t border-border">
@@ -756,13 +750,9 @@ export function MetricsPanel() {
           </div>
 
           {/* Expanded details */}
-          <AnimatePresence>
             {isExpanded && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: panelHeight, opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: isDragging.current ? 0 : 0.2 }}
+              <div
+                style={{ height: panelHeight, transition: isDragging.current ? 'none' : 'height 0.2s ease' }}
                 className="overflow-hidden relative"
               >
                 {/* Resize handle */}
@@ -780,11 +770,9 @@ export function MetricsPanel() {
                   {activeTab === 'bottlenecks' && <BottleneckPanel panelHeight={panelHeight} />}
                   {activeTab === 'component' && <ComponentAnalyticsPanel panelHeight={panelHeight} />}
                 </div>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
         </div>
-      </motion.div>
-    </AnimatePresence>
+      </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type {
   ResourceUtilization,
   ResourceSample,
@@ -24,8 +24,8 @@ export interface BottleneckInputs {
   serverStates: Map<string, { utilization: ResourceUtilization; resources: { connections: { maxConcurrent: number } } }>;
   perServerMetrics: Map<string, { requests: number; errors: number; totalLatency: number; rps: number }>;
   resourceHistory: ResourceSample[];
-  edges: Edge[];
-  nodes: Node[];
+  edges: GraphEdge[];
+  nodes: GraphNode[];
   criticalPathAnalyzer: CriticalPathAnalyzer;
   // Stats multi-composant
   apiGatewayStats?: Map<string, ApiGatewayStats>;
@@ -286,11 +286,11 @@ export class BottleneckAnalyzer {
   // Algorithme 5 : SPOF detection
   // ============================================
 
-  private computeAllSpof(nodes: Node[], edges: Edge[]): Map<string, boolean> {
+  private computeAllSpof(nodes: GraphNode[], edges: GraphEdge[]): Map<string, boolean> {
     const spofMap = new Map<string, boolean>();
 
     // Construire la map des edges entrants par nœud
-    const incomingByTarget = new Map<string, Edge[]>();
+    const incomingByTarget = new Map<string, GraphEdge[]>();
     for (const edge of edges) {
       const existing = incomingByTarget.get(edge.target) || [];
       existing.push(edge);
@@ -298,7 +298,7 @@ export class BottleneckAnalyzer {
     }
 
     // Construire la map des edges sortants par nœud
-    const outgoingBySource = new Map<string, Edge[]>();
+    const outgoingBySource = new Map<string, GraphEdge[]>();
     for (const edge of edges) {
       const existing = outgoingBySource.get(edge.source) || [];
       existing.push(edge);

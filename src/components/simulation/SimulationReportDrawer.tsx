@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
   Clock,
@@ -702,14 +701,10 @@ export function SimulationReportDrawer() {
   const setAnalysisMode = useSimulationStore((s) => s.setAnalysisMode);
 
   return (
-    <AnimatePresence>
+    <>
       {showReport && report && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.9, y: 8 }}
-          transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200"
           data-tour="report-drawer"
         >
           <Button
@@ -720,8 +715,8 @@ export function SimulationReportDrawer() {
             <BarChart3 className="h-5 w-5" />
             Analyse détaillée
           </Button>
-        </motion.div>
+        </div>
       )}
-    </AnimatePresence>
+    </>
   );
 }

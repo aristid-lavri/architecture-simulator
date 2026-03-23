@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { CloudStorageNodeData } from '@/types';
 
@@ -7,12 +7,12 @@ export class CloudStorageHandler implements NodeRequestHandler {
 
   private requestCounts: Map<string, number> = new Map();
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as CloudStorageNodeData;
     return data.readLatencyMs / speed;
   }
 
-  initialize(_node: Node): void {
+  initialize(_node: GraphNode): void {
     // no-op
   }
 
@@ -21,10 +21,10 @@ export class CloudStorageHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as CloudStorageNodeData;
     const method = context.httpMethod || 'GET';

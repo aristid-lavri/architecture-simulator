@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { ApiServiceNodeData } from '@/types';
 
@@ -21,7 +21,7 @@ export class ApiServiceHandler implements NodeRequestHandler {
 
   private serviceStates: Map<string, ServiceState> = new Map();
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as ApiServiceNodeData;
     const state = this.getOrCreateState(node.id);
     const loadFactor = data.maxConcurrentRequests > 0
@@ -32,7 +32,7 @@ export class ApiServiceHandler implements NodeRequestHandler {
     return degradedLatency / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     this.serviceStates.set(node.id, {
       activeRequests: 0,
       totalRequests: 0,
@@ -44,10 +44,10 @@ export class ApiServiceHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     _context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as ApiServiceNodeData;
     const state = this.getOrCreateState(node.id);

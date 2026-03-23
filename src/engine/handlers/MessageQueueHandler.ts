@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { MessageQueueNodeData } from '@/types';
 
@@ -41,12 +41,12 @@ export class MessageQueueHandler implements NodeRequestHandler {
   private queueStates: Map<string, QueueState> = new Map();
   private messageCounter = 0;
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as MessageQueueNodeData;
     return (data.performance.publishLatencyMs + data.performance.consumeLatencyMs) / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     const data = node.data as MessageQueueNodeData;
     this.queueStates.set(node.id, {
       nodeId: node.id,
@@ -66,10 +66,10 @@ export class MessageQueueHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as MessageQueueNodeData;
     const state = this.getOrCreateState(node.id, data);

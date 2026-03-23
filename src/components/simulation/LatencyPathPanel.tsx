@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Timer, X, ArrowRight, ChevronDown, ChevronUp, Route } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useArchitectureStore } from '@/store/architecture-store';
@@ -114,11 +113,8 @@ export function LatencyPathPanel({ onHighlightPath, onClearHighlight }: LatencyP
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      className="w-80 bg-background/95 backdrop-blur-sm border border-border rounded-md shadow-lg font-mono text-xs"
+    <div
+      className="w-80 bg-background/95 backdrop-blur-sm border border-border rounded-md shadow-lg font-mono text-xs animate-in fade-in slide-in-from-top-2 duration-200"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
@@ -169,13 +165,9 @@ export function LatencyPathPanel({ onHighlightPath, onClearHighlight }: LatencyP
         </div>
 
         {/* Node dropdown when in selection mode */}
-        <AnimatePresence>
           {selectionMode && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
+            <div
+              className="overflow-hidden animate-in fade-in duration-150"
             >
               <div className="max-h-32 overflow-y-auto border border-border rounded bg-background">
                 {selectableNodes.map((node) => (
@@ -192,9 +184,8 @@ export function LatencyPathPanel({ onHighlightPath, onClearHighlight }: LatencyP
                   </button>
                 ))}
               </div>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
 
         {/* Protocol override toggle */}
         {sourceId && targetId && (
@@ -281,13 +272,9 @@ export function LatencyPathPanel({ onHighlightPath, onClearHighlight }: LatencyP
           </button>
 
           {/* Protocol comparison */}
-          <AnimatePresence>
             {showComparison && comparison && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden border-t border-border"
+              <div
+                className="overflow-hidden border-t border-border animate-in fade-in duration-150"
               >
                 <div className="p-3 grid grid-cols-2 gap-2">
                   {(['grpc', 'websocket', 'rest', 'graphql'] as ConnectionProtocol[]).map((proto) => {
@@ -316,9 +303,8 @@ export function LatencyPathPanel({ onHighlightPath, onClearHighlight }: LatencyP
                     );
                   })}
                 </div>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
 
           {/* Reset */}
           <div className="px-3 py-2 border-t border-border">
@@ -338,6 +324,6 @@ export function LatencyPathPanel({ onHighlightPath, onClearHighlight }: LatencyP
           {t('latency.noPath')}
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
