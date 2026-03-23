@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { DatabaseNodeData } from '@/types';
 import { DatabaseManager } from '../DatabaseManager';
@@ -17,7 +17,7 @@ export class DatabaseHandler implements NodeRequestHandler {
     this.manager = manager;
   }
 
-  getProcessingDelay(node: Node, speed: number, context?: RequestContext): number {
+  getProcessingDelay(node: GraphNode, speed: number, context?: RequestContext): number {
     const data = node.data as DatabaseNodeData;
     const queryType = context?.queryType || 'read';
     switch (queryType) {
@@ -31,7 +31,7 @@ export class DatabaseHandler implements NodeRequestHandler {
     }
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     const data = node.data as DatabaseNodeData;
     this.manager.initializeDatabase(node.id, data);
   }
@@ -41,10 +41,10 @@ export class DatabaseHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    _outgoingEdges: Edge[],
-    _allNodes: Node[]
+    _outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     // Vérifier si la DB peut accepter la requête
     const acceptStatus = this.manager.canAcceptQuery(node.id);

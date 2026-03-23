@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type {
   ComponentType,
   HostServerNodeData,
@@ -58,19 +58,19 @@ export interface ValidationResult {
 // Helpers
 // ============================================
 
-function getNodeLabel(node: Node): string {
+function getNodeLabel(node: GraphNode): string {
   return (node.data as { label?: string })?.label || node.id;
 }
 
-function getNodeType(node: Node): ComponentType {
+function getNodeType(node: GraphNode): ComponentType {
   return node.type as ComponentType;
 }
 
-function outgoingEdges(edges: Edge[], nodeId: string): Edge[] {
+function outgoingEdges(edges: GraphEdge[], nodeId: string): GraphEdge[] {
   return edges.filter((e) => e.source === nodeId);
 }
 
-function incomingEdges(edges: Edge[], nodeId: string): Edge[] {
+function incomingEdges(edges: GraphEdge[], nodeId: string): GraphEdge[] {
   return edges.filter((e) => e.target === nodeId);
 }
 
@@ -78,7 +78,7 @@ function incomingEdges(edges: Edge[], nodeId: string): Edge[] {
 // Category 1: Connection Rules
 // ============================================
 
-function connectionRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
+function connectionRules(nodes: GraphNode[], edges: GraphEdge[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const nodeIds = new Set(nodes.map((n) => n.id));
 
@@ -243,7 +243,7 @@ function connectionRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
 // Category 2: Port Rules
 // ============================================
 
-function portRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
+function portRules(nodes: GraphNode[], edges: GraphEdge[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
@@ -342,7 +342,7 @@ function portRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
 // Category 3: Routing Rules
 // ============================================
 
-function routingRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
+function routingRules(nodes: GraphNode[], edges: GraphEdge[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
@@ -445,7 +445,7 @@ function routingRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
 // Category 4: Resource Rules
 // ============================================
 
-function resourceRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
+function resourceRules(nodes: GraphNode[], edges: GraphEdge[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
@@ -507,7 +507,7 @@ function resourceRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
 // Category 5: Required Fields Rules
 // ============================================
 
-function requiredFieldsRules(nodes: Node[]): ValidationIssue[] {
+function requiredFieldsRules(nodes: GraphNode[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   for (const node of nodes) {
@@ -566,7 +566,7 @@ function requiredFieldsRules(nodes: Node[]): ValidationIssue[] {
 // Category 6: Disconnected Rules
 // ============================================
 
-function disconnectedRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
+function disconnectedRules(nodes: GraphNode[], edges: GraphEdge[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   for (const node of nodes) {
@@ -610,7 +610,7 @@ function disconnectedRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
 // Category 7: Configuration Rules
 // ============================================
 
-function configurationRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
+function configurationRules(nodes: GraphNode[], edges: GraphEdge[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   for (const node of nodes) {
@@ -790,7 +790,7 @@ function configurationRules(nodes: Node[], edges: Edge[]): ValidationIssue[] {
 // Category 8: Hierarchy Rules
 // ============================================
 
-function hierarchyRules(nodes: Node[]): ValidationIssue[] {
+function hierarchyRules(nodes: GraphNode[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
@@ -853,7 +853,7 @@ function hierarchyRules(nodes: Node[]): ValidationIssue[] {
 // Main Validation Function
 // ============================================
 
-export function validateArchitecture(nodes: Node[], edges: Edge[]): ValidationResult {
+export function validateArchitecture(nodes: GraphNode[], edges: GraphEdge[]): ValidationResult {
   const issues: ValidationIssue[] = [
     ...connectionRules(nodes, edges),
     ...portRules(nodes, edges),

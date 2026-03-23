@@ -1,14 +1,13 @@
 'use client';
 
 import { Header, ComponentsPanel, PropertiesPanel } from '@/components/layout';
-import { FlowCanvas } from '@/components/flow/FlowCanvas';
+import { PixiCanvas } from '@/components/canvas/PixiCanvas';
 import { SimulationReportDrawer } from '@/components/simulation/SimulationReportDrawer';
 import { AnalysisView } from '@/components/analysis/AnalysisView';
 import { OnboardingOverlay } from '@/components/onboarding/OnboardingOverlay';
 import { InstallPrompt } from '@/components/layout/InstallPrompt';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SimulationErrorBoundary } from '@/components/SimulationErrorBoundary';
-import { ReactFlowProvider } from '@xyflow/react';
 import { useSimulationStore } from '@/store/simulation-store';
 
 export default function SimulatorPage() {
@@ -29,20 +28,18 @@ export default function SimulatorPage() {
       ) : (
         <>
           {/* Main Content */}
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex overflow-hidden relative">
             {/* Components Rack (Left Sidebar) */}
             <ErrorBoundary>
               <ComponentsPanel />
             </ErrorBoundary>
 
-            {/* Flow Canvas (Center) */}
+            {/* Canvas (Center) */}
             <SimulationErrorBoundary>
-              <ReactFlowProvider>
-                <FlowCanvas />
-              </ReactFlowProvider>
+              <PixiCanvas />
             </SimulationErrorBoundary>
 
-            {/* Properties Panel (Right Sidebar) */}
+            {/* Properties Panel (overlay, right side) */}
             <ErrorBoundary>
               <PropertiesPanel />
             </ErrorBoundary>

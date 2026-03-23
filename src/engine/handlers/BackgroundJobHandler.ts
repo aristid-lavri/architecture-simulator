@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { BackgroundJobNodeData } from '@/types';
 
@@ -23,12 +23,12 @@ export class BackgroundJobHandler implements NodeRequestHandler {
 
   private jobStates: Map<string, JobState> = new Map();
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as BackgroundJobNodeData;
     return data.processingTimeMs / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     this.jobStates.set(node.id, {
       activeExecutions: 0,
       totalExecutions: 0,
@@ -42,10 +42,10 @@ export class BackgroundJobHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as BackgroundJobNodeData;
     const state = this.getOrCreateState(node.id);
@@ -106,7 +106,7 @@ export class BackgroundJobHandler implements NodeRequestHandler {
   private handleCronJob(
     state: JobState,
     data: BackgroundJobNodeData,
-    outgoingEdges: Edge[],
+    outgoingEdges: GraphEdge[],
     _context: RequestContext
   ): RequestDecision {
     state.activeExecutions++;
@@ -135,7 +135,7 @@ export class BackgroundJobHandler implements NodeRequestHandler {
   private handleWorkerJob(
     state: JobState,
     data: BackgroundJobNodeData,
-    outgoingEdges: Edge[]
+    outgoingEdges: GraphEdge[]
   ): RequestDecision {
     state.activeExecutions++;
     state.totalExecutions++;
@@ -163,7 +163,7 @@ export class BackgroundJobHandler implements NodeRequestHandler {
   private handleBatchJob(
     state: JobState,
     data: BackgroundJobNodeData,
-    outgoingEdges: Edge[],
+    outgoingEdges: GraphEdge[],
     context: RequestContext
   ): RequestDecision {
     const batchSize = data.batchSize ?? 10;

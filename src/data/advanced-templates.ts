@@ -1,7 +1,7 @@
 /**
  * Templates avancés chargés via YAML parser.
  * Chaque template est défini comme une string YAML, parsée au chargement
- * pour générer les Node[]/Edge[] utilisés par React Flow.
+ * pour générer les GraphNode[]/GraphEdge[] utilisés par le moteur PixiJS.
  */
 import { parseYamlArchitecture } from '@/lib/yaml-parser';
 import type { ArchitectureTemplate } from './architecture-templates';

@@ -1,3 +1,6 @@
+import type { GraphNode, GraphEdge } from './graph';
+export type { GraphNode, GraphEdge };
+
 /** Mode de l'application : edition du graphe ou simulation active. */
 export type AppMode = 'edit' | 'simulation';
 
@@ -542,6 +545,34 @@ export const complexityMultipliers: Record<ProcessingComplexity, number> = {
   'heavy': 2.5,
   'very-heavy': 5.0,
 };
+
+// ============================================
+// HTTP Client Node Data
+// ============================================
+
+export interface HttpClientNodeData {
+  label: string;
+  status?: NodeStatus;
+  method: HttpMethod;
+  path: string;
+  requestMode: RequestMode;
+  interval: number;
+  headers?: Record<string, string>;
+}
+
+// ============================================
+// Animated Edge Data
+// ============================================
+
+export interface AnimatedEdgeData {
+  label?: string;
+  protocol?: ConnectionProtocol;
+  targetPort?: number;
+  color?: string;
+  strokeWidth?: number;
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
+  pathType?: 'bezier' | 'orthogonal';
+}
 
 /**
  * Donnees d'un noeud HTTP Server avec gestion des ressources et degradation.
@@ -1752,8 +1783,8 @@ export interface ArchitectureSnapshot {
   id: string;
   name: string;
   timestamp: number;
-  nodes: import('@xyflow/react').Node[];
-  edges: import('@xyflow/react').Edge[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 /** Mapping type de noeud vers protocoles supportes. */

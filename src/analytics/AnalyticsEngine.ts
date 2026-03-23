@@ -1,5 +1,5 @@
-import type { Node } from '@xyflow/react';
 import type {
+  GraphNode,
   ResourceUtilization,
   TimeSeriesSnapshot,
   MessageQueueUtilization,
@@ -33,7 +33,7 @@ export class AnalyticsEngine {
   ) {}
 
   /** Initialise les métadonnées nœud avant le démarrage de la simulation. */
-  initialize(nodes: Node[]): void {
+  initialize(nodes: GraphNode[]): void {
     this.components.clear();
     this.nodeLabels.clear();
     this.nodeTypes.clear();

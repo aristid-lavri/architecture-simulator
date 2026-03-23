@@ -1,5 +1,5 @@
 import ELK, { type ElkNode, type ElkExtendedEdge } from 'elkjs/lib/elk.bundled.js';
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 
 const elk = new ELK();
 
@@ -15,7 +15,7 @@ const GROUP_PADDING = 40;
 
 const GROUP_NODE_TYPES = new Set(['network-zone', 'host-server', 'container']);
 
-function isGroupNode(node: Node): boolean {
+function isGroupNode(node: GraphNode): boolean {
   return GROUP_NODE_TYPES.has(node.type ?? '');
 }
 
@@ -24,15 +24,15 @@ function isGroupNode(node: Node): boolean {
  * Supporte l'imbrication (zone > host > container).
  */
 function buildGroupElkNode(
-  groupNode: Node,
-  allNodes: Node[],
-  edges: Edge[],
+  groupNode: GraphNode,
+  allNodes: GraphNode[],
+  edges: GraphEdge[],
   direction: string,
   nodeSpacing: number
 ): ElkNode {
   // Trouver les enfants directs de ce group node
   const directChildren = allNodes.filter(
-    (n) => (n as Node & { parentId?: string }).parentId === groupNode.id
+    (n) => n.parentId === groupNode.id
   );
 
   const elkChildren: ElkNode[] = [];
@@ -76,9 +76,9 @@ function buildGroupElkNode(
 /**
  * Collecte récursivement tous les IDs descendants d'un group node.
  */
-function collectDescendantIds(groupId: string, allNodes: Node[]): string[] {
+function collectDescendantIds(groupId: string, allNodes: GraphNode[]): string[] {
   const children = allNodes.filter(
-    (n) => (n as Node & { parentId?: string }).parentId === groupId
+    (n) => n.parentId === groupId
   );
   const ids: string[] = [];
   for (const child of children) {
@@ -93,15 +93,15 @@ function collectDescendantIds(groupId: string, allNodes: Node[]): string[] {
 /**
  * Remonte la chaîne parentId pour trouver l'ancêtre racine (top-level group ou le nœud lui-même).
  */
-function findTopLevelAncestor(nodeId: string, allNodes: Node[]): string {
+function findTopLevelAncestor(nodeId: string, allNodes: GraphNode[]): string {
   const node = allNodes.find((n) => n.id === nodeId);
   if (!node) return nodeId;
-  const parentId = (node as Node & { parentId?: string }).parentId;
+  const parentId = node.parentId;
   if (!parentId) return nodeId;
   const parent = allNodes.find((n) => n.id === parentId);
   if (!parent) return nodeId;
   // Si le parent a aussi un parent, remonter
-  const grandParentId = (parent as Node & { parentId?: string }).parentId;
+  const grandParentId = parent.parentId;
   if (grandParentId) return findTopLevelAncestor(parentId, allNodes);
   return parentId;
 }
@@ -112,16 +112,16 @@ function findTopLevelAncestor(nodeId: string, allNodes: Node[]): string {
  * Retourne les noeuds avec positions mises à jour + groups redimensionnés.
  */
 export async function applyAutoLayout(
-  nodes: Node[],
-  edges: Edge[],
+  nodes: GraphNode[],
+  edges: GraphEdge[],
   options: LayoutOptions = {}
-): Promise<Node[]> {
+): Promise<GraphNode[]> {
   const { direction = 'RIGHT', spacing = 60, nodeSpacing = 40 } = options;
 
   // Identifier les group nodes racines (sans parent ou dont le parent n'est pas un group)
   const topLevelGroups = nodes.filter((n) => {
     if (!isGroupNode(n)) return false;
-    const parentId = (n as Node & { parentId?: string }).parentId;
+    const parentId = n.parentId;
     if (!parentId) return true;
     const parent = nodes.find((p) => p.id === parentId);
     return !parent || !isGroupNode(parent);
@@ -129,7 +129,7 @@ export async function applyAutoLayout(
 
   // Nœuds libres (pas de parent, pas un group)
   const freeNodes = nodes.filter((n) => {
-    const parentId = (n as Node & { parentId?: string }).parentId;
+    const parentId = n.parentId;
     return !parentId && !isGroupNode(n);
   });
 
@@ -218,7 +218,7 @@ export async function applyAutoLayout(
     return {
       ...node,
       position: pos || node.position,
-      ...(size ? { style: { ...node.style, width: size.width, height: size.height } } : {}),
+      ...(size ? { width: size.width, height: size.height } : {}),
     };
   });
 }

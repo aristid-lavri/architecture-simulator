@@ -1,4 +1,4 @@
-import type { Node } from '@xyflow/react';
+import type { GraphNode } from '@/types/graph';
 import type { ResourceUtilization } from '@/types';
 import { ResourceManager } from './ResourceManager';
 
@@ -15,7 +15,7 @@ export class HierarchicalResourceManager {
   /**
    * Construit les maps de relations a partir des parentId des noeuds.
    */
-  initialize(nodes: Node[]): void {
+  initialize(nodes: GraphNode[]): void {
     this.childToParent.clear();
     this.parentToChildren.clear();
     this.nodeTypes.clear();

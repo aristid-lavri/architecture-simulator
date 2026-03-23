@@ -1,4 +1,4 @@
-import type { Edge, Node } from '@xyflow/react';
+import type { GraphEdge, GraphNode } from '@/types/graph';
 
 type HandleSide = 'top' | 'right' | 'bottom' | 'left';
 
@@ -21,8 +21,8 @@ interface NodePortMap {
  * position of the connected node to minimize crossings.
  */
 export function distributeHandles(
-  edges: Edge[],
-  nodes: Node[]
+  edges: GraphEdge[],
+  nodes: GraphNode[]
 ): Map<string, NodePortMap> {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const result = new Map<string, NodePortMap>();
@@ -82,7 +82,7 @@ function parseHandleSide(handleId: string | null | undefined, defaultSide: Handl
 function assignOffsets(
   edgeList: Array<{ edgeId: string; connectedNodeId: string }>,
   side: HandleSide,
-  nodeMap: Map<string, Node>
+  nodeMap: Map<string, GraphNode>
 ): PortAssignment[] {
   if (edgeList.length <= 1) {
     return edgeList.map((e) => ({
@@ -122,9 +122,9 @@ function assignOffsets(
  * Returns updated edges with adjusted handle positions via style data.
  */
 export function applyPortDistribution(
-  edges: Edge[],
-  nodes: Node[]
-): Edge[] {
+  edges: GraphEdge[],
+  nodes: GraphNode[]
+): GraphEdge[] {
   const portMap = distributeHandles(edges, nodes);
 
   return edges.map((edge) => {

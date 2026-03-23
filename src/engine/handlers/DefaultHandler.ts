@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 
 /**
@@ -10,15 +10,15 @@ export class DefaultHandler implements NodeRequestHandler {
 
   private readonly baseDelay = 50;
 
-  getProcessingDelay(_node: Node, speed: number): number {
+  getProcessingDelay(_node: GraphNode, speed: number): number {
     return this.baseDelay / speed;
   }
 
   handleRequestArrival(
-    _node: Node,
+    _node: GraphNode,
     _context: RequestContext,
-    outgoingEdges: Edge[],
-    allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    allNodes: GraphNode[]
   ): RequestDecision {
     // Si pas d'edges sortants, on répond
     if (outgoingEdges.length === 0) {

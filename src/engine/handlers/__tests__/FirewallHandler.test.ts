@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { FirewallHandler } from '../FirewallHandler';
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { RequestContext } from '../types';
 
-function createFirewallNode(overrides: Record<string, unknown> = {}): Node {
+function createFirewallNode(overrides: Record<string, unknown> = {}): GraphNode {
   return {
     id: 'fw-1',
     type: 'firewall',
@@ -30,7 +30,7 @@ function createContext(targetPort?: number): RequestContext {
   };
 }
 
-function createEdge(target: string): Edge {
+function createEdge(target: string): GraphEdge {
   return { id: `e-${target}`, source: 'fw-1', target };
 }
 

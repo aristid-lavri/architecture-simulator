@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { ConnectionProtocol } from '@/types';
 import { getInterRegionLatency } from '@/data/latency-matrix';
 
@@ -38,7 +38,7 @@ export interface LatencyResult {
 /**
  * Extrait la latence de processing d'un noeud selon son type et ses données.
  */
-function getNodeProcessingLatency(node: Node): number {
+function getNodeProcessingLatency(node: GraphNode): number {
   const data = node.data as Record<string, unknown>;
   const type = node.type;
 
@@ -105,7 +105,7 @@ function getNodeProcessingLatency(node: Node): number {
 /**
  * Récupère la latence inter-zone entre deux noeuds.
  */
-function findContainingZoneId(node: Node, allNodes: Node[]): string | undefined {
+function findContainingZoneId(node: GraphNode, allNodes: GraphNode[]): string | undefined {
   let currentId: string | undefined = node.parentId;
   while (currentId) {
     const parent = allNodes.find((n) => n.id === currentId);
@@ -117,9 +117,9 @@ function findContainingZoneId(node: Node, allNodes: Node[]): string | undefined 
 }
 
 function getZoneCrossingLatency(
-  fromNode: Node,
-  toNode: Node,
-  allNodes: Node[]
+  fromNode: GraphNode,
+  toNode: GraphNode,
+  allNodes: GraphNode[]
 ): number {
   // Remonter la chaîne parentId pour trouver les zones réseau
   const fromZoneId = findContainingZoneId(fromNode, allNodes);
@@ -152,7 +152,7 @@ function getZoneCrossingLatency(
 function findShortestPath(
   sourceId: string,
   targetId: string,
-  edges: Edge[]
+  edges: GraphEdge[]
 ): { nodeIds: string[]; edgeIds: string[] } | null {
   const adjacency = new Map<string, { nodeId: string; edgeId: string }[]>();
 
@@ -197,8 +197,8 @@ function findShortestPath(
 export function calculatePathLatency(
   sourceId: string,
   targetId: string,
-  nodes: Node[],
-  edges: Edge[],
+  nodes: GraphNode[],
+  edges: GraphEdge[],
   protocolOverride?: ConnectionProtocol
 ): LatencyResult | null {
   const path = findShortestPath(sourceId, targetId, edges);
@@ -263,8 +263,8 @@ export function calculatePathLatency(
 export function compareProtocolLatencies(
   sourceId: string,
   targetId: string,
-  nodes: Node[],
-  edges: Edge[]
+  nodes: GraphNode[],
+  edges: GraphEdge[]
 ): Record<ConnectionProtocol, number | null> {
   const protocols: ConnectionProtocol[] = ['rest', 'grpc', 'websocket', 'graphql'];
   const results: Record<string, number | null> = {};

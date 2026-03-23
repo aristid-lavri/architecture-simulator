@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type {
   Particle,
   SimulationState,
@@ -7,8 +7,8 @@ import type {
   ApiGatewayUtilization,
   IdentityProviderNodeData,
   ApiGatewayNodeData,
+  HttpClientNodeData,
 } from '@/types';
-import type { HttpClientNodeData } from '@/components/nodes/HttpClientNode';
 import {
   generateParticleId,
   createRequestSentEvent,
@@ -127,8 +127,8 @@ function generateSourceIP(): string {
  * Communique avec la couche React exclusivement via les SimulationCallbacks.
  */
 export class SimulationEngine {
-  private nodes: Node[] = [];
-  private edges: Edge[] = [];
+  private nodes: GraphNode[] = [];
+  private edges: GraphEdge[] = [];
   private state: SimulationState = 'idle';
   private speed: number = 1;
   private callbacks: SimulationCallbacks;
@@ -174,7 +174,7 @@ export class SimulationEngine {
   private faultProvider: (() => { faults: Map<string, 'down' | 'degraded'>; isolated: Set<string> }) | null = null;
 
   // O(1) node lookup map — rebuilt on setNodesAndEdges
-  private nodeMap: Map<string, Node> = new Map();
+  private nodeMap: Map<string, GraphNode> = new Map();
 
   // Sub-modules
   private serverStateManager: ServerStateManager;
@@ -396,7 +396,7 @@ export class SimulationEngine {
     return 5 / this.speed;
   }
 
-  private getNodeProcessingDelay(node: Node, context?: RequestContext): number {
+  private getNodeProcessingDelay(node: GraphNode, context?: RequestContext): number {
     const nodeType = node.type ?? 'default';
     const handler = this.handlerRegistry.getHandler(nodeType);
     return handler.getProcessingDelay(node, this.speed, context);
@@ -406,7 +406,7 @@ export class SimulationEngine {
   // Authentication helpers
   // ============================================================
 
-  private findConnectedIdP(nodeId: string): { node: Node; edge: Edge } | null {
+  private findConnectedIdP(nodeId: string): { node: GraphNode; edge: GraphEdge } | null {
     const edges = this.edges.filter((e) => e.source === nodeId);
     for (const edge of edges) {
       const target = this.nodeMap.get(edge.target);
@@ -431,10 +431,10 @@ export class SimulationEngine {
   }
 
   private resolveAuthToken(
-    client: Node,
-    targetNode: Node,
+    client: GraphNode,
+    targetNode: GraphNode,
     virtualClientId: number | undefined
-  ): { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: Node; idpEdge: Edge } {
+  ): { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: GraphNode; idpEdge: GraphEdge } {
     if (targetNode.type !== 'api-gateway') return { needsAsync: false };
     const gwData = targetNode.data as ApiGatewayNodeData;
     if (gwData.authType === 'none') return { needsAsync: false };
@@ -450,9 +450,9 @@ export class SimulationEngine {
   }
 
   private acquireToken(
-    client: Node,
-    idpEdge: Edge,
-    idpNode: Node,
+    client: GraphNode,
+    idpEdge: GraphEdge,
+    idpNode: GraphNode,
     virtualClientId: number | undefined,
     callback: (token: SimulatedToken) => void
   ): void {
@@ -544,9 +544,9 @@ export class SimulationEngine {
   }
 
   private validateTokenViaIdP(
-    gateway: Node,
-    idpNode: Node,
-    idpEdge: Edge,
+    gateway: GraphNode,
+    idpNode: GraphNode,
+    idpEdge: GraphEdge,
     chainId: string,
     context: RequestContext,
     onValid: () => void,
@@ -648,7 +648,7 @@ export class SimulationEngine {
   // ============================================================
 
   /** Met a jour le graphe de noeuds et aretes utilise par la simulation. */
-  setNodesAndEdges(nodes: Node[], edges: Edge[]): void {
+  setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[]): void {
     this.nodes = nodes;
     this.edges = edges;
     // Build O(1) lookup map
@@ -797,7 +797,7 @@ export class SimulationEngine {
     const httpClients = this.nodes.filter((node) => node.type === 'http-client');
 
     httpClients.forEach((client) => {
-      const data = client.data as HttpClientNodeData;
+      const data = client.data as unknown as HttpClientNodeData;
       const connectedEdges = this.edges.filter((edge) => edge.source === client.id);
       if (connectedEdges.length === 0) return;
 
@@ -815,8 +815,8 @@ export class SimulationEngine {
     });
   }
 
-  private sendRequest(client: Node, edge: Edge, preAcquiredToken?: SimulatedToken): void {
-    const data = client.data as HttpClientNodeData;
+  private sendRequest(client: GraphNode, edge: GraphEdge, preAcquiredToken?: SimulatedToken): void {
+    const data = client.data as unknown as HttpClientNodeData;
     const targetNode = this.nodeMap.get(edge.target);
     if (!targetNode) return;
 
@@ -904,9 +904,9 @@ export class SimulationEngine {
 
   private handleRequestArrival(
     requestParticle: Particle,
-    client: Node,
-    server: Node,
-    edge: Edge
+    client: GraphNode,
+    server: GraphNode,
+    edge: GraphEdge
   ): void {
     if (this.state !== 'running') return;
     try {
@@ -916,7 +916,7 @@ export class SimulationEngine {
       let chain = this.chainManager.getChain(chainId);
 
       if (!chain) {
-        const clientData = client.data as HttpClientNodeData;
+        const clientData = client.data as unknown as HttpClientNodeData;
         const method = clientData.method;
         chain = {
           id: chainId,
@@ -961,7 +961,7 @@ export class SimulationEngine {
       }
       this.callbacks.onNodeStatusChange(server.id, effectiveFault === 'degraded' ? 'degraded' : 'processing');
 
-      const clientData = client.data as HttpClientNodeData;
+      const clientData = client.data as unknown as HttpClientNodeData;
       simulationEvents.emit(createRequestReceivedEvent(
         client.id, server.id, clientData.method, clientData.path, chainId
       ));

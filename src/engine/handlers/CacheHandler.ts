@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { CacheNodeData } from '@/types';
 import { CacheManager } from '../CacheManager';
@@ -18,12 +18,12 @@ export class CacheHandler implements NodeRequestHandler {
     this.manager = manager;
   }
 
-  getProcessingDelay(node: Node, speed: number): number {
+  getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as CacheNodeData;
     return data.performance.getLatencyMs / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     const data = node.data as CacheNodeData;
     this.manager.initializeCache(node.id, data);
   }
@@ -46,10 +46,10 @@ export class CacheHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     const cacheKey = this.generateCacheKey(context);
 
@@ -93,7 +93,7 @@ export class CacheHandler implements NodeRequestHandler {
   /**
    * Retourne le délai pour l'opération SET (après cache miss)
    */
-  getSetDelay(node: Node, speed: number): number {
+  getSetDelay(node: GraphNode, speed: number): number {
     const data = node.data as CacheNodeData;
     return data.performance.setLatencyMs / speed;
   }

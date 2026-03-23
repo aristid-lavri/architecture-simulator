@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 
 /**
  * Context immutable passé à chaque handler lors du traitement d'une requête
@@ -94,7 +94,7 @@ export interface NodeRequestHandler {
    * @param speed Multiplicateur de vitesse de simulation
    * @returns Délai en millisecondes
    */
-  getProcessingDelay(node: Node, speed: number, context?: RequestContext): number;
+  getProcessingDelay(node: GraphNode, speed: number, context?: RequestContext): number;
 
   /**
    * Gère l'arrivée d'une requête sur un nœud
@@ -105,10 +105,10 @@ export interface NodeRequestHandler {
    * @returns Décision sur le traitement de la requête
    */
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    allNodes: GraphNode[]
   ): RequestDecision;
 
   /**
@@ -119,7 +119,7 @@ export interface NodeRequestHandler {
    * @returns Décision sur le traitement de la réponse
    */
   handleResponsePassthrough?(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
     isError: boolean
   ): ResponseDecision;
@@ -129,7 +129,7 @@ export interface NodeRequestHandler {
    * Appelé au démarrage de la simulation
    * @param node Le nœud à initialiser
    */
-  initialize?(node: Node): void;
+  initialize?(node: GraphNode): void;
 
   /**
    * Nettoie l'état du handler pour un nœud (optionnel)
@@ -145,7 +145,7 @@ export interface NodeRequestHandler {
    * @param speed Multiplicateur de vitesse de simulation
    * @returns Délai ajusté en millisecondes
    */
-  getHierarchicalProcessingDelay?(node: Node, parentLatencies: number[], speed: number): number;
+  getHierarchicalProcessingDelay?(node: GraphNode, parentLatencies: number[], speed: number): number;
 
   /**
    * Vérifie si le nœud peut accepter une requête au niveau du parent (optionnel)

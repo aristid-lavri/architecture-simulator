@@ -1,5 +1,5 @@
 import YAML from 'yaml';
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { ComponentType, NetworkZoneType } from '@/types';
 import {
   defaultNetworkZoneData,
@@ -115,7 +115,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
   return result;
 }
 
-export function parseYamlArchitecture(yamlString: string): { nodes: Node[]; edges: Edge[] } | { error: string } {
+export function parseYamlArchitecture(yamlString: string): { nodes: GraphNode[]; edges: GraphEdge[] } | { error: string } {
   try {
     const arch = YAML.parse(yamlString) as YamlArchitecture;
 
@@ -123,8 +123,8 @@ export function parseYamlArchitecture(yamlString: string): { nodes: Node[]; edge
       return { error: 'YAML invalide : la section "components" est requise.' };
     }
 
-    const nodes: Node[] = [];
-    const edges: Edge[] = [];
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
 
     // Zone layout tracking
     const zonePositions: Record<string, { x: number; y: number; width: number; height: number }> = {};
@@ -148,7 +148,8 @@ export function parseYamlArchitecture(yamlString: string): { nodes: Node[]; edge
           id: `zone-${zoneId}`,
           type: 'network-zone',
           position: pos,
-          style: { width: size.width, height: size.height },
+          width: size.width,
+          height: size.height,
           data: {
             ...defaultNetworkZoneData,
             label: zoneId.charAt(0).toUpperCase() + zoneId.slice(1),
@@ -198,9 +199,10 @@ export function parseYamlArchitecture(yamlString: string): { nodes: Node[]; edge
           id: hostId,
           type: 'host-server',
           position,
-          style: { width: size.width, height: size.height },
+          width: size.width,
+          height: size.height,
           data: hostData,
-          ...(parentId ? { parentId, extent: 'parent' as const } : {}),
+          ...(parentId ? { parentId } : {}),
         });
 
         hostIndex++;
@@ -268,7 +270,7 @@ export function parseYamlArchitecture(yamlString: string): { nodes: Node[]; edge
         type: comp.type,
         position,
         data: mergedData,
-        ...(parentId ? { parentId, extent: 'parent' as const } : {}),
+        ...(parentId ? { parentId } : {}),
       });
     }
 
@@ -283,7 +285,6 @@ export function parseYamlArchitecture(yamlString: string): { nodes: Node[]; edge
           id: `edge-${conn.from}-${conn.to}`,
           source: conn.from,
           target: conn.to,
-          type: 'animated',
           ...(Object.keys(edgeData).length > 0 ? { data: edgeData } : {}),
         });
       }

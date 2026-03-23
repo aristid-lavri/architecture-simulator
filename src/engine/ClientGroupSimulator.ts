@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { Particle, ClientGroupNodeData } from '@/types';
 import type { MetricsCollector } from './metrics';
 import { ParticleManager } from './ParticleManager';
@@ -15,9 +15,8 @@ import type { RequestChainManager, RequestChain } from './RequestChainManager';
 import type { ServerStateManager } from './ServerStateManager';
 import type { RequestDispatcher } from './RequestDispatcher';
 import type { TokenStore, SimulatedToken } from './TokenStore';
-import type { HttpServerNodeData } from '@/components/nodes/HttpServerNode';
 import type {
-  HttpServerNodeData as HttpServerNodeDataExtended,
+  HttpServerNodeData,
   ApiGatewayNodeData,
 } from '@/types';
 import { defaultDegradation } from '@/types';
@@ -70,9 +69,9 @@ export interface ClientGroupSimulatorCallbacks {
  * - Gestion des reponses virtuelles
  */
 export class ClientGroupSimulator {
-  private nodes: Node[] = [];
-  private edges: Edge[] = [];
-  private nodeMap: Map<string, Node> = new Map();
+  private nodes: GraphNode[] = [];
+  private edges: GraphEdge[] = [];
+  private nodeMap: Map<string, GraphNode> = new Map();
   private speed: number = 1;
   private metrics: MetricsCollector;
   private callbacks: ClientGroupSimulatorCallbacks;
@@ -84,29 +83,29 @@ export class ClientGroupSimulator {
   private tokenStore: TokenStore;
   private clientGroupTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
   private getState: () => string;
-  private getNodeProcessingDelay: (node: Node, context?: import('./handlers/types').RequestContext) => number;
+  private getNodeProcessingDelay: (node: GraphNode, context?: import('./handlers/types').RequestContext) => number;
   private resolveAuthToken: (
-    client: Node,
-    targetNode: Node,
+    client: GraphNode,
+    targetNode: GraphNode,
     virtualClientId: number | undefined
-  ) => { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: Node; idpEdge: Edge };
+  ) => { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: GraphNode; idpEdge: GraphEdge };
   private acquireToken: (
-    client: Node,
-    idpEdge: Edge,
-    idpNode: Node,
+    client: GraphNode,
+    idpEdge: GraphEdge,
+    idpNode: GraphNode,
     virtualClientId: number | undefined,
     callback: (token: SimulatedToken) => void
   ) => void;
   private validateTokenViaIdP: (
-    gateway: Node,
-    idpNode: Node,
-    idpEdge: Edge,
+    gateway: GraphNode,
+    idpNode: GraphNode,
+    idpEdge: GraphEdge,
     chainId: string,
     context: import('./handlers/types').RequestContext,
     onValid: () => void,
     onInvalid: () => void
   ) => void;
-  private findConnectedIdP: (nodeId: string) => { node: Node; edge: Edge } | null;
+  private findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null;
 
   constructor(
     metrics: MetricsCollector,
@@ -118,29 +117,29 @@ export class ClientGroupSimulator {
     dispatcher: RequestDispatcher,
     tokenStore: TokenStore,
     getState: () => string,
-    getNodeProcessingDelay: (node: Node, context?: import('./handlers/types').RequestContext) => number,
+    getNodeProcessingDelay: (node: GraphNode, context?: import('./handlers/types').RequestContext) => number,
     resolveAuthToken: (
-      client: Node,
-      targetNode: Node,
+      client: GraphNode,
+      targetNode: GraphNode,
       virtualClientId: number | undefined
-    ) => { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: Node; idpEdge: Edge },
+    ) => { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: GraphNode; idpEdge: GraphEdge },
     acquireToken: (
-      client: Node,
-      idpEdge: Edge,
-      idpNode: Node,
+      client: GraphNode,
+      idpEdge: GraphEdge,
+      idpNode: GraphNode,
       virtualClientId: number | undefined,
       callback: (token: SimulatedToken) => void
     ) => void,
     validateTokenViaIdP: (
-      gateway: Node,
-      idpNode: Node,
-      idpEdge: Edge,
+      gateway: GraphNode,
+      idpNode: GraphNode,
+      idpEdge: GraphEdge,
       chainId: string,
       context: import('./handlers/types').RequestContext,
       onValid: () => void,
       onInvalid: () => void
     ) => void,
-    findConnectedIdP: (nodeId: string) => { node: Node; edge: Edge } | null,
+    findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null,
   ) {
     this.metrics = metrics;
     this.callbacks = callbacks;
@@ -158,7 +157,7 @@ export class ClientGroupSimulator {
     this.findConnectedIdP = findConnectedIdP;
   }
 
-  setNodesAndEdges(nodes: Node[], edges: Edge[], nodeMap?: Map<string, Node>): void {
+  setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[], nodeMap?: Map<string, GraphNode>): void {
     this.nodes = nodes;
     this.edges = edges;
     if (nodeMap) this.nodeMap = nodeMap;
@@ -194,8 +193,8 @@ export class ClientGroupSimulator {
    * Planifie les requetes pour un client group.
    */
   private scheduleGroupRequests(
-    group: Node,
-    edge: Edge,
+    group: GraphNode,
+    edge: GraphEdge,
     data: ClientGroupNodeData,
   ): void {
     const checkInterval = 50;
@@ -257,8 +256,8 @@ export class ClientGroupSimulator {
    * Envoie une requete depuis un client group.
    */
   sendClientGroupRequest(
-    group: Node,
-    edge: Edge,
+    group: GraphNode,
+    edge: GraphEdge,
     data: ClientGroupNodeData,
     virtualClientId: number,
     preAcquiredToken?: SimulatedToken,
@@ -400,9 +399,9 @@ export class ClientGroupSimulator {
    */
   private handleClientGroupRequestArrival(
     requestParticle: Particle,
-    clientGroup: Node,
-    server: Node,
-    edge: Edge,
+    clientGroup: GraphNode,
+    server: GraphNode,
+    edge: GraphEdge,
     virtualClientId: number,
     chainId: string,
   ): void {
@@ -446,7 +445,7 @@ export class ClientGroupSimulator {
 
       if (serverState && server.type === 'http-server') {
         const serverData = server.data as HttpServerNodeData;
-        const extendedData = server.data as HttpServerNodeDataExtended;
+        const extendedData = server.data as HttpServerNodeData;
         const degradation = extendedData.degradation || defaultDegradation;
 
         processingDelay = ResourceManager.calculateDegradedLatency(
@@ -513,7 +512,7 @@ export class ClientGroupSimulator {
    */
   private sendChainResponseWithVirtualClient(
     chainId: string,
-    terminalNode: Node,
+    terminalNode: GraphNode,
     virtualClientId: number,
   ): void {
     if (this.getState() !== 'running') return;

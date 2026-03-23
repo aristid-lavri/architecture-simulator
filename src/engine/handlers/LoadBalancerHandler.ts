@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { LoadBalancerNodeData } from '@/types';
 import { LoadBalancerManager } from '../LoadBalancerManager';
@@ -17,11 +17,11 @@ export class LoadBalancerHandler implements NodeRequestHandler {
     this.manager = manager;
   }
 
-  getProcessingDelay(_node: Node, speed: number): number {
+  getProcessingDelay(_node: GraphNode, speed: number): number {
     return this.baseDelay / speed;
   }
 
-  initialize(node: Node): void {
+  initialize(node: GraphNode): void {
     const data = node.data as LoadBalancerNodeData;
     this.manager.initializeLoadBalancer(node.id, data);
   }
@@ -31,10 +31,10 @@ export class LoadBalancerHandler implements NodeRequestHandler {
   }
 
   handleRequestArrival(
-    node: Node,
+    node: GraphNode,
     context: RequestContext,
-    outgoingEdges: Edge[],
-    _allNodes: Node[]
+    outgoingEdges: GraphEdge[],
+    _allNodes: GraphNode[]
   ): RequestDecision {
     // Pas d'edges sortants = pas de backends
     if (outgoingEdges.length === 0) {
@@ -79,7 +79,7 @@ export class LoadBalancerHandler implements NodeRequestHandler {
   /**
    * S'assure que tous les backends (edges sortants) sont enregistrés
    */
-  private ensureBackendsRegistered(lbNodeId: string, outgoingEdges: Edge[]): void {
+  private ensureBackendsRegistered(lbNodeId: string, outgoingEdges: GraphEdge[]): void {
     outgoingEdges.forEach((edge) => {
       // On enregistre avec un poids par défaut de 1
       // Le poids pourrait être extrait d'une propriété de l'edge si nécessaire

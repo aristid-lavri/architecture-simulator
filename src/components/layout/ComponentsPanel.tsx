@@ -414,13 +414,13 @@ export function ComponentsPanel() {
 
   return (
     <div
-      className={`border-r border-border bg-card transition-all duration-300 flex flex-col h-full ${
-        isComponentsPanelOpen ? 'w-56' : 'w-8'
+      className={`border-r border-border bg-card transition-all duration-300 flex flex-col h-full overflow-hidden ${
+        isComponentsPanelOpen ? 'w-56' : 'w-0 border-r-0'
       }`}
       data-tour="components-panel"
     >
       {/* Toggle */}
-      <div className="h-8 border-b border-border flex items-center justify-between px-1.5">
+      <div className="h-8 border-b border-border flex items-center justify-between px-1.5 shrink-0">
         {isComponentsPanelOpen && (
           <span className="text-instrument text-[10px] text-muted-foreground px-1.5">RACK</span>
         )}
