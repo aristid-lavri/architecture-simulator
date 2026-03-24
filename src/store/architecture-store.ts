@@ -99,6 +99,9 @@ interface ArchitectureState {
   getSnapshots: () => ArchitectureSnapshot[];
   restoreSnapshot: (id: string) => void;
   deleteSnapshot: (id: string) => void;
+
+  // Chargement complet d'un diagramme (sans historique)
+  loadDiagramState: (nodes: GraphNode[], edges: GraphEdge[], snapshots: ArchitectureSnapshot[]) => void;
 }
 
 /**
@@ -351,6 +354,18 @@ export const useArchitectureStore = create<ArchitectureState>()(
           set((state) => ({
             snapshots: state.snapshots.filter((s) => s.id !== id),
           }));
+        },
+
+        loadDiagramState: (nodes: GraphNode[], edges: GraphEdge[], snapshots: ArchitectureSnapshot[]) => {
+          set({
+            nodes,
+            edges,
+            snapshots,
+            past: [],
+            future: [],
+            lastSaved: Date.now(),
+            _syncVersion: get()._syncVersion + 1,
+          });
         },
       };
     },

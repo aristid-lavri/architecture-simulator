@@ -11,9 +11,9 @@ export const apiGatewayRenderer: ComponentContentRenderer = {
     ];
   },
   drawFooterGauges(g, metrics, x, y, w) {
-    drawGaugeBar(g, x, y, w * 0.48, 2, metrics.cpu ?? 0);
-    drawGaugeBar(g, x + w * 0.52, y, w * 0.48, 2, metrics.memory ?? 0);
-    return 6;
+    drawGaugeBar(g, x, y, w * 0.48, 3, metrics.cpu ?? 0);
+    drawGaugeBar(g, x + w * 0.52, y, w * 0.48, 3, metrics.memory ?? 0);
+    return 8;
   },
 };
 

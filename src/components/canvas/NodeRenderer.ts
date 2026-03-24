@@ -4,7 +4,7 @@ import type { NodeStatus, ResourceUtilization } from '@/types';
 import {
   NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS, NODE_BORDER_WIDTH,
   NODE_FONT_SIZE, NODE_PADDING, CONTAINER_COMPONENT_TYPES,
-  NODE_COLORS, STATUS_COLORS,
+  NODE_COLORS, STATUS_COLORS, canvasTheme,
   RESIZE_HANDLE_SIZE, RESIZE_HANDLE_HIT_SIZE, RESIZE_MIN_WIDTH, RESIZE_MIN_HEIGHT,
   FOOTER_SEPARATOR_Y, FOOTER_GAUGES_Y, FOOTER_METRICS_Y_MINIMAL, FOOTER_METRICS_Y_GAUGES,
   FOOTER_METRICS_FONT_SIZE, getNodeHeight, hasFooterGauges as typeHasFooterGauges,
@@ -38,11 +38,15 @@ interface NodeVisual {
   toolbarBg: Graphics;
   statusDot: Graphics;
   cogIcon: Text;
+  trashIcon: Text;
   gauges: Graphics;
   // Footer
   footerSeparator: Graphics;
   footerGauges: Graphics;
+  footerGaugeLabel: Text;
   footerMetricsText: Text;
+  footerSuccessText: Text;
+  footerErrorText: Text;
   selectionGlow: Graphics;
   resizeHandles: ResizeHandle[];
   nodeId: string;
@@ -74,6 +78,7 @@ export class NodeRenderer {
   onNodeRightClick: ((nodeId: string, event: PointerEvent) => void) | null = null;
   onNodeHover: ((nodeId: string | null) => void) | null = null;
   onCogClick: ((nodeId: string) => void) | null = null;
+  onDeleteClick: ((nodeId: string) => void) | null = null;
   onResizeStart: ((nodeId: string, corner: string, event: PointerEvent) => void) | null = null;
   onResizeMove: ((event: PointerEvent) => void) | null = null;
   onResizeEnd: ((event: PointerEvent) => void) | null = null;
@@ -186,12 +191,40 @@ export class NodeRenderer {
     const gauges = new Graphics();
     const footerSeparator = new Graphics();
     const footerGauges = new Graphics();
+    const footerGaugeLabel = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: 7,
+        fill: 0x888888,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '600',
+        letterSpacing: 0.5,
+      }),
+    });
     const footerMetricsText = new Text({
       text: '',
       style: new TextStyle({
         fontSize: FOOTER_METRICS_FONT_SIZE,
         fill: 0x666666,
         fontFamily: '"SF Mono", "Fira Code", monospace',
+      }),
+    });
+    const footerSuccessText = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: FOOTER_METRICS_FONT_SIZE,
+        fill: 0x22c55e,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '600',
+      }),
+    });
+    const footerErrorText = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: FOOTER_METRICS_FONT_SIZE,
+        fill: 0xef4444,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '600',
       }),
     });
 
@@ -241,7 +274,7 @@ export class NodeRenderer {
       text: '⚙',
       style: new TextStyle({
         fontSize: 11,
-        fill: 0x888888,
+        fill: canvasTheme().cogIconColor,
         fontFamily: 'system-ui, sans-serif',
       }),
     });
@@ -251,11 +284,28 @@ export class NodeRenderer {
       e.stopPropagation();
       this.onCogClick?.(node.id);
     });
-    cogIcon.on('pointerover', () => { cogIcon.style.fill = 0xffffff; });
-    cogIcon.on('pointerout', () => { cogIcon.style.fill = 0x888888; });
+    cogIcon.on('pointerover', () => { cogIcon.style.fill = canvasTheme().cogIconHoverColor; });
+    cogIcon.on('pointerout', () => { cogIcon.style.fill = canvasTheme().cogIconColor; });
 
-    toolbar.addChild(toolbarBg, statusDot, cogIcon);
-    container.addChild(selectionGlow, bg, signalBar, separator, headerIcon, headerLabel, contentLine1, contentLine2, gauges, footerSeparator, footerGauges, footerMetricsText, toolbar);
+    const trashIcon = new Text({
+      text: '🗑',
+      style: new TextStyle({
+        fontSize: 10,
+        fill: 0xcc3333,
+        fontFamily: 'system-ui, sans-serif',
+      }),
+    });
+    trashIcon.eventMode = 'static';
+    trashIcon.cursor = 'pointer';
+    trashIcon.on('pointerdown', (e) => {
+      e.stopPropagation();
+      this.onDeleteClick?.(node.id);
+    });
+    trashIcon.on('pointerover', () => { trashIcon.style.fill = 0xff4444; });
+    trashIcon.on('pointerout', () => { trashIcon.style.fill = 0xcc3333; });
+
+    toolbar.addChild(toolbarBg, statusDot, cogIcon, trashIcon);
+    container.addChild(selectionGlow, bg, signalBar, separator, headerIcon, headerLabel, contentLine1, contentLine2, gauges, footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText, footerSuccessText, footerErrorText, toolbar);
 
     // Create resize handles for all node types (functional resize for zones, visual indicator for others)
     const resizeHandles: ResizeHandle[] = [];
@@ -320,15 +370,17 @@ export class NodeRenderer {
 
     return {
       container, bg, signalBar, separator, headerIcon, headerLabel, contentLine1,
-      contentLine2, toolbar, toolbarBg, statusDot, cogIcon, gauges,
-      footerSeparator, footerGauges, footerMetricsText,
+      contentLine2, toolbar, toolbarBg, statusDot, cogIcon, trashIcon, gauges,
+      footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText,
+      footerSuccessText, footerErrorText,
       selectionGlow, resizeHandles, nodeId: node.id, isZone,
       currentStatus: 'idle', animationPhase: 0,
     };
   }
 
   private updateNodeVisual(visual: NodeVisual, node: GraphNode, isSelected: boolean, absPos?: { x: number; y: number }): void {
-    const colors = NODE_COLORS[node.type] ?? { bg: 0x2a2a2e, border: 0x555555, text: 0xcccccc };
+    const theme = canvasTheme();
+    const colors = theme.nodeColors[node.type] ?? { bg: 0xffffff, border: 0x555555, text: 0x333333 };
     const w = node.width ?? NODE_WIDTH;
     const h = node.height ?? (visual.isZone ? NODE_HEIGHT : getNodeHeight(node.type));
     const dataLabel = (node.data?.label as string) ?? node.type;
@@ -364,9 +416,9 @@ export class NodeRenderer {
         gap: 4,
       });
     } else {
-      // Regular node: solid dark fill
+      // Regular node: solid fill
       visual.bg.roundRect(0, 0, w, h, NODE_RADIUS);
-      visual.bg.fill({ color: colors.bg, alpha: 0.95 });
+      visual.bg.fill({ color: colors.bg, alpha: theme.nodeBgAlpha });
       visual.bg.roundRect(0, 0, w, h, NODE_RADIUS);
       visual.bg.stroke({
         width: isSelected ? 2 : NODE_BORDER_WIDTH,
@@ -391,17 +443,17 @@ export class NodeRenderer {
     visual.headerIcon.style.fontSize = visual.isZone ? 12 : 14;
     visual.headerIcon.position.set(
       visual.isZone ? NODE_PADDING : NODE_PADDING + 4,
-      visual.isZone ? 6 : 8,
+      visual.isZone ? 6 : 10,
     );
 
     // ── Header label ──
     visual.headerLabel.text = dataLabel.toUpperCase();
-    visual.headerLabel.style.fill = isDown ? 0xfca5a5 : isDegraded ? 0xfed7aa : colors.text;
+    visual.headerLabel.style.fill = isDown ? theme.errorLabelColor : isDegraded ? theme.degradedLabelColor : colors.text;
     visual.headerLabel.style.fontSize = 9;
     const iconWidth = visual.isZone ? 14 : 18;
     visual.headerLabel.position.set(
       (visual.isZone ? NODE_PADDING : NODE_PADDING + 4) + iconWidth + 4,
-      visual.isZone ? 8 : 10,
+      visual.isZone ? 8 : 12,
     );
     // Truncate label to fit
     const maxLabelWidth = w - NODE_PADDING * 2 - iconWidth - 20;
@@ -414,9 +466,9 @@ export class NodeRenderer {
     // ── Separator line (between header and content) ──
     visual.separator.clear();
     if (!visual.isZone) {
-      visual.separator.moveTo(NODE_PADDING + 4, 22);
-      visual.separator.lineTo(w - NODE_PADDING - 4, 22);
-      visual.separator.stroke({ width: 1, color: 0xffffff, alpha: 0.06 });
+      visual.separator.moveTo(NODE_PADDING + 4, 27);
+      visual.separator.lineTo(w - NODE_PADDING - 4, 27);
+      visual.separator.stroke({ width: 1, color: theme.separatorColor, alpha: theme.separatorAlpha });
     }
 
     // ── Content lines (delegated to per-type renderer) ──
@@ -426,29 +478,29 @@ export class NodeRenderer {
 
     if (lines.length > 0 && !visual.isZone) {
       visual.contentLine1.text = lines[0];
-      visual.contentLine1.style.fill = 0xcccccc;
-      visual.contentLine1.position.set(NODE_PADDING + 4, 26);
+      visual.contentLine1.style.fill = theme.contentLine1Color;
+      visual.contentLine1.position.set(NODE_PADDING + 4, 32);
       const maxW = w - NODE_PADDING * 2 - 8;
       visual.contentLine1.scale.x = visual.contentLine1.width > maxW ? maxW / visual.contentLine1.width : 1;
     }
     if (lines.length > 1 && !visual.isZone) {
       visual.contentLine2.text = lines[1];
-      visual.contentLine2.style.fill = 0x888888;
-      visual.contentLine2.position.set(NODE_PADDING + 4, 38);
+      visual.contentLine2.style.fill = theme.contentLine2Color;
+      visual.contentLine2.position.set(NODE_PADDING + 4, 45);
       const maxW = w - NODE_PADDING * 2 - 8;
       visual.contentLine2.scale.x = visual.contentLine2.width > maxW ? maxW / visual.contentLine2.width : 1;
     }
 
     // ── Type-specific gauges (delegated) ──
     if (renderer.drawGauges && !visual.isZone) {
-      const gaugeY = lines.length > 1 ? 50 : lines.length > 0 ? 40 : 26;
+      const gaugeY = lines.length > 1 ? 58 : lines.length > 0 ? 48 : 32;
       renderer.drawGauges(visual.gauges, (node.data ?? {}) as Record<string, unknown>, NODE_PADDING + 4, gaugeY, w - NODE_PADDING * 2);
     }
 
     // ── Toolbar (floating above node, right-aligned) ──
     visual.toolbar.visible = !visual.isZone;
     if (!visual.isZone) {
-      const tbW = 36;  // toolbar width
+      const tbW = 52;  // toolbar width (status dot + cog + trash)
       const tbH = 16;  // toolbar height
       const tbX = w - tbW; // right-aligned
       const tbY = -tbH - 3; // above the node with 3px gap
@@ -458,9 +510,9 @@ export class NodeRenderer {
       // Toolbar background pill
       visual.toolbarBg.clear();
       visual.toolbarBg.roundRect(0, 0, tbW, tbH, 3);
-      visual.toolbarBg.fill({ color: 0x1a1a2e, alpha: 0.95 });
+      visual.toolbarBg.fill({ color: theme.toolbarBg, alpha: 0.95 });
       visual.toolbarBg.roundRect(0, 0, tbW, tbH, 3);
-      visual.toolbarBg.stroke({ width: 1, color: colors.border, alpha: 0.3 });
+      visual.toolbarBg.stroke({ width: 1, color: colors.border, alpha: 0.4 });
 
       // Status dot (left side of toolbar)
       const dotColor = STATUS_COLORS[status] ?? STATUS_COLORS.idle;
@@ -468,8 +520,11 @@ export class NodeRenderer {
       visual.statusDot.circle(10, tbH / 2, 3);
       visual.statusDot.fill({ color: dotColor, alpha: status === 'idle' ? 0.4 : 1 });
 
-      // Cog icon (right side of toolbar)
+      // Cog icon (middle of toolbar)
       visual.cogIcon.position.set(20, 1);
+
+      // Trash icon (right side of toolbar)
+      visual.trashIcon.position.set(36, 1);
     }
 
     // ── Footer (separator + optional gauges + minimal metrics) ──
@@ -497,7 +552,7 @@ export class NodeRenderer {
 
         // Draw handle visual
         rh.graphics.roundRect(-hs / 2, -hs / 2, hs, hs, 1);
-        rh.graphics.fill({ color: 0x1a1a2e, alpha: 0.95 });
+        rh.graphics.fill({ color: theme.resizeHandleBg, alpha: 0.95 });
         rh.graphics.roundRect(-hs / 2, -hs / 2, hs, hs, 1);
         rh.graphics.stroke({ width: 1.5, color: 0x6366f1, alpha: 0.8 });
         // Inner dot
@@ -511,6 +566,9 @@ export class NodeRenderer {
     visual.footerSeparator.clear();
     visual.footerGauges.clear();
     visual.footerMetricsText.visible = false;
+    visual.footerSuccessText.visible = false;
+    visual.footerErrorText.visible = false;
+    visual.footerGaugeLabel.visible = false;
     if (visual.isZone) return;
 
     const x = NODE_PADDING + 4;
@@ -519,26 +577,78 @@ export class NodeRenderer {
     const metrics = this.footerMetrics.get(node.id);
 
     // Footer separator line
+    const theme = canvasTheme();
     visual.footerSeparator.moveTo(x, FOOTER_SEPARATOR_Y);
     visual.footerSeparator.lineTo(x + barW, FOOTER_SEPARATOR_Y);
-    visual.footerSeparator.stroke({ width: 1, color: 0xffffff, alpha: 0.06 });
+    visual.footerSeparator.stroke({ width: 1, color: theme.separatorColor, alpha: theme.separatorAlpha });
 
     // Type-specific footer gauges (CPU/MEM, hit ratio, pool, etc.)
-    if (hasGauges && metrics) {
+    // Always draw gauges for gauged types, even without simulation metrics
+    if (hasGauges) {
+      const defaultMetrics = metrics ?? { requestsIn: 0, requestsOut: 0, successCount: 0, errorCount: 0 };
       const renderer = getComponentRenderer(node.type);
-      renderer.drawFooterGauges?.(visual.footerGauges, metrics, x, FOOTER_GAUGES_Y, barW);
+      renderer.drawFooterGauges?.(visual.footerGauges, defaultMetrics, x, FOOTER_GAUGES_Y, barW);
+
+      // Show CPU/MEM labels above gauge bars for types with resource gauges
+      const hasCpuMem = node.type === 'http-server' || node.type === 'api-gateway'
+        || node.type === 'api-service' || node.type === 'background-job';
+      if (hasCpuMem) {
+        const cpuPct = Math.round(defaultMetrics.cpu ?? 0);
+        const memPct = Math.round(defaultMetrics.memory ?? 0);
+        visual.footerGaugeLabel.text = `CPU ${cpuPct}%          MEM ${memPct}%`;
+        visual.footerGaugeLabel.style.fill = theme.footerMetricsColor;
+        visual.footerGaugeLabel.position.set(x, FOOTER_GAUGES_Y - 8);
+        visual.footerGaugeLabel.visible = true;
+        // Scale to fit
+        visual.footerGaugeLabel.scale.x = visual.footerGaugeLabel.width > barW ? barW / visual.footerGaugeLabel.width : 1;
+      }
     }
 
-    // Minimal metrics text line
+    // Metrics line with explicit labels: REQ, RES, SUC (green), ERR (red)
     const metricsY = hasGauges ? FOOTER_METRICS_Y_GAUGES : FOOTER_METRICS_Y_MINIMAL;
     const m = metrics ?? { requestsIn: 0, requestsOut: 0, successCount: 0, errorCount: 0 };
-    visual.footerMetricsText.text = `→${m.requestsOut} ←${m.requestsIn}  ✓${m.successCount} ✕${m.errorCount}`;
-    visual.footerMetricsText.style.fill = m.errorCount > 0 ? 0x888888 : 0x555555;
+
+    // Connected services count for LB/gateway
+    const svcSuffix = (node.type === 'load-balancer' || node.type === 'api-gateway')
+      && m.connectedServices != null && m.connectedServices > 0
+      ? `  ▸${m.connectedServices}svc` : '';
+
+    // Part 1: REQ/RES in default color
+    visual.footerMetricsText.text = `REQ:${m.requestsIn} RES:${m.requestsOut}${svcSuffix}`;
+    visual.footerMetricsText.style.fill = theme.footerMetricsColor;
     visual.footerMetricsText.position.set(x, metricsY);
     visual.footerMetricsText.visible = true;
-    // Scale to fit
-    const maxW = barW;
-    visual.footerMetricsText.scale.x = visual.footerMetricsText.width > maxW ? maxW / visual.footerMetricsText.width : 1;
+    visual.footerMetricsText.scale.x = 1;
+
+    // Part 2: SUC in green
+    const sucX = x + visual.footerMetricsText.width + 4;
+    visual.footerSuccessText.text = `SUC:${m.successCount}`;
+    visual.footerSuccessText.style.fill = 0x22c55e;
+    visual.footerSuccessText.position.set(sucX, metricsY);
+    visual.footerSuccessText.visible = true;
+    visual.footerSuccessText.scale.x = 1;
+
+    // Part 3: ERR in red
+    const errX = sucX + visual.footerSuccessText.width + 4;
+    visual.footerErrorText.text = `ERR:${m.errorCount}`;
+    visual.footerErrorText.style.fill = m.errorCount > 0 ? 0xef4444 : theme.footerMetricsColor;
+    visual.footerErrorText.position.set(errX, metricsY);
+    visual.footerErrorText.visible = true;
+    visual.footerErrorText.scale.x = 1;
+
+    // Scale all metrics texts to fit if they overflow
+    const totalW = (errX - x) + visual.footerErrorText.width;
+    if (totalW > barW) {
+      const scale = barW / totalW;
+      visual.footerMetricsText.scale.x = scale;
+      visual.footerSuccessText.scale.x = scale;
+      visual.footerErrorText.scale.x = scale;
+      // Reposition after scaling
+      const sucXScaled = x + visual.footerMetricsText.width * scale + 4 * scale;
+      visual.footerSuccessText.position.x = sucXScaled;
+      const errXScaled = sucXScaled + visual.footerSuccessText.width * scale + 4 * scale;
+      visual.footerErrorText.position.x = errXScaled;
+    }
   }
 
   /** Update footer metrics for a specific node (called from PixiCanvas) */
@@ -753,7 +863,7 @@ export class NodeRenderer {
     this.positions.set(nodeId, { x, y });
 
     // Redraw background with new size
-    const colors = NODE_COLORS[visual.isZone ? 'network-zone' : 'http-server'] ?? { bg: 0x2a2a2e, border: 0x555555 };
+    const colors = canvasTheme().nodeColors[visual.isZone ? 'network-zone' : 'http-server'] ?? { bg: 0xffffff, border: 0x555555 };
     visual.bg.clear();
     visual.bg.roundRect(0, 0, w, h, NODE_RADIUS);
     visual.bg.fill({ color: colors.bg, alpha: 0.2 });

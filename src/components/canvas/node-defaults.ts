@@ -26,7 +26,7 @@ const defaultClientGroupData = {
 
 /**
  * Returns default node data for a given component type.
- * Extracted from FlowCanvas for reuse.
+ * Extracted from PixiCanvas for reuse.
  */
 export function getDefaultNodeData(type: ComponentType): Record<string, unknown> {
   switch (type) {

@@ -33,9 +33,9 @@ export const apiServiceRenderer: ComponentContentRenderer = {
     return responseTime ? [line1, `p99: ${responseTime}ms`] : [line1];
   },
   drawFooterGauges(g, metrics, x, y, w) {
-    drawGaugeBar(g, x, y, w * 0.48, 2, metrics.cpu ?? 0);
-    drawGaugeBar(g, x + w * 0.52, y, w * 0.48, 2, metrics.memory ?? 0);
-    return 6;
+    drawGaugeBar(g, x, y, w * 0.48, 3, metrics.cpu ?? 0);
+    drawGaugeBar(g, x + w * 0.52, y, w * 0.48, 3, metrics.memory ?? 0);
+    return 8;
   },
 };
 
@@ -56,8 +56,8 @@ export const backgroundJobRenderer: ComponentContentRenderer = {
     return [String(jobType), concurrency ? `concurrency: ${concurrency}` : ''].filter(Boolean) as string[];
   },
   drawFooterGauges(g, metrics, x, y, w) {
-    drawGaugeBar(g, x, y, w, 2, metrics.cpu ?? 0);
-    return 6;
+    drawGaugeBar(g, x, y, w, 3, metrics.cpu ?? 0);
+    return 8;
   },
 };
 

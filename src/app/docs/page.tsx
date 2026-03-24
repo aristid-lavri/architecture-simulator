@@ -30,6 +30,7 @@ import {
   Link as LinkIcon,
   Cable,
   Activity,
+  KeyRound,
 } from 'lucide-react';
 import { ComponentCard } from '@/components/docs/ComponentCard';
 import { TemplateCard } from '@/components/docs/TemplateCard';
@@ -62,6 +63,7 @@ function getComponentIcon(type: string) {
     'cloud-storage': <HardDrive className="w-4 h-4" />,
     'cloud-function': <Cloud className="w-4 h-4" />,
     'network-zone': <Layers className="w-4 h-4" />,
+    'identity-provider': <KeyRound className="w-4 h-4" />,
   };
   return iconMap[type] || <Box className="w-4 h-4" />;
 }
@@ -120,6 +122,7 @@ const sections = [
       { id: 'component-serveur-hôte', label: 'Serveur Hôte' },
       { id: 'component-api-service', label: 'API Service' },
       { id: 'component-background-job', label: 'Background Job' },
+      { id: 'component-identity-provider', label: 'Identity Provider' },
       { id: 'component-zone-réseau', label: 'Zone Réseau' },
     ],
   },
@@ -422,6 +425,7 @@ const componentCategories: { label: string; color: string; filter: string }[] = 
   { label: 'Résilience', color: '#f43f5e', filter: 'resilience' },
   { label: 'Compute', color: '#f59e0b', filter: 'compute' },
   { label: 'Cloud', color: '#0ea5e9', filter: 'cloud' },
+  { label: 'Sécurité', color: '#ec4899', filter: 'security' },
   { label: 'Zones', color: '#64748b', filter: 'zone' },
 ];
 
@@ -583,7 +587,7 @@ export default function DocsPage() {
                 Les contrôles apparaissent : Play, Pause, Stop, Reset. Choisissez une durée ou laissez en mode infini.
               </p>
               <p className="text-muted-foreground">
-                Des particules animées visualisent le flux des requêtes et réponses. Les composants changent de couleur selon leur état.
+                Le moteur PixiJS WebGL rend des particules GPU pour visualiser le flux des requêtes et réponses. Les composants changent de couleur selon leur état.
               </p>
             </GuideStep>
 
@@ -602,6 +606,21 @@ export default function DocsPage() {
                   <span className="w-1 h-1 rounded-full bg-signal-active" />
                   <strong className="text-foreground/80">Output</strong>
                   <span className="text-muted-foreground">— Logs d&apos;événements en temps réel</span>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-active" />
+                  <strong className="text-foreground/80">Bottlenecks</strong>
+                  <span className="text-muted-foreground">— Détection automatique des goulots d&apos;étranglement</span>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-active" />
+                  <strong className="text-foreground/80">Traces</strong>
+                  <span className="text-muted-foreground">— Tracing distribué avec vue waterfall du chemin critique</span>
+                </div>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="w-1 h-1 rounded-full bg-signal-active" />
+                  <strong className="text-foreground/80">Analytics</strong>
+                  <span className="text-muted-foreground">— Métriques détaillées par composant avec synthèse post-simulation</span>
                 </div>
               </div>
             </GuideStep>
@@ -787,6 +806,7 @@ connections:  # Requis — liens entre composants
                       ['host-server', 'Serveur Hôte'],
                       ['api-service', 'API Service'],
                       ['background-job', 'Background Job'],
+                      ['identity-provider', 'Identity Provider'],
                       ['network-zone', 'Zone Réseau'],
                     ].map(([type, name], i) => (
                       <tr key={type} className={cn('text-foreground/80', i % 2 === 0 && 'bg-card/20')}>
@@ -871,7 +891,7 @@ connections:  # Requis — liens entre composants
             label="Catalogue des composants"
             icon="03"
             color="oklch(0.70 0.15 220)"
-            description="22 types de composants répartis en 7 catégories. Chaque composant est configurable via le panneau de propriétés."
+            description="22 types de composants répartis en 8 catégories. Chaque composant est configurable via le panneau de propriétés."
           />
 
           {componentCategories.map(({ label, color, filter }) => {
@@ -904,7 +924,7 @@ connections:  # Requis — liens entre composants
             label="Templates d'architecture"
             icon="04"
             color="oklch(0.68 0.18 290)"
-            description="5 architectures pré-configurées accessibles depuis le menu TPL dans le header."
+            description="8 architectures pré-configurées accessibles depuis le menu TPL dans le header."
           />
 
           <div className="grid gap-4 md:grid-cols-2">

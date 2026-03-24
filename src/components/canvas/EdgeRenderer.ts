@@ -3,7 +3,7 @@ import type { GraphNode, GraphEdge } from '@/types/graph';
 import {
   EDGE_WIDTH, EDGE_COLOR, EDGE_SELECTED_COLOR,
   NODE_WIDTH, NODE_HEIGHT, CONTAINER_COMPONENT_TYPES,
-  HANDLE_RADIUS,
+  HANDLE_RADIUS, canvasTheme, getNodeHeight,
 } from './constants';
 import { computeOrthogonalRoute, parseHandleSide } from '@/lib/orthogonal-router';
 import type { EdgeRoutingMode } from '@/store/app-store';
@@ -254,7 +254,7 @@ export class EdgeRenderer {
   ): void {
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const protocol = edgeData?.protocol as string | undefined;
-    const color = isSelected ? EDGE_SELECTED_COLOR : (PROTOCOL_COLORS[protocol ?? ''] ?? EDGE_COLOR);
+    const color = isSelected ? EDGE_SELECTED_COLOR : (PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor);
     const width = isSelected ? (PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH) + 1 : (PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH);
     const alpha = isSelected ? 1 : 0.6;
 
@@ -263,9 +263,9 @@ export class EdgeRenderer {
     const targetAbs = this.getAbsolutePosition(target);
 
     const sw = source.width ?? NODE_WIDTH;
-    const sh = source.height ?? NODE_HEIGHT;
+    const sh = source.height ?? getNodeHeight(source.type);
     const tw = target.width ?? NODE_WIDTH;
-    const th = target.height ?? NODE_HEIGHT;
+    const th = target.height ?? getNodeHeight(target.type);
 
     if (routingMode === 'orthogonal') {
       this.drawOrthogonal(visual, edge, source, target, allNodes, sourceAbs, targetAbs, sw, sh, tw, th, color, width, alpha, isSelected);
@@ -288,7 +288,7 @@ export class EdgeRenderer {
       handle.clear();
       handle.position.set(pos.x, pos.y);
       handle.circle(0, 0, 10);
-      handle.fill({ color: 0x1a1a2e, alpha: 0.95 });
+      handle.fill({ color: canvasTheme().reconnectHandleBg, alpha: 0.95 });
       handle.circle(0, 0, 10);
       handle.stroke({ width: 2, color: 0x6366f1, alpha: 0.9 });
       handle.circle(0, 0, 4);
@@ -382,7 +382,7 @@ export class EdgeRenderer {
       .filter((n) => n.type !== 'network-zone')
       .map((n) => {
         const abs = this.getAbsolutePosition(n);
-        return { id: n.id, x: abs.x, y: abs.y, width: n.width ?? NODE_WIDTH, height: n.height ?? NODE_HEIGHT };
+        return { id: n.id, x: abs.x, y: abs.y, width: n.width ?? NODE_WIDTH, height: n.height ?? getNodeHeight(n.type) };
       });
 
     const srcSide = parseHandleSide(edge.sourceHandle);
@@ -555,7 +555,7 @@ export class EdgeRenderer {
 
     const fixedAbs = this.getAbsolutePosition(fixedNode);
     const fw = fixedNode.width ?? NODE_WIDTH;
-    const fh = fixedNode.height ?? NODE_HEIGHT;
+    const fh = fixedNode.height ?? getNodeHeight(fixedNode.type);
     const fcx = fixedAbs.x + fw / 2;
     const fcy = fixedAbs.y + fh / 2;
     const fp = this.borderIntersection(fcx, fcy, fw, fh, worldX, worldY);
@@ -605,7 +605,7 @@ export class EdgeRenderer {
       if (CONTAINER_COMPONENT_TYPES.has(node.type)) continue;
       const abs = this.getAbsolutePosition(node);
       const w = node.width ?? NODE_WIDTH;
-      const h = node.height ?? NODE_HEIGHT;
+      const h = node.height ?? getNodeHeight(node.type);
 
       if (worldX >= abs.x - hitRadius && worldX <= abs.x + w + hitRadius &&
           worldY >= abs.y - hitRadius && worldY <= abs.y + h + hitRadius) {
@@ -621,7 +621,7 @@ export class EdgeRenderer {
       // Determine which side of the target was hit
       const abs = this.getAbsolutePosition(targetNode);
       const w = targetNode.width ?? NODE_WIDTH;
-      const h = targetNode.height ?? NODE_HEIGHT;
+      const h = targetNode.height ?? getNodeHeight(targetNode.type);
       const cx = abs.x + w / 2;
       const cy = abs.y + h / 2;
       const dx = worldX - cx;

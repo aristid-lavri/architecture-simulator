@@ -27,7 +27,7 @@ export interface DocComponent {
   name: string;
   type: string;
   description: string;
-  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone';
+  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone' | 'security';
   sections: DocSection[];
   metrics: DocMetric[];
   behavior: string;
@@ -74,6 +74,7 @@ export const protocolMatrix: { type: string; name: string; protocols: string[] }
   { type: 'cache', name: 'Cache', protocols: [] },
   { type: 'message-queue', name: 'File de messages', protocols: [] },
   { type: 'background-job', name: 'Background Job', protocols: [] },
+  { type: 'identity-provider', name: 'Identity Provider', protocols: ['rest'] },
   { type: 'network-zone', name: 'Zone Réseau', protocols: [] },
 ];
 
@@ -962,6 +963,37 @@ export const componentDocs: DocComponent[] = [
     behavior: 'Identique à Serverless avec des presets spécifiques au fournisseur cloud.',
     connections: 'Identiques à Serverless.',
     protocols: ['rest', 'grpc'],
+  },
+
+  // ═══════════════════════════════════════
+  // SECURITY (1)
+  // ═══════════════════════════════════════
+  {
+    name: 'Identity Provider',
+    type: 'identity-provider',
+    description: 'Fournisseur d\'identité (IdP) compatible OAuth2/OIDC. Simule l\'émission de tokens JWT, la validation, et les flux d\'authentification. Supporte les presets Keycloak, Auth0, Cognito et Okta.',
+    category: 'security',
+    sections: [
+      {
+        name: 'Configuration',
+        description: 'Paramètres du fournisseur d\'identité.',
+        properties: [
+          { name: 'provider', type: 'enum', defaultValue: 'keycloak', description: 'Preset du fournisseur. « keycloak » : open-source, latence ~50ms. « auth0 » : SaaS, latence ~80ms. « cognito » : AWS, latence ~60ms. « okta » : enterprise, latence ~70ms.' },
+          { name: 'tokenTTL', type: 'number', defaultValue: '3600', description: 'Durée de vie du token en secondes. Tokens expirés sont revalidés automatiquement.' },
+          { name: 'validationLatency', type: 'number', defaultValue: '5', description: 'Latence de validation du token en ms (introspection locale).' },
+          { name: 'issueLatency', type: 'number', defaultValue: '50', description: 'Latence d\'émission d\'un nouveau token en ms.' },
+          { name: 'errorRate', type: 'number', defaultValue: '0.01', description: 'Taux d\'erreur (0-1). Probabilité d\'échec d\'authentification.' },
+        ],
+      },
+    ],
+    metrics: [
+      { name: 'tokensIssued', description: 'Tokens émis', interpretation: 'Nombre total de tokens JWT émis. Un nombre élevé peut indiquer des tokens à TTL trop court.' },
+      { name: 'validations', description: 'Validations effectuées', interpretation: 'Nombre de validations de tokens. Ratio validation/émission élevé = bonne utilisation du cache de tokens.' },
+      { name: 'authFailures', description: 'Échecs d\'authentification', interpretation: 'Requêtes rejetées par l\'IdP. Un taux élevé peut indiquer des credentials invalides ou un errorRate trop haut.' },
+    ],
+    behavior: 'L\'IdP émet des tokens JWT lors des requêtes d\'authentification. Les API Gateways peuvent valider ces tokens automatiquement via le mode autoToken. Les tokens expirés déclenchent une réémission transparente.',
+    connections: 'Entrée : depuis un API Gateway ou un Client. Sortie : vers les services protégés. Fonctionne en tandem avec l\'API Gateway pour le flux d\'authentification complet.',
+    protocols: ['rest'],
   },
 
   // ═══════════════════════════════════════

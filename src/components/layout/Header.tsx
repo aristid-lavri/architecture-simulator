@@ -53,6 +53,7 @@ import { cn } from '@/lib/utils';
 import { YamlEditor } from '@/components/YamlEditor';
 import { validateArchitecture } from '@/lib/simulation-validator';
 import { OfflineIndicator } from '@/components/layout/OfflineIndicator';
+import { ProjectSelector } from '@/components/layout/ProjectSelector';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -190,6 +191,11 @@ export function Header() {
           </TooltipTrigger>
           <TooltipContent side="bottom">Accueil</TooltipContent>
         </Tooltip>
+        <span className="text-border">|</span>
+
+        {/* Project selector */}
+        <ProjectSelector />
+
         <span className="text-border">|</span>
 
         {/* Mode toggle */}

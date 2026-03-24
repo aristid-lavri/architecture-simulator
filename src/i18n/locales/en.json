@@ -587,6 +587,26 @@
     "finish": "Finish",
     "stepOf": "of"
   },
+  "projects": {
+    "title": "Projects",
+    "new": "New project",
+    "rename": "Rename project",
+    "delete": "Delete project",
+    "duplicate": "Duplicate project",
+    "deleteConfirm": "Delete this project and all its diagrams?",
+    "defaultName": "My Project",
+    "create": "Create"
+  },
+  "diagrams": {
+    "title": "Diagrams",
+    "new": "New diagram",
+    "rename": "Rename",
+    "delete": "Delete",
+    "duplicate": "Duplicate",
+    "deleteConfirm": "Delete this diagram?",
+    "defaultName": "Diagram",
+    "cannotDeleteLast": "Cannot delete the last diagram"
+  },
   "bottleneck": {
     "tab": "Bottlenecks",
     "top3": "Top 3 bottlenecks",

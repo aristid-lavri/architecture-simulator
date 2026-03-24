@@ -281,9 +281,9 @@ function SimulationDemo() {
         </div>
       </div>
 
-      {/* Canvas area — HTML nodes + SVG edges (like real FlowCanvas) */}
+      {/* Canvas area — HTML nodes + SVG edges (like real PixiCanvas) */}
       <div className="bg-background relative overflow-hidden" style={{ height: '240px' }}>
-        {/* Grid — Lines variant like real FlowCanvas */}
+        {/* Grid — Lines variant like real PixiCanvas */}
         <svg className="absolute inset-0 w-full h-full" style={{ opacity: 0.4 }}>
           <defs>
             <pattern id="demo-minor-grid" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -423,7 +423,7 @@ function SimulationDemo() {
           </DemoNode>
         </div>
 
-        {/* Mode badge — top left, same as real FlowCanvas */}
+        {/* Mode badge — top left, same as real PixiCanvas */}
         <div className="absolute top-2 left-2 px-1.5 py-0.5 font-mono text-[7px] font-semibold text-signal-active border border-signal-active/30 bg-signal-active/10" style={{ borderRadius: '2px' }}>
           MODE:SIM
         </div>
@@ -546,7 +546,7 @@ export default function LandingPage() {
           <span className="text-border">|</span>
           <span className="text-signal-healthy hidden sm:inline">Open Source</span>
           <span className="text-border hidden sm:inline">|</span>
-          <span className="hover:text-foreground transition-colors">v0.1</span>
+          <span className="hover:text-foreground transition-colors">v0.2</span>
           <span className="text-border">|</span>
           <button
             onClick={toggleTheme}
@@ -585,9 +585,9 @@ export default function LandingPage() {
 
           {/* Subtitle — orienté résultat, pas features */}
           <p className={`font-mono text-sm text-muted-foreground text-center max-w-xl mb-10 leading-relaxed transition-all duration-700 delay-500 ${heroLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
-            Modélisez vos composants distribués, simulez jusqu&apos;à 1000 clients virtuels,
+            Modélisez 22 types de composants distribués, simulez jusqu&apos;à 1000 clients virtuels,
             <br className="hidden sm:block" />
-            et identifiez les bottlenecks avant votre premier déploiement.
+            et identifiez les bottlenecks avec tracing distribué avant votre premier déploiement.
           </p>
 
           {/* CTA */}
@@ -718,7 +718,7 @@ export default function LandingPage() {
                 label="MODÉLISATION"
                 step="01"
                 title="Dessinez. Connectez. Configurez."
-                description="9 types de composants : clients, serveurs, load balancers, caches, bases de données. Chacun avec ses paramètres réalistes. Ou tout définir en YAML."
+                description="22 types de composants en 8 catégories : clients, serveurs, load balancers, caches, bases de données, Identity Provider, et plus. Chacun avec ses paramètres réalistes. Ou tout définir en YAML."
                 delay={0}
               />
               <InstrumentBlock
@@ -734,7 +734,7 @@ export default function LandingPage() {
                 label="ANALYSE"
                 step="03"
                 title="Trouvez les ruptures."
-                description="Latence P50/P95/P99, taux d'erreur, saturation CPU/mémoire par noeud. Le tout visualisé en temps réel."
+                description="Latence P50/P95/P99, taux d'erreur, saturation CPU/mémoire par noeud, tracing distribué, analyse des bottlenecks et chemin critique. Le tout visualisé en temps réel."
                 delay={300}
               />
             </div>
@@ -784,7 +784,7 @@ export default function LandingPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="w-1 h-1 rounded-full bg-signal-infra shrink-0" />
-                Zones réseau, 17 types de composants
+                Zones réseau, 22 types de composants
               </li>
               <li className="flex items-center gap-2">
                 <span className="w-1 h-1 rounded-full bg-signal-infra shrink-0" />
@@ -867,7 +867,7 @@ components:
               {
                 color: 'oklch(0.72 0.19 155)',
                 title: 'Trouver le bottleneck',
-                description: 'Pool de connexions DB saturé ? CPU serveur à 95% ? Cache miss rate trop élevé ? Identifiez le maillon faible avant qu\'il casse en prod.',
+                description: 'Pool de connexions DB saturé ? CPU serveur à 95% ? Cache miss rate trop élevé ? Analyseur de bottlenecks intégré, tracing distribué et chemin critique pour identifier le maillon faible avant qu\'il casse en prod.',
                 label: 'PERFORMANCE AUDIT',
               },
               {
@@ -951,7 +951,7 @@ components:
       {/* ── FOOTER ── */}
       <footer className="h-12 border-t border-border flex items-center justify-center gap-2 font-mono text-[10px] text-muted-foreground">
         <img src="/logo.svg" alt="" className="h-3.5 w-3.5 opacity-50 hover:opacity-100 hover:scale-110 transition-all duration-300" />
-        ARCH.SIM v0.1 &bull; NEXT.JS 16 &bull; REACT 19 &bull; TYPESCRIPT 5
+        ARCH.SIM v0.2 &bull; NEXT.JS 16 &bull; REACT 19 &bull; PIXI.JS 8 &bull; TYPESCRIPT 5
         <span className="text-border">&bull;</span>
         <a href="https://github.com/aristid-lavri/architecture-simulator" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
           <Github className="w-3 h-3" />

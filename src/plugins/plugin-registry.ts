@@ -6,7 +6,7 @@ type PluginRegistryListener = () => void;
 /**
  * Registre global des plugins.
  * Singleton qui centralise tous les plugins enregistrés et expose
- * des accesseurs pour les consommateurs (FlowCanvas, ComponentsPanel, Engine).
+ * des accesseurs pour les consommateurs (PixiCanvas, ComponentsPanel, Engine).
  */
 class PluginRegistryImpl {
   private plugins: Map<string, Plugin> = new Map();

@@ -14,8 +14,13 @@ const THROTTLE_MS = 500;
 /**
  * AnalyticsEngine — collecte les données analytiques per-composant.
  *
- * S'abonne aux callbacks SimulationCallbacks existants depuis FlowCanvas.
+ * S'abonne aux callbacks SimulationCallbacks existants depuis PixiCanvas.
  * Zéro modification des handlers ou de SimulationEngine.
+ *
+ * Fournit :
+ * - Métriques temps réel par composant (CPU, mémoire, latence, throughput)
+ * - Historique des snapshots pour graphiques temporels
+ * - Synthèse post-simulation avec recommandations
  *
  * Throttle les événements sortants à 1x/500ms/nœud pour éviter
  * de surcharger React (onResourceUpdate fire à ~100ms/nœud).
@@ -166,7 +171,7 @@ export class AnalyticsEngine {
 
   /**
    * Génère la synthèse post-simulation.
-   * Appelé par FlowCanvas depuis onSimulationComplete.
+   * Appelé par PixiCanvas depuis onSimulationComplete.
    */
   synthesize(): AnalyticsSynthesis {
     const now = Date.now();
