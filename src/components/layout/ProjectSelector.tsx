@@ -136,7 +136,7 @@ export function ProjectSelector() {
       {/* Main project dropdown: left-click to list & switch */}
       <DropdownMenu open={listOpen} onOpenChange={setListOpen}>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-1 px-1.5 py-0.5 hover:text-foreground transition-colors cursor-pointer max-w-[160px]">
+          <button className="flex items-center gap-1 px-1.5 py-0.5 hover:text-foreground transition-colors cursor-pointer max-w-[160px]" data-tour="project-selector">
             <FolderOpen className="w-3 h-3 shrink-0" />
             <span className="truncate">{projectName}</span>
             <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />

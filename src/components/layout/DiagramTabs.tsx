@@ -113,7 +113,7 @@ export function DiagramTabs() {
 
   return (
     <>
-      <div className="h-7 border-b border-border bg-background/80 flex items-center px-2 gap-0.5 font-mono text-[11px] text-muted-foreground select-none overflow-x-auto scrollbar-none">
+      <div className="h-7 border-b border-border bg-background/80 flex items-center px-2 gap-0.5 font-mono text-[11px] text-muted-foreground select-none overflow-x-auto scrollbar-none" data-tour="diagram-tabs">
         {diagrams.map((d) => (
           <div
             key={d.id}
