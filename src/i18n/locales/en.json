@@ -490,6 +490,14 @@
       "title": "Welcome to Architecture Simulator",
       "description": "This interactive tutorial will guide you step by step to create your first distributed architecture and run a simulation. Follow each step to discover the main features."
     },
+    "projectSelector": {
+      "title": "Project Selector",
+      "description": "Manage your projects from this menu. Each project can contain multiple architecture diagrams. Click to create, rename, duplicate, or delete a project."
+    },
+    "diagramTabs": {
+      "title": "Diagram Tabs",
+      "description": "Each project can contain multiple diagrams. Use these tabs to navigate between your diagrams, create new ones (+), or manage them (rename, duplicate, delete) via the context menu."
+    },
     "componentsPanel": {
       "title": "Components Panel",
       "description": "This panel (RACK) contains 20 components organized in 7 categories: Simulation, Infrastructure, Data, Resilience, Compute, Cloud and Zones. Drag and drop a component onto the canvas to add it to your architecture."
@@ -553,6 +561,10 @@
     "pauseSimulation": {
       "title": "Pause the Simulation",
       "description": "Click PAUSE to suspend the simulation. This will let you explore the collected metrics at your own pace."
+    },
+    "analyzeButton": {
+      "title": "Analyze Button",
+      "description": "This button appears when the simulation is paused or finished. Click it to open the full analysis view: health score, performance, resources, bottlenecks, traces, and recommendations."
     },
     "metricsTab": {
       "title": "Metrics Tab",

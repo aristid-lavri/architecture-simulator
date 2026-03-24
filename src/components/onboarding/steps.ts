@@ -24,12 +24,28 @@ export interface TourStepConfig {
 }
 
 export const TOUR_STEPS: TourStepConfig[] = [
-  // Phase A — Welcome & Edit mode discovery (0-3)
+  // Phase A — Welcome & Edit mode discovery (0-5)
   {
     id: 'welcome',
     titleKey: 'onboarding.welcome.title',
     descriptionKey: 'onboarding.welcome.description',
     targetSelector: null,
+    tooltipPosition: 'bottom',
+    trigger: { type: 'click-next' },
+  },
+  {
+    id: 'project-selector',
+    titleKey: 'onboarding.projectSelector.title',
+    descriptionKey: 'onboarding.projectSelector.description',
+    targetSelector: '[data-tour="project-selector"]',
+    tooltipPosition: 'bottom',
+    trigger: { type: 'click-next' },
+  },
+  {
+    id: 'diagram-tabs',
+    titleKey: 'onboarding.diagramTabs.title',
+    descriptionKey: 'onboarding.diagramTabs.description',
+    targetSelector: '[data-tour="diagram-tabs"]',
     tooltipPosition: 'bottom',
     trigger: { type: 'click-next' },
   },
@@ -171,6 +187,14 @@ export const TOUR_STEPS: TourStepConfig[] = [
     targetSelector: '[data-tour="sim-pause-button"]',
     tooltipPosition: 'bottom',
     trigger: { type: 'simulation-state-changed', targetState: 'paused' },
+  },
+  {
+    id: 'analyze-button',
+    titleKey: 'onboarding.analyzeButton.title',
+    descriptionKey: 'onboarding.analyzeButton.description',
+    targetSelector: '[data-tour="analyze-button"]',
+    tooltipPosition: 'top',
+    trigger: { type: 'click-next' },
   },
   {
     id: 'metrics-tab',

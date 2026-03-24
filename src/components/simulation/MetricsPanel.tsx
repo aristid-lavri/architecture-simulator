@@ -598,6 +598,7 @@ export function MetricsPanel() {
               {hasSimData && state !== 'running' && (
                 <button
                   className="px-2 py-0.5 text-[10px] font-mono bg-primary/10 text-primary hover:bg-primary/20 rounded-sm transition-colors"
+                  data-tour="analyze-button"
                   onClick={(e) => {
                     e.stopPropagation();
                     useSimulationStore.getState().setAnalysisMode(true);
