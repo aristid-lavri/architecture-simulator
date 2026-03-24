@@ -1,6 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import type { GraphNode } from '@/types/graph';
-import type { NodeStatus, ResourceUtilization } from '@/types';
+import type { ComponentType, NodeStatus, ResourceUtilization } from '@/types';
 import {
   NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS, NODE_BORDER_WIDTH,
   NODE_FONT_SIZE, NODE_PADDING, CONTAINER_COMPONENT_TYPES,
@@ -50,6 +50,8 @@ interface NodeVisual {
   selectionGlow: Graphics;
   resizeHandles: ResizeHandle[];
   nodeId: string;
+  nodeType: ComponentType;
+  nodeWidth: number;
   isZone: boolean;
   currentStatus: NodeStatus;
   animationPhase: number;
@@ -373,7 +375,8 @@ export class NodeRenderer {
       contentLine2, toolbar, toolbarBg, statusDot, cogIcon, trashIcon, gauges,
       footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText,
       footerSuccessText, footerErrorText,
-      selectionGlow, resizeHandles, nodeId: node.id, isZone,
+      selectionGlow, resizeHandles, nodeId: node.id, nodeType: node.type,
+      nodeWidth: node.width ?? NODE_WIDTH, isZone,
       currentStatus: 'idle', animationPhase: 0,
     };
   }
@@ -389,6 +392,8 @@ export class NodeRenderer {
     const isDegraded = status === 'degraded';
 
     visual.currentStatus = status;
+    visual.nodeType = node.type;
+    visual.nodeWidth = w;
     const displayPos = absPos ?? node.position;
     visual.container.position.set(displayPos.x, displayPos.y);
 
@@ -562,7 +567,10 @@ export class NodeRenderer {
     }
   }
 
-  private drawFooter(visual: NodeVisual, node: GraphNode, w: number): void {
+  private drawFooter(visual: NodeVisual, node: GraphNode | null, w: number): void {
+    const nodeType = node?.type ?? visual.nodeType;
+    const nodeId = node?.id ?? visual.nodeId;
+
     visual.footerSeparator.clear();
     visual.footerGauges.clear();
     visual.footerMetricsText.visible = false;
@@ -573,8 +581,8 @@ export class NodeRenderer {
 
     const x = NODE_PADDING + 4;
     const barW = w - NODE_PADDING * 2 - 8;
-    const hasGauges = typeHasFooterGauges(node.type);
-    const metrics = this.footerMetrics.get(node.id);
+    const hasGauges = typeHasFooterGauges(nodeType);
+    const metrics = this.footerMetrics.get(nodeId);
 
     // Footer separator line
     const theme = canvasTheme();
@@ -586,12 +594,12 @@ export class NodeRenderer {
     // Always draw gauges for gauged types, even without simulation metrics
     if (hasGauges) {
       const defaultMetrics = metrics ?? { requestsIn: 0, requestsOut: 0, successCount: 0, errorCount: 0 };
-      const renderer = getComponentRenderer(node.type);
+      const renderer = getComponentRenderer(nodeType);
       renderer.drawFooterGauges?.(visual.footerGauges, defaultMetrics, x, FOOTER_GAUGES_Y, barW);
 
       // Show CPU/MEM labels above gauge bars for types with resource gauges
-      const hasCpuMem = node.type === 'http-server' || node.type === 'api-gateway'
-        || node.type === 'api-service' || node.type === 'background-job';
+      const hasCpuMem = nodeType === 'http-server' || nodeType === 'api-gateway'
+        || nodeType === 'api-service' || nodeType === 'background-job';
       if (hasCpuMem) {
         const cpuPct = Math.round(defaultMetrics.cpu ?? 0);
         const memPct = Math.round(defaultMetrics.memory ?? 0);
@@ -609,7 +617,7 @@ export class NodeRenderer {
     const m = metrics ?? { requestsIn: 0, requestsOut: 0, successCount: 0, errorCount: 0 };
 
     // Connected services count for LB/gateway
-    const svcSuffix = (node.type === 'load-balancer' || node.type === 'api-gateway')
+    const svcSuffix = (nodeType === 'load-balancer' || nodeType === 'api-gateway')
       && m.connectedServices != null && m.connectedServices > 0
       ? `  ▸${m.connectedServices}svc` : '';
 
@@ -631,7 +639,7 @@ export class NodeRenderer {
     // Part 3: ERR in red
     const errX = sucX + visual.footerSuccessText.width + 4;
     visual.footerErrorText.text = `ERR:${m.errorCount}`;
-    visual.footerErrorText.style.fill = m.errorCount > 0 ? 0xef4444 : theme.footerMetricsColor;
+    visual.footerErrorText.style.fill = 0xef4444;
     visual.footerErrorText.position.set(errX, metricsY);
     visual.footerErrorText.visible = true;
     visual.footerErrorText.scale.x = 1;
@@ -654,6 +662,11 @@ export class NodeRenderer {
   /** Update footer metrics for a specific node (called from PixiCanvas) */
   updateFooterMetrics(nodeId: string, metrics: NodeFooterMetrics): void {
     this.footerMetrics.set(nodeId, metrics);
+    // Immediately redraw footer so metrics update in real-time during simulation
+    const visual = this.visuals.get(nodeId);
+    if (visual) {
+      this.drawFooter(visual, null, visual.nodeWidth);
+    }
   }
 
   private drawDashedRect(
@@ -753,6 +766,11 @@ export class NodeRenderer {
     existing.cpu = util.cpu;
     existing.memory = util.memory;
     this.footerMetrics.set(nodeId, existing);
+    // Immediately redraw footer so gauges update in real-time during simulation
+    const visual = this.visuals.get(nodeId);
+    if (visual) {
+      this.drawFooter(visual, null, visual.nodeWidth);
+    }
   }
 
   moveNode(nodeId: string, x: number, y: number): void {

@@ -836,9 +836,23 @@ export function PixiCanvas() {
         callbacksRef.current.addResourceSample({ nodeId, ...utilization, timestamp: Date.now() });
         // Update Pixi node resource gauges in real-time
         nodeRendererRef.current?.updateResourceUtilization(nodeId, utilization);
+        // Feed analytics engine for per-component metrics
+        analyticsEngineRef.current?.handleResourceUpdate(nodeId, utilization);
       },
-      onTimeSeriesSnapshot: (snap) => callbacksRef.current.addTimeSeriesSnapshot(snap),
+      onTimeSeriesSnapshot: (snap) => {
+        callbacksRef.current.addTimeSeriesSnapshot(snap);
+        analyticsEngineRef.current?.handleTimeSeriesSnapshot(snap);
+      },
       onBottleneckUpdate: (analysis) => callbacksRef.current.setBottleneckAnalysis(analysis),
+      onMessageQueueUpdate: (nodeId, utilization) => {
+        analyticsEngineRef.current?.handleMessageQueueUpdate(nodeId, utilization);
+      },
+      onApiGatewayUpdate: (nodeId, utilization) => {
+        analyticsEngineRef.current?.handleApiGatewayUpdate(nodeId, utilization);
+      },
+      onHierarchicalResourceUpdate: (parentId, aggregated, children) => {
+        analyticsEngineRef.current?.handleHierarchicalResourceUpdate(parentId, aggregated, children);
+      },
     });
 
     registerEngineMetricsProvider(() => engineRef.current!.getFinalMetrics().metrics);
