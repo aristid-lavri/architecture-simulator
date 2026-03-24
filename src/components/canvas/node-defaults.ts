@@ -47,6 +47,9 @@ export function getDefaultNodeData(type: ComponentType): Record<string, unknown>
         responseBody: '{"success": true}',
         responseDelay: 100,
         errorRate: 0,
+        authType: 'none',
+        authFailureRate: 0,
+        autoTokenMode: 'valid',
         status: 'idle',
         resources: defaultServerResources,
         degradation: defaultDegradation,
@@ -94,6 +97,6 @@ export function getDefaultNodeData(type: ComponentType): Record<string, unknown>
     case 'identity-provider':
       return { ...defaultIdentityProviderData, status: 'idle' };
     default:
-      return { label: type.replace(/-/g, ' ').toUpperCase(), status: 'idle' };
+      return { label: (type as string).replace(/-/g, ' ').toUpperCase(), status: 'idle' };
   }
 }

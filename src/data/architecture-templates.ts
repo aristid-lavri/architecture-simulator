@@ -215,6 +215,8 @@ components:
     zone: dmz
     config:
       label: "API Gateway"
+      authType: jwt
+      authFailureRate: 1
       routeRules:
         - id: rule-1
           pathPattern: "/api/service-a"
@@ -233,6 +235,17 @@ components:
           targetServiceName: "service-b"
           priority: 4
 
+  idp:
+    type: identity-provider
+    position: { x: 50, y: 350 }
+    config:
+      label: "Identity Provider"
+      providerType: keycloak
+      protocol: oidc
+      tokenFormat: jwt
+      tokenTTLSeconds: 3600
+      errorRate: 1
+
   service-a:
     type: api-service
     zone: backend
@@ -240,6 +253,8 @@ components:
       label: "Service A"
       serviceName: "service-a"
       basePath: "/api/service-a"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 30
 
   service-b:
@@ -249,6 +264,8 @@ components:
       label: "Service B"
       serviceName: "service-b"
       basePath: "/api/service-b"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 40
 
   database:
@@ -266,6 +283,8 @@ components:
 connections:
   - from: clients
     to: api-gateway
+  - from: clients
+    to: idp
   - from: api-gateway
     to: service-a
   - from: api-gateway
@@ -324,6 +343,8 @@ components:
     zone: dmz
     config:
       label: "API Gateway"
+      authType: jwt
+      authFailureRate: 1
       routeRules:
         - id: rule-1
           pathPattern: "/api/orders"
@@ -342,6 +363,17 @@ components:
           targetServiceName: "product-service"
           priority: 4
 
+  idp:
+    type: identity-provider
+    position: { x: 30, y: 350 }
+    config:
+      label: "Identity Provider"
+      providerType: keycloak
+      protocol: oidc
+      tokenFormat: jwt
+      tokenTTLSeconds: 3600
+      errorRate: 1
+
   product-service:
     type: api-service
     zone: backend
@@ -349,6 +381,8 @@ components:
       label: "Product Service"
       serviceName: "product-service"
       basePath: "/api/products"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 20
 
   order-service:
@@ -358,6 +392,8 @@ components:
       label: "Order Service"
       serviceName: "order-service"
       basePath: "/api/orders"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 25
 
   notification-service:
@@ -402,6 +438,8 @@ components:
 connections:
   - from: clients
     to: api-gateway
+  - from: clients
+    to: idp
   - from: api-gateway
     to: order-service
   - from: api-gateway
@@ -484,6 +522,8 @@ components:
     position: { x: 180, y: 120 }
     config:
       label: "API Gateway"
+      authType: jwt
+      authFailureRate: 1
       routeRules:
         - id: ecom-rule-1
           pathPattern: "/api/users"
@@ -534,6 +574,17 @@ components:
           targetServiceName: "notification-service"
           priority: 12
 
+  idp:
+    type: identity-provider
+    position: { x: 30, y: 550 }
+    config:
+      label: "Identity Provider"
+      providerType: keycloak
+      protocol: oidc
+      tokenFormat: jwt
+      tokenTTLSeconds: 3600
+      errorRate: 1
+
   user-service:
     type: api-service
     zone: backend
@@ -542,6 +593,8 @@ components:
       label: "Service Utilisateurs"
       serviceName: "user-service"
       basePath: "/api/users"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 30
 
   product-service:
@@ -562,6 +615,8 @@ components:
       label: "Service Panier"
       serviceName: "cart-service"
       basePath: "/api/cart"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 20
 
   order-service:
@@ -572,6 +627,8 @@ components:
       label: "Service Commandes"
       serviceName: "order-service"
       basePath: "/api/orders"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 35
 
   payment-service:
@@ -582,6 +639,8 @@ components:
       label: "Service Paiements"
       serviceName: "payment-service"
       basePath: "/api/payments"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 50
 
   notification-service:
@@ -643,6 +702,8 @@ components:
 connections:
   - from: clients-ecommerce
     to: waf
+  - from: clients-ecommerce
+    to: idp
   - from: waf
     to: load-balancer
   - from: load-balancer

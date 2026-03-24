@@ -14,26 +14,34 @@ export class ContainerHandler implements NodeRequestHandler {
     node: GraphNode,
     _context: RequestContext,
     outgoingEdges: GraphEdge[],
-    _allNodes: GraphNode[]
+    allNodes: GraphNode[]
   ): RequestDecision {
     if (outgoingEdges.length === 0) {
       return { action: 'respond', isError: false };
     }
 
-    // If multiple outgoing edges, load balance across replicas
-    if (outgoingEdges.length > 1) {
-      const targets = outgoingEdges.map((edge) => ({
-        nodeId: edge.target,
-        edgeId: edge.id,
-      }));
-      const selected = targets[Math.floor(Math.random() * targets.length)];
-      return { action: 'forward', targets: [selected] };
+    // Trouver les edges qui pointent vers des enfants directs (parentId === container id)
+    const childEdges = outgoingEdges.filter((edge) => {
+      const targetNode = allNodes.find((n) => n.id === edge.target);
+      return targetNode && (targetNode as GraphNode & { parentId?: string }).parentId === node.id;
+    });
+
+    // Si des enfants existent, router vers un enfant (round-robin simplifié via index)
+    const routingEdges = childEdges.length > 0 ? childEdges : outgoingEdges;
+
+    if (routingEdges.length === 1) {
+      const edge = routingEdges[0];
+      return {
+        action: 'forward',
+        targets: [{ nodeId: edge.target, edgeId: edge.id }],
+      };
     }
 
-    const edge = outgoingEdges[0];
+    // Plusieurs enfants : sélection aléatoire (simule un routage interne)
+    const selected = routingEdges[Math.floor(Math.random() * routingEdges.length)];
     return {
       action: 'forward',
-      targets: [{ nodeId: edge.target, edgeId: edge.id }],
+      targets: [{ nodeId: selected.target, edgeId: selected.id }],
     };
   }
 }

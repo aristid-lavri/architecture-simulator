@@ -869,7 +869,7 @@ export function PixiCanvas() {
 
     observer.observe(canvasRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [viewportReady]);
 
   // ============================================
   // Render

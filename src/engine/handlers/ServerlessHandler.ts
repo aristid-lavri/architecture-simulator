@@ -1,24 +1,33 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { ServerlessNodeData } from '@/types';
 
-interface ServerlessState {
+interface AutoscalingState {
   activeInstances: number;
   lastInvocationTime: number;
 }
 
+/**
+ * Handler générique pour les fonctions auto-scalées (serverless et cloud-function).
+ * Gère le cold/warm start, le scaling entre minInstances et maxInstances,
+ * et la limite de concurrence.
+ */
 export class ServerlessHandler implements NodeRequestHandler {
-  readonly nodeType = 'serverless';
+  readonly nodeType: string;
 
-  private nodeStates: Map<string, ServerlessState> = new Map();
+  private nodeStates: Map<string, AutoscalingState> = new Map();
+
+  constructor(nodeType: string = 'serverless') {
+    this.nodeType = nodeType;
+  }
 
   getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as ServerlessNodeData;
     const state = this.getOrCreateState(node.id);
 
-    // Cold start if no active instances
+    // Cold start if no active instances or idle > 5 min
     const isColdStart = state.activeInstances === 0 ||
-      (Date.now() - state.lastInvocationTime > 300000); // 5 min idle → cold
+      (Date.now() - state.lastInvocationTime > 300000);
 
     const latency = isColdStart ? data.coldStartMs : data.warmStartMs;
     return latency / speed;
@@ -54,14 +63,6 @@ export class ServerlessHandler implements NodeRequestHandler {
     state.activeInstances = Math.min(state.activeInstances + 1, data.maxInstances);
     state.lastInvocationTime = Date.now();
 
-    // Schedule scale down
-    setTimeout(() => {
-      const s = this.nodeStates.get(node.id);
-      if (s && s.activeInstances > data.minInstances) {
-        s.activeInstances--;
-      }
-    }, 5000);
-
     if (outgoingEdges.length === 0) {
       return { action: 'respond', isError: false };
     }
@@ -73,7 +74,20 @@ export class ServerlessHandler implements NodeRequestHandler {
     };
   }
 
-  private getOrCreateState(nodeId: string): ServerlessState {
+  handleResponsePassthrough(
+    node: GraphNode,
+    _context: RequestContext,
+    isError: boolean
+  ): ResponseDecision {
+    const data = node.data as ServerlessNodeData;
+    const state = this.nodeStates.get(node.id);
+    if (state && state.activeInstances > data.minInstances) {
+      state.activeInstances--;
+    }
+    return { action: 'passthrough', isError };
+  }
+
+  private getOrCreateState(nodeId: string): AutoscalingState {
     let state = this.nodeStates.get(nodeId);
     if (!state) {
       state = { activeInstances: 0, lastInvocationTime: 0 };

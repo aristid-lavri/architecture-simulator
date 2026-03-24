@@ -1,5 +1,5 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { HttpServerNodeData, ResourceUtilization } from '@/types';
 import { complexityMultipliers } from '@/types';
 import { ResourceManager } from '../ResourceManager';
@@ -62,12 +62,27 @@ export class HttpServerHandler implements NodeRequestHandler {
 
   handleRequestArrival(
     node: GraphNode,
-    _context: RequestContext,
+    context: RequestContext,
     outgoingEdges: GraphEdge[],
     _allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as HttpServerNodeData;
     const state = this.getOrCreateState(node.id);
+
+    // Vérifier l'authentification si activée
+    const authType = data.authType ?? 'none';
+    if (authType !== 'none') {
+      if (!context.authToken) {
+        return { action: 'reject', reason: 'no-token' };
+      }
+      if (context.authToken.expiresAt < Date.now()) {
+        return { action: 'reject', reason: 'token-expired' };
+      }
+      const authFailureRate = data.authFailureRate ?? 0;
+      if (authFailureRate > 0 && Math.random() * 100 < authFailureRate) {
+        return { action: 'reject', reason: 'auth-failure' };
+      }
+    }
 
     // Mettre à jour le compteur de requêtes par seconde
     this.updateRequestsPerSecond(state);
@@ -115,6 +130,15 @@ export class HttpServerHandler implements NodeRequestHandler {
       action: 'forward',
       targets,
     };
+  }
+
+  handleResponsePassthrough(
+    node: GraphNode,
+    _context: RequestContext,
+    isError: boolean
+  ): ResponseDecision {
+    this.recordRequestCompleted(node.id);
+    return { action: 'passthrough', isError };
   }
 
   /**

@@ -232,6 +232,16 @@ export class RequestDispatcher {
             effectiveChainId = forkedChainId;
           }
 
+          // Propager le contextEnrichment du handler sur la chain (ex: authToken de l'IdP)
+          if (target.contextEnrichment) {
+            const effectiveChain = this.chainManager.getChain(effectiveChainId);
+            if (effectiveChain) {
+              if (target.contextEnrichment.authToken) {
+                effectiveChain.authToken = target.contextEnrichment.authToken;
+              }
+            }
+          }
+
           const zoneLatency = this.getHierarchicalLatency(sourceNode.id, targetNode.id);
           const requestDuration = (target.delay ?? 1500) / this.speed + zoneLatency;
           const particle: Particle = {

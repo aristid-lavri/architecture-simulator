@@ -7,7 +7,6 @@ export type AppMode = 'edit' | 'simulation';
 /** Types de composants disponibles dans l'architecture. */
 export type ComponentType =
   | 'api-gateway'
-  | 'microservice'
   | 'database'
   | 'cache'
   | 'load-balancer'
@@ -589,6 +588,11 @@ export interface HttpServerNodeData {
   responseDelay: number;
   errorRate: number;
 
+  // Authentification
+  authType: ApiGatewayAuthType;       // none | api-key | jwt | oauth2
+  authFailureRate: number;            // 0-100% (simulated auth failures)
+  autoTokenMode: AutoTokenMode;       // Mode auto-token quand pas d'IdP connecté
+
   // Configuration microservice
   serviceName?: string;      // Nom du service pour le routage API Gateway (ex: "users", "orders")
   basePath?: string;         // Route de base du service (ex: "/api/users")
@@ -1129,6 +1133,14 @@ export const defaultMessageQueueNodeData: MessageQueueNodeData = {
 /** Type d'authentification simulee par l'API Gateway. */
 export type ApiGatewayAuthType = 'none' | 'api-key' | 'jwt' | 'oauth2';
 
+/**
+ * Mode de génération automatique de token quand aucun IdP n'est connecté.
+ * - 'valid' : génère un token valide (comportement par défaut)
+ * - 'none'  : aucun token généré (requêtes rejetées 'no-token')
+ * - 'expired' : génère un token expiré (requêtes rejetées 'token-expired')
+ */
+export type AutoTokenMode = 'valid' | 'none' | 'expired';
+
 /** Configuration du rate limiting avec fenetre glissante. */
 export interface ApiGatewayRateLimiting {
   enabled: boolean;
@@ -1173,6 +1185,7 @@ export interface ApiGatewayNodeData {
   // Authentication
   authType: ApiGatewayAuthType;
   authFailureRate: number;        // 0-100% (simulated auth failures)
+  autoTokenMode: AutoTokenMode;   // Mode auto-token quand pas d'IdP connecté
 
   // Rate limiting
   rateLimiting: ApiGatewayRateLimiting;
@@ -1328,6 +1341,7 @@ export interface CDNNodeData {
   originLatencyMs: number;
   bandwidthMbps: number;
   cacheTTLSeconds: number;
+  maxRequestsPerSecond: number;
   [key: string]: unknown;
 }
 
@@ -1339,6 +1353,7 @@ export const defaultCDNNodeData: CDNNodeData = {
   originLatencyMs: 50,
   bandwidthMbps: 1000,
   cacheTTLSeconds: 3600,
+  maxRequestsPerSecond: 10000,
 };
 
 // ============================================
@@ -1388,6 +1403,7 @@ export interface FirewallNodeData {
   defaultAction: 'allow' | 'deny';
   allowedPorts: number[];
   blockedIPs: string[];
+  maxRequestsPerSecond: number;
   [key: string]: unknown;
 }
 
@@ -1397,6 +1413,7 @@ export const defaultFirewallData: FirewallNodeData = {
   defaultAction: 'allow',
   allowedPorts: [80, 443, 8080],
   blockedIPs: [],
+  maxRequestsPerSecond: 5000,
 };
 
 // ============================================
@@ -1505,6 +1522,7 @@ export interface ServiceDiscoveryNodeData {
   lookupLatencyMs: number;
   healthCheckIntervalMs: number;
   cacheTTLMs: number;
+  maxRequestsPerSecond: number;
   [key: string]: unknown;
 }
 
@@ -1515,6 +1533,7 @@ export const defaultServiceDiscoveryData: ServiceDiscoveryNodeData = {
   lookupLatencyMs: 2,
   healthCheckIntervalMs: 10000,
   cacheTTLMs: 5000,
+  maxRequestsPerSecond: 5000,
 };
 
 // ============================================
@@ -1528,6 +1547,7 @@ export interface DNSNodeData {
   ttlSeconds: number;
   records: { type: 'A' | 'CNAME' | 'AAAA'; name: string; value: string }[];
   failoverEnabled: boolean;
+  maxRequestsPerSecond: number;
   [key: string]: unknown;
 }
 
@@ -1537,6 +1557,7 @@ export const defaultDNSNodeData: DNSNodeData = {
   ttlSeconds: 300,
   records: [],
   failoverEnabled: false,
+  maxRequestsPerSecond: 10000,
 };
 
 // ============================================
@@ -1584,6 +1605,7 @@ export const defaultApiGatewayNodeData: ApiGatewayNodeData = {
   label: 'API Gateway',
   authType: 'none',
   authFailureRate: 0,
+  autoTokenMode: 'valid',
   rateLimiting: {
     enabled: true,
     requestsPerSecond: 100,
@@ -1622,12 +1644,22 @@ export interface ApiServiceNodeData {
   /** Protocole de communication */
   protocol: ApiServiceProtocol;
 
+  /** Authentification */
+  authType: ApiGatewayAuthType;       // none | api-key | jwt | oauth2
+  authFailureRate: number;            // 0-100% (simulated auth failures)
+  autoTokenMode: AutoTokenMode;       // Mode auto-token quand pas d'IdP connecté
+
   /** Temps de reponse en ms */
   responseTime: number;
   /** Taux d'erreur 0-100% */
   errorRate: number;
   /** Nombre max de requetes concurrentes */
   maxConcurrentRequests: number;
+
+  /** Configuration ressources (optionnel — si présent, utilise ResourceManager pour la dégradation) */
+  resources?: ServerResources;
+  /** Paramètres dégradation (optionnel — utilisé avec resources) */
+  degradation?: DegradationSettings;
 
   [key: string]: unknown;
 }
@@ -1637,6 +1669,9 @@ export const defaultApiServiceData: ApiServiceNodeData = {
   serviceName: 'my-service',
   basePath: '/api',
   protocol: 'rest',
+  authType: 'none',
+  authFailureRate: 0,
+  autoTokenMode: 'valid',
   responseTime: 50,
   errorRate: 0,
   maxConcurrentRequests: 100,

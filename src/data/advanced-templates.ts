@@ -271,6 +271,8 @@ components:
       label: "API Déclarations"
       serviceName: "declarations-api"
       basePath: "/api/declarations"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 80
       errorRate: 1
       maxConcurrentRequests: 200
@@ -282,6 +284,8 @@ components:
       label: "API Compte"
       serviceName: "compte-api"
       basePath: "/api/compte"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 40
       errorRate: 1
       maxConcurrentRequests: 250
@@ -293,6 +297,8 @@ components:
       label: "API Calcul Impôt"
       serviceName: "calcul-api"
       basePath: "/api/calcul"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 100
       errorRate: 1
       maxConcurrentRequests: 150
@@ -314,6 +320,8 @@ components:
       label: "API Paiements"
       serviceName: "paiements-api"
       basePath: "/api/paiements"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 150
       errorRate: 2
       maxConcurrentRequests: 80
@@ -861,6 +869,8 @@ components:
       label: "API Dossier Patient (R)"
       serviceName: "patients-read"
       basePath: "/api/patients"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 30
       maxConcurrentRequests: 300
 
@@ -871,6 +881,8 @@ components:
       label: "API Ordonnances (R)"
       serviceName: "ordonnances-read"
       basePath: "/api/ordonnances"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 25
       maxConcurrentRequests: 250
 
@@ -895,6 +907,8 @@ components:
     config:
       label: "API Dossier Patient (W)"
       serviceName: "patients-write"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 60
       errorRate: 1
       maxConcurrentRequests: 150
@@ -905,6 +919,8 @@ components:
     config:
       label: "API Résultats Labo"
       serviceName: "resultats-write"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 80
       errorRate: 1
       maxConcurrentRequests: 120
@@ -915,6 +931,8 @@ components:
     config:
       label: "API Ordonnances (W)"
       serviceName: "ordonnances-write"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 70
       errorRate: 1
       maxConcurrentRequests: 100
@@ -925,6 +943,8 @@ components:
     config:
       label: "API Imagerie Médicale"
       serviceName: "imagerie-api"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 200
       errorRate: 2
       maxConcurrentRequests: 40
@@ -1560,6 +1580,8 @@ components:
     config:
       label: "API Comptes Particuliers"
       serviceName: "comptes-particuliers"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 40
       errorRate: 1
       maxConcurrentRequests: 300
@@ -1570,6 +1592,8 @@ components:
     config:
       label: "API Comptes Entreprise"
       serviceName: "comptes-entreprise"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 60
       errorRate: 1
       maxConcurrentRequests: 150
@@ -1580,6 +1604,8 @@ components:
     config:
       label: "API Virements"
       serviceName: "virements-api"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 120
       errorRate: 2
       maxConcurrentRequests: 100
@@ -1590,6 +1616,8 @@ components:
     config:
       label: "API Prêts"
       serviceName: "prets-api"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 150
       errorRate: 1
       maxConcurrentRequests: 80
@@ -1625,6 +1653,8 @@ components:
     config:
       label: "API Assurance Particulier"
       serviceName: "assurance-particulier"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 80
       errorRate: 1
       maxConcurrentRequests: 120
@@ -1635,6 +1665,8 @@ components:
     config:
       label: "API Patrimoine"
       serviceName: "patrimoine-api"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 100
       errorRate: 1
       maxConcurrentRequests: 80
@@ -1645,6 +1677,8 @@ components:
     config:
       label: "API Assurance Groupe"
       serviceName: "assurance-groupe"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 90
       errorRate: 1
       maxConcurrentRequests: 60
@@ -1655,6 +1689,8 @@ components:
     config:
       label: "API Grand Livre"
       serviceName: "grand-livre-api"
+      authType: oauth2
+      authFailureRate: 0
       responseTime: 100
       errorRate: 1
       maxConcurrentRequests: 60
@@ -1665,6 +1701,8 @@ components:
     config:
       label: "API Rapprochement"
       serviceName: "rapprochement-api"
+      authType: oauth2
+      authFailureRate: 0
       responseTime: 200
       errorRate: 2
       maxConcurrentRequests: 30
@@ -1696,6 +1734,8 @@ components:
     config:
       label: "API Comptes (ON)"
       serviceName: "comptes-on"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 45
       errorRate: 1
       maxConcurrentRequests: 150
@@ -1706,6 +1746,8 @@ components:
     config:
       label: "API Assurance (ON)"
       serviceName: "assurance-on"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 85
       errorRate: 1
       maxConcurrentRequests: 80
@@ -1748,6 +1790,8 @@ components:
     config:
       label: "API Comptes (BC)"
       serviceName: "comptes-bc"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 50
       errorRate: 1
       maxConcurrentRequests: 120
@@ -1758,6 +1802,8 @@ components:
     config:
       label: "API Assurance (BC)"
       serviceName: "assurance-bc"
+      authType: jwt
+      authFailureRate: 0
       responseTime: 90
       errorRate: 1
       maxConcurrentRequests: 60

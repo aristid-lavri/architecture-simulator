@@ -26,7 +26,6 @@ export const connectorCompatibility: ConnectorCompatibility = {
   'container': ['rest', 'grpc', 'graphql', 'websocket'],
   'network-zone': [],   // zone conteneur, pas de protocole direct
   'host-server': ['rest', 'grpc', 'graphql', 'websocket'],
-  'microservice': ['rest', 'grpc', 'graphql', 'websocket'],
   'api-service': ['rest', 'grpc', 'graphql'],
   'background-job': [],  // connexion directe (consomme depuis queue ou émet vers services)
   'identity-provider': ['rest', 'grpc'],

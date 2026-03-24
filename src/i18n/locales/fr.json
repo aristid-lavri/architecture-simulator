@@ -42,10 +42,6 @@
       "name": "API Gateway",
       "description": "Point d'entrée pour les requêtes API"
     },
-    "microservice": {
-      "name": "Microservice",
-      "description": "Service applicatif indépendant"
-    },
     "database": {
       "name": "Base de données",
       "description": "Stockage persistant des données"
@@ -263,6 +259,11 @@
       "authJwt": "JWT",
       "authOauth2": "OAuth2",
       "authFailureRate": "Taux d'échec auth (%)",
+      "autoTokenMode": "Auto-token (sans IdP)",
+      "autoTokenValid": "Token valide",
+      "autoTokenNone": "Aucun token",
+      "autoTokenExpired": "Token expiré",
+      "autoTokenDescription": "Contrôle le token auto-généré quand aucun IdP n'est connecté",
       "rateLimiting": "Limitation de débit",
       "rateLimitEnabled": "Activer",
       "requestsPerSecond": "Requêtes/sec",
