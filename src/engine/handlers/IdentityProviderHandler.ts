@@ -13,6 +13,16 @@ interface IdentityProviderState {
   loginAttempts: Map<string, { count: number; windowStart: number }>;
 }
 
+/**
+ * Handler pour le composant Identity Provider (IdP).
+ *
+ * Simule un fournisseur d'identite OAuth2/OIDC avec :
+ * - Emission de tokens JWT/opaque/SAML avec TTL configurable
+ * - Validation locale des tokens (cache de sessions)
+ * - Rate limiting des tentatives de login par source
+ * - Presets provider : Keycloak, Auth0, Cognito, Okta
+ * - Integration avec l'API Gateway pour le flux d'authentification automatique (autoToken)
+ */
 export class IdentityProviderHandler implements NodeRequestHandler {
   readonly nodeType = 'identity-provider';
 

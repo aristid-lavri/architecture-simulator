@@ -20,6 +20,7 @@ import {
   Z_GRID, Z_ZONES, Z_EDGES, Z_NODES, Z_EDGE_HIT, Z_HANDLES, Z_PARTICLES,
   CONTAINER_COMPONENT_TYPES, ZONE_DEFAULT_WIDTH, ZONE_DEFAULT_HEIGHT,
   HOST_DEFAULT_WIDTH, HOST_DEFAULT_HEIGHT, CONTAINER_DEFAULT_WIDTH, CONTAINER_DEFAULT_HEIGHT,
+  setCanvasTheme,
 } from './constants';
 import { getDefaultNodeData } from './node-defaults';
 import { findContainerAtPosition } from './hit-testing';
@@ -71,6 +72,7 @@ export function PixiCanvas() {
 
   // App store
   const mode = useAppStore((s) => s.mode);
+  const theme = useAppStore((s) => s.theme);
   const edgeRoutingMode = useAppStore((s) => s.edgeRoutingMode);
   const isComponentsPanelOpen = useAppStore((s) => s.isComponentsPanelOpen);
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
@@ -151,7 +153,7 @@ export function PixiCanvas() {
     (async () => {
       await app.init({
         resizeTo: container,
-        background: 0x0f0f13,
+        background: 0x021020,
         antialias: true,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
@@ -221,11 +223,17 @@ export function PixiCanvas() {
       handleRendererRef.current = handleRenderer;
       particleLayerRef.current = particleLayer;
 
+      // Apply initial canvas theme
+      const initialTheme = useAppStore.getState().theme;
+      setCanvasTheme(initialTheme);
+      app.renderer.background.color = initialTheme === 'light' ? 0xf5f5f7 : 0x021020;
+
       // Initial grid render
       gridRenderer.render(viewport);
 
-      // Update grid on viewport move
+      // Update grid on viewport move (re-sync theme in case HMR reset module state)
       viewport.on('moved', () => {
+        setCanvasTheme(useAppStore.getState().theme);
         gridRenderer.render(viewport);
       });
 
@@ -293,6 +301,37 @@ export function PixiCanvas() {
     if (!nodeRendererRef.current || nodeStates.size === 0) return;
     nodeRendererRef.current.updateStatuses(nodeStates);
   }, [nodeStates]);
+
+  // ============================================
+  // Theme change — re-render all canvas elements
+  // ============================================
+  useEffect(() => {
+    setCanvasTheme(theme);
+    if (!initializedRef.current) return;
+
+    // Update PixiJS app background
+    const app = appRef.current;
+    if (app) {
+      app.renderer.background.color = theme === 'light' ? 0xf5f5f7 : 0x021020;
+    }
+
+    // Re-render grid
+    const viewport = viewportRef.current;
+    if (viewport) {
+      gridRendererRef.current?.render(viewport);
+    }
+
+    // Re-render nodes and edges with new colors
+    const arch = useArchitectureStore.getState();
+    const appState = useAppStore.getState();
+    nodeRendererRef.current?.renderNodes(arch.nodes, appState.selectedNodeId);
+    edgeRendererRef.current?.renderEdges(arch.edges, arch.nodes, appState.selectedEdgeId, appState.edgeRoutingMode);
+
+    // Re-render handles if in edit mode
+    if (appState.mode === 'edit' && handleRendererRef.current) {
+      handleRendererRef.current.renderHandles(arch.nodes, appState.selectedNodeId, null);
+    }
+  }, [theme]);
 
   // ============================================
   // Connection handles (edit mode)
@@ -429,11 +468,23 @@ export function PixiCanvas() {
       useAppStore.getState().setPropertiesPanelOpen(true);
     };
 
+    // Trash icon click → delete node
+    nodeRenderer.onDeleteClick = (nodeId: string) => {
+      useArchitectureStore.getState().removeNode(nodeId);
+    };
+
   }, [isEditable, viewportReady]);
 
   // Push analytics data to node footer metrics
   useEffect(() => {
     if (!nodeRendererRef.current) return;
+
+    // Count outgoing edges per node (for connected services display on LB/gateway)
+    const outgoingEdgeCount = new Map<string, number>();
+    for (const edge of storedEdges) {
+      outgoingEdgeCount.set(edge.source, (outgoingEdgeCount.get(edge.source) ?? 0) + 1);
+    }
+
     for (const [nodeId, analytics] of analyticsComponents) {
       nodeRendererRef.current.updateFooterMetrics(nodeId, {
         requestsIn: analytics.totalRequests,
@@ -443,9 +494,23 @@ export function PixiCanvas() {
         cpu: analytics.cpu,
         memory: analytics.memory,
         queueDepth: analytics.queueDepth,
+        connectedServices: outgoingEdgeCount.get(nodeId),
       });
     }
-  }, [analyticsComponents]);
+
+    // Also update connected services count for LB/gateway nodes without analytics
+    for (const node of storedNodes) {
+      if ((node.type === 'load-balancer' || node.type === 'api-gateway') && !analyticsComponents.has(node.id)) {
+        const count = outgoingEdgeCount.get(node.id);
+        if (count != null && count > 0) {
+          nodeRendererRef.current.updateFooterMetrics(node.id, {
+            requestsIn: 0, requestsOut: 0, successCount: 0, errorCount: 0,
+            connectedServices: count,
+          });
+        }
+      }
+    }
+  }, [analyticsComponents, storedEdges, storedNodes]);
 
   useEffect(() => {
     if (!nodeRendererRef.current || !viewportRef.current) return;
@@ -771,9 +836,23 @@ export function PixiCanvas() {
         callbacksRef.current.addResourceSample({ nodeId, ...utilization, timestamp: Date.now() });
         // Update Pixi node resource gauges in real-time
         nodeRendererRef.current?.updateResourceUtilization(nodeId, utilization);
+        // Feed analytics engine for per-component metrics
+        analyticsEngineRef.current?.handleResourceUpdate(nodeId, utilization);
       },
-      onTimeSeriesSnapshot: (snap) => callbacksRef.current.addTimeSeriesSnapshot(snap),
+      onTimeSeriesSnapshot: (snap) => {
+        callbacksRef.current.addTimeSeriesSnapshot(snap);
+        analyticsEngineRef.current?.handleTimeSeriesSnapshot(snap);
+      },
       onBottleneckUpdate: (analysis) => callbacksRef.current.setBottleneckAnalysis(analysis),
+      onMessageQueueUpdate: (nodeId, utilization) => {
+        analyticsEngineRef.current?.handleMessageQueueUpdate(nodeId, utilization);
+      },
+      onApiGatewayUpdate: (nodeId, utilization) => {
+        analyticsEngineRef.current?.handleApiGatewayUpdate(nodeId, utilization);
+      },
+      onHierarchicalResourceUpdate: (parentId, aggregated, children) => {
+        analyticsEngineRef.current?.handleHierarchicalResourceUpdate(parentId, aggregated, children);
+      },
     });
 
     registerEngineMetricsProvider(() => engineRef.current!.getFinalMetrics().metrics);
@@ -864,6 +943,7 @@ export function PixiCanvas() {
       const { width, height } = entries[0].contentRect;
       appRef.current?.renderer.resize(width, height);
       viewportRef.current?.resize(width, height);
+      setCanvasTheme(useAppStore.getState().theme);
       gridRendererRef.current?.render(viewportRef.current!);
     });
 

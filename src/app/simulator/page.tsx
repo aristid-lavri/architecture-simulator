@@ -1,6 +1,7 @@
 'use client';
 
-import { Header, ComponentsPanel, PropertiesPanel } from '@/components/layout';
+import { useEffect } from 'react';
+import { Header, ComponentsPanel, PropertiesPanel, DiagramTabs } from '@/components/layout';
 import { PixiCanvas } from '@/components/canvas/PixiCanvas';
 import { SimulationReportDrawer } from '@/components/simulation/SimulationReportDrawer';
 import { AnalysisView } from '@/components/analysis/AnalysisView';
@@ -9,14 +10,22 @@ import { InstallPrompt } from '@/components/layout/InstallPrompt';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SimulationErrorBoundary } from '@/components/SimulationErrorBoundary';
 import { useSimulationStore } from '@/store/simulation-store';
+import { useProjectStore } from '@/store/project-store';
 
 export default function SimulatorPage() {
   const analysisMode = useSimulationStore((s) => s.analysisMode);
+  const initialize = useProjectStore((s) => s.initialize);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
       {/* Status Bar */}
       <Header />
+      {/* Diagram Tabs */}
+      <DiagramTabs />
 
       {analysisMode ? (
         /* Full-screen Analysis View */

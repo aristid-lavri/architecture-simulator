@@ -587,6 +587,26 @@
     "finish": "Terminer",
     "stepOf": "sur"
   },
+  "projects": {
+    "title": "Projets",
+    "new": "Nouveau projet",
+    "rename": "Renommer le projet",
+    "delete": "Supprimer le projet",
+    "duplicate": "Dupliquer le projet",
+    "deleteConfirm": "Supprimer ce projet et tous ses diagrammes ?",
+    "defaultName": "Mon Projet",
+    "create": "Créer"
+  },
+  "diagrams": {
+    "title": "Diagrammes",
+    "new": "Nouveau diagramme",
+    "rename": "Renommer",
+    "delete": "Supprimer",
+    "duplicate": "Dupliquer",
+    "deleteConfirm": "Supprimer ce diagramme ?",
+    "defaultName": "Diagramme",
+    "cannotDeleteLast": "Impossible de supprimer le dernier diagramme"
+  },
   "bottleneck": {
     "tab": "Goulots",
     "top3": "Top 3 goulots",

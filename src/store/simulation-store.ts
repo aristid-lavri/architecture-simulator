@@ -101,11 +101,11 @@ interface SimulationStore {
   // Analysis mode (full-screen post-simulation analysis)
   analysisMode: boolean;
 
-  // Engine metrics provider (set by FlowCanvas to pull fresh metrics from engine)
+  // Engine metrics provider (set by PixiCanvas to pull fresh metrics from engine)
   _engineMetricsProvider: (() => SimulationMetrics) | null;
   registerEngineMetricsProvider: (provider: (() => SimulationMetrics) | null) => void;
 
-  // Engine report data provider (set by FlowCanvas to pull extended data before stop)
+  // Engine report data provider (set by PixiCanvas to pull extended data before stop)
   _engineReportDataProvider: (() => {
     extendedMetrics: ExtendedSimulationMetrics;
     traces: RequestTrace[];

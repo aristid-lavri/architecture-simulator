@@ -124,8 +124,19 @@ function generateSourceIP(): string {
  * Orchestrateur principal de la simulation.
  *
  * Coordonne le cycle de vie (start/pause/resume/stop), les managers specialises
- * (ressources, cache, DB, load balancer), les handlers de requetes (strategy pattern),
- * les particules d'animation et la collecte de metriques.
+ * (ressources, cache, DB, load balancer, identity provider), les handlers de requetes
+ * (strategy pattern, 22 types de composants), les particules d'animation GPU (PixiJS),
+ * la collecte de metriques, l'analyse de bottlenecks, le tracing distribue et
+ * l'analyse du chemin critique.
+ *
+ * Architecture modulaire :
+ * - {@link ServerStateManager} — gestion des etats serveur et ressources
+ * - {@link RequestDispatcher} — routage et execution des requetes via handlers
+ * - {@link ClientGroupSimulator} — simulation des groupes de clients virtuels
+ * - {@link RequestChainManager} — suivi des chaines de requetes
+ * - {@link BottleneckAnalyzer} — detection automatique des goulots d'etranglement
+ * - {@link TokenStore} — gestion des tokens JWT pour Identity Provider
+ * - {@link ThroughputLimiter} — limitation du debit par composant
  *
  * Communique avec la couche React exclusivement via les SimulationCallbacks.
  */

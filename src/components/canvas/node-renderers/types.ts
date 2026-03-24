@@ -1,4 +1,5 @@
 import type { Graphics } from 'pixi.js';
+import { canvasTheme } from '../constants';
 
 /**
  * Runtime metrics for the node footer.
@@ -20,6 +21,7 @@ export interface NodeFooterMetrics {
   poolUsage?: number;
   activeInstances?: number;
   maxInstances?: number;
+  connectedServices?: number;
 }
 
 /**
@@ -60,8 +62,9 @@ export function gaugeColor(pct: number): number {
 /** Draw a single gauge bar (background track + fill) */
 export function drawGaugeBar(g: Graphics, x: number, y: number, w: number, h: number, pct: number, label?: string): void {
   // Background track
+  const theme = canvasTheme();
   g.roundRect(x, y, w, h, 1);
-  g.fill({ color: 0x333333, alpha: 0.5 });
+  g.fill({ color: theme.gaugeTrackColor, alpha: theme.gaugeTrackAlpha });
   // Fill
   if (pct > 0) {
     const fillW = Math.max(1, (pct / 100) * w);

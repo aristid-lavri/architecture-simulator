@@ -28,7 +28,7 @@ interface ComponentCardProps {
   icon: ReactNode;
   name: string;
   description: string;
-  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone';
+  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone' | 'security';
   properties?: PropertyInfo[];
   sections?: DocSection[];
   metrics?: DocMetric[];
@@ -44,6 +44,7 @@ const categoryColors: Record<string, { border: string; accent: string; text: str
   resilience: { border: 'border-rose-500/20', accent: 'bg-rose-500', text: 'text-rose-400', hover: 'hover:border-rose-500/40' },
   compute: { border: 'border-amber-500/20', accent: 'bg-amber-500', text: 'text-amber-400', hover: 'hover:border-amber-500/40' },
   cloud: { border: 'border-sky-500/20', accent: 'bg-sky-500', text: 'text-sky-400', hover: 'hover:border-sky-500/40' },
+  security: { border: 'border-pink-500/20', accent: 'bg-pink-500', text: 'text-pink-400', hover: 'hover:border-pink-500/40' },
   zone: { border: 'border-slate-500/20', accent: 'bg-slate-500', text: 'text-slate-400', hover: 'hover:border-slate-500/40' },
 };
 

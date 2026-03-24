@@ -1825,5 +1825,34 @@ export interface ArchitectureSnapshot {
 /** Mapping type de noeud vers protocoles supportes. */
 export type ConnectorCompatibility = Record<ComponentType, ConnectionProtocol[]>;
 
+/** Un diagramme au sein d'un projet. */
+export interface Diagram {
+  id: string;
+  name: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  snapshots: ArchitectureSnapshot[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Un projet regroupant plusieurs diagrammes. */
+export interface Project {
+  id: string;
+  name: string;
+  activeDiagramId: string;
+  diagrams: Diagram[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Metadonnees legeres d'un projet pour l'index. */
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  diagramCount: number;
+  updatedAt: number;
+}
+
 /** Tier de licence pour le feature gating. */
 export type LicenseTier = 'community' | 'enterprise';

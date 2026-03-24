@@ -1,6 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import { NODE_WIDTH, NODE_HEIGHT, CONTAINER_COMPONENT_TYPES, HANDLE_RADIUS, HANDLE_WIDTH, HANDLE_HEIGHT, NODE_COLORS } from './constants';
+import { NODE_WIDTH, NODE_HEIGHT, CONTAINER_COMPONENT_TYPES, HANDLE_RADIUS, HANDLE_WIDTH, HANDLE_HEIGHT, NODE_COLORS, canvasTheme, getNodeHeight } from './constants';
 
 export type HandleSide = 'left' | 'right' | 'top' | 'bottom';
 export type HandleType = 'source' | 'target';
@@ -218,7 +218,7 @@ export class HandleRenderer {
     _type: HandleType,
   ): { x: number; y: number } {
     const w = node.width ?? NODE_WIDTH;
-    const h = node.height ?? NODE_HEIGHT;
+    const h = node.height ?? getNodeHeight(node.type);
     // Walk parentId chain for absolute position
     const abs = this.getAbsolutePosition(node);
 
@@ -256,7 +256,7 @@ export class HandleRenderer {
     const hh = h / 2;
     // Outer rectangle
     g.roundRect(-hw, -hh, w, h, 1);
-    g.fill({ color: 0x1a1a2e, alpha: 0.9 });
+    g.fill({ color: canvasTheme().handleBg, alpha: 0.95 });
     g.roundRect(-hw, -hh, w, h, 1);
     g.stroke({ width: 1.5, color, alpha: 0.8 });
 
