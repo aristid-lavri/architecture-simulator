@@ -483,13 +483,6 @@ export function MetricsPanel() {
   const validationResult = useAppStore((s) => s.validationResult);
   const { events } = useSimulationEvents();
 
-  // Auto-expand when simulation starts
-  useEffect(() => {
-    if (state === 'running') {
-      setIsExpanded(true);
-    }
-  }, [state]);
-
   // Auto-expand and switch to validation tab when validation has errors
   useEffect(() => {
     if (validationResult && validationResult.issues.length > 0) {

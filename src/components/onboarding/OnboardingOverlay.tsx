@@ -204,6 +204,16 @@ export function OnboardingOverlay() {
       return unsub;
     }
 
+    // Watch simulation store for analysis mode activation
+    if (trigger.type === 'analysis-activated') {
+      const unsub = useSimulationStore.subscribe((state) => {
+        if (state.analysisMode) {
+          advanceOnce();
+        }
+      });
+      return unsub;
+    }
+
     // Watch architecture store for node config change
     if (trigger.type === 'node-config-changed') {
       const unsub = useArchitectureStore.subscribe((state) => {
@@ -227,8 +237,6 @@ export function OnboardingOverlay() {
     // Last step → complete tour
     if (currentStepIndex === TOUR_STEPS.length - 1) {
       completeTour();
-      // Close the report drawer after tour completion
-      useSimulationStore.getState().setShowReport(false);
       return;
     }
 
@@ -244,7 +252,8 @@ export function OnboardingOverlay() {
   // we need to allow pointer events on the spotlight hole
   const needsTargetClick =
     currentStep.trigger.type === 'mode-changed' ||
-    currentStep.trigger.type === 'simulation-state-changed';
+    currentStep.trigger.type === 'simulation-state-changed' ||
+    currentStep.trigger.type === 'analysis-activated';
 
   return (
     <>
