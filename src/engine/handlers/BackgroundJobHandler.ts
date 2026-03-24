@@ -1,5 +1,5 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { BackgroundJobNodeData } from '@/types';
 
 /**
@@ -87,6 +87,15 @@ export class BackgroundJobHandler implements NodeRequestHandler {
     }
 
     return false;
+  }
+
+  handleResponsePassthrough(
+    node: GraphNode,
+    _context: RequestContext,
+    isError: boolean
+  ): ResponseDecision {
+    this.recordExecutionCompleted(node.id);
+    return { action: 'passthrough', isError };
   }
 
   /**

@@ -197,6 +197,14 @@ const COMPONENTS: ComponentItem[] = [
     signalColor: 'oklch(0.68 0.15 180)',
     category: 'infrastructure',
   },
+  {
+    type: 'dns',
+    nameKey: 'components.dns.name',
+    descriptionKey: 'components.dns.description',
+    icon: <Globe className="h-3.5 w-3.5" />,
+    signalColor: 'oklch(0.68 0.15 180)',
+    category: 'infrastructure',
+  },
   // Cloud
   {
     type: 'cloud-storage',
@@ -414,7 +422,7 @@ export function ComponentsPanel() {
 
   return (
     <div
-      className={`border-r border-border bg-card transition-all duration-300 flex flex-col h-full overflow-hidden ${
+      className={`border-r border-border bg-card transition-all duration-300 flex flex-col h-full overflow-hidden shrink-0 ${
         isComponentsPanelOpen ? 'w-56' : 'w-0 border-r-0'
       }`}
       data-tour="components-panel"

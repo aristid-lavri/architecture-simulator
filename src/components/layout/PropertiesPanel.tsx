@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical } from 'lucide-react';
-import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution, HostServerNodeData, HostPortMapping } from '@/types';
+import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, AutoTokenMode, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution, HostServerNodeData, HostPortMapping } from '@/types';
 import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
 import type { ApiServiceNodeData, BackgroundJobNodeData, ApiServiceProtocol, BackgroundJobType, IdentityProviderNodeData, IdentityProviderType, IdPProtocol, IdPTokenFormat } from '@/types';
 import { defaultIdentityProviderData, IDP_PROVIDER_CAPABILITIES } from '@/types';
@@ -650,11 +650,13 @@ interface HttpServerConfigProps {
 function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
   const [responseDelay, setResponseDelay] = useState(data.responseDelay || 100);
   const [errorRate, setErrorRate] = useState(data.errorRate || 0);
+  const [httpAuthFailureRate, setHttpAuthFailureRate] = useState(data.authFailureRate || 0);
 
   useEffect(() => {
     setResponseDelay(data.responseDelay || 100);
     setErrorRate(data.errorRate || 0);
-  }, [data.responseDelay, data.errorRate]);
+    setHttpAuthFailureRate(data.authFailureRate || 0);
+  }, [data.responseDelay, data.errorRate, data.authFailureRate]);
 
   return (
     <>
@@ -707,6 +709,74 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
               placeholder='{"success": true}'
             />
           </div>
+        </div>
+      </div>
+
+      {/* Authentification */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Authentification
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Type d&apos;authentification</Label>
+            <Select
+              value={data.authType || 'none'}
+              onValueChange={(value) => onUpdate({ authType: value as ApiGatewayAuthType })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Aucune</SelectItem>
+                <SelectItem value="api-key">Clé API</SelectItem>
+                <SelectItem value="jwt">JWT</SelectItem>
+                <SelectItem value="oauth2">OAuth2</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(data.authType || 'none') !== 'none' && (
+            <>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <label>Taux d&apos;échec auth</label>
+                <span className="text-muted-foreground">{httpAuthFailureRate}%</span>
+              </div>
+              <Slider
+                value={[httpAuthFailureRate]}
+                onValueChange={([value]) => setHttpAuthFailureRate(value)}
+                onValueCommit={([value]) => onUpdate({ authFailureRate: value })}
+                min={0}
+                max={50}
+                step={1}
+              />
+              <p className="text-xs text-muted-foreground">
+                Simule des échecs d&apos;authentification
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Auto-token (sans IdP)</Label>
+              <Select
+                value={data.autoTokenMode || 'valid'}
+                onValueChange={(value) => onUpdate({ autoTokenMode: value as AutoTokenMode })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="valid">Token valide</SelectItem>
+                  <SelectItem value="none">Aucun token</SelectItem>
+                  <SelectItem value="expired">Token expiré</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Contrôle le token auto-généré quand aucun IdP n&apos;est connecté
+              </p>
+            </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -2760,6 +2830,7 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
           </div>
 
           {config.authType !== 'none' && (
+            <>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <label>Taux d'échec auth</label>
@@ -2777,6 +2848,26 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
                 Simule des échecs d'authentification
               </p>
             </div>
+            <div className="space-y-2">
+              <Label>Auto-token (sans IdP)</Label>
+              <Select
+                value={config.autoTokenMode || 'valid'}
+                onValueChange={(value) => onUpdate({ autoTokenMode: value as AutoTokenMode })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="valid">Token valide</SelectItem>
+                  <SelectItem value="none">Aucun token</SelectItem>
+                  <SelectItem value="expired">Token expiré</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Contrôle le token auto-généré quand aucun IdP n'est connecté
+              </p>
+            </div>
+            </>
           )}
         </div>
       </div>
@@ -3664,7 +3755,9 @@ function HostServerConfig({ data, onUpdate, childNodes }: { data: HostServerNode
 
 function ApiServiceConfig({ data, onUpdate }: { data: ApiServiceNodeData; onUpdate: (u: Partial<ApiServiceNodeData>) => void }) {
   const config = { ...defaultApiServiceData, ...data };
+  const [svcAuthFailureRate, setSvcAuthFailureRate] = useState(config.authFailureRate);
   return (
+    <>
     <div className="space-y-3">
       <span className="text-xs text-muted-foreground uppercase tracking-wide">API Service</span>
       <Separator />
@@ -3705,6 +3798,73 @@ function ApiServiceConfig({ data, onUpdate }: { data: ApiServiceNodeData; onUpda
         </div>
       </div>
     </div>
+
+    {/* Authentification */}
+    <div className="space-y-3">
+      <span className="text-xs text-muted-foreground uppercase tracking-wide">
+        Authentification
+      </span>
+      <Separator />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Type d&apos;authentification</Label>
+          <Select
+            value={config.authType}
+            onValueChange={(value) => onUpdate({ authType: value as ApiGatewayAuthType })}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Aucune</SelectItem>
+              <SelectItem value="api-key">Clé API</SelectItem>
+              <SelectItem value="jwt">JWT</SelectItem>
+              <SelectItem value="oauth2">OAuth2</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {config.authType !== 'none' && (
+          <>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Taux d&apos;échec auth</label>
+              <span className="text-muted-foreground">{svcAuthFailureRate}%</span>
+            </div>
+            <Slider
+              value={[svcAuthFailureRate]}
+              onValueChange={([value]) => setSvcAuthFailureRate(value)}
+              onValueCommit={([value]) => onUpdate({ authFailureRate: value })}
+              min={0}
+              max={50}
+              step={1}
+            />
+            <p className="text-xs text-muted-foreground">
+              Simule des échecs d&apos;authentification
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Auto-token (sans IdP)</Label>
+            <Select
+              value={config.autoTokenMode || 'valid'}
+              onValueChange={(value) => onUpdate({ autoTokenMode: value as AutoTokenMode })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="valid">Token valide</SelectItem>
+                <SelectItem value="none">Aucun token</SelectItem>
+                <SelectItem value="expired">Token expiré</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Contrôle le token auto-généré quand aucun IdP n&apos;est connecté
+            </p>
+          </div>
+          </>
+        )}
+      </div>
+    </div>
+    </>
   );
 }
 

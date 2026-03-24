@@ -1,20 +1,27 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { DNSNodeData } from '@/types';
+import { ThroughputLimiter } from '../ThroughputLimiter';
 
 export class DNSHandler implements NodeRequestHandler {
   readonly nodeType = 'dns';
+
+  private throughputLimiter = new ThroughputLimiter();
 
   getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as DNSNodeData;
     return data.resolutionLatencyMs / speed;
   }
 
+  cleanup(nodeId: string): void {
+    this.throughputLimiter.cleanup(nodeId);
+  }
+
   handleRequestArrival(
     node: GraphNode,
     _context: RequestContext,
     outgoingEdges: GraphEdge[],
-    _allNodes: GraphNode[]
+    allNodes: GraphNode[]
   ): RequestDecision {
     if (outgoingEdges.length === 0) {
       return { action: 'respond', isError: false };
@@ -22,19 +29,42 @@ export class DNSHandler implements NodeRequestHandler {
 
     const data = node.data as DNSNodeData;
 
-    // Failover: if first target is "down", try next
-    if (data.failoverEnabled && outgoingEdges.length > 1) {
-      const selected = outgoingEdges[Math.floor(Math.random() * outgoingEdges.length)];
+    // Rate limiting
+    const maxRps = data.maxRequestsPerSecond ?? 10000;
+    if (!this.throughputLimiter.tryAcquire(node.id, maxRps)) {
+      return { action: 'reject', reason: 'rate-limit' };
+    }
+
+    // Filtrer les backends sains (exclure down/error)
+    const healthyEdges = this.filterHealthyEdges(outgoingEdges, allNodes);
+    if (healthyEdges.length === 0) {
+      return { action: 'reject', reason: 'dns-failure' };
+    }
+
+    // Failover: if multiple healthy targets, pick random
+    if (data.failoverEnabled && healthyEdges.length > 1) {
+      const selected = healthyEdges[Math.floor(Math.random() * healthyEdges.length)];
       return {
         action: 'forward',
         targets: [{ nodeId: selected.target, edgeId: selected.id }],
       };
     }
 
-    const edge = outgoingEdges[0];
+    const edge = healthyEdges[0];
     return {
       action: 'forward',
       targets: [{ nodeId: edge.target, edgeId: edge.id }],
     };
+  }
+
+  private filterHealthyEdges(edges: GraphEdge[], allNodes: GraphNode[]): GraphEdge[] {
+    const healthy = edges.filter((edge) => {
+      const targetNode = allNodes.find((n) => n.id === edge.target);
+      if (!targetNode) return true;
+      const status = (targetNode.data as Record<string, unknown>).status as string | undefined;
+      return status !== 'down' && status !== 'error';
+    });
+    // Si tous les backends sont down, retourner tous les edges (dernier recours)
+    return healthy.length > 0 ? healthy : edges;
   }
 }

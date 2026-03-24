@@ -121,7 +121,6 @@ export const NODE_COLORS: Record<ComponentType, { bg: number; border: number; te
   // ── ZONES (slate) ──
   'network-zone':      { bg: 0x1e2030, border: 0x475569, text: 0x94a3b8 },
   // ── OTHERS ──
-  'microservice':      { bg: 0x1e3030, border: 0x2dd4bf, text: 0xccfbf1 },
   'identity-provider': { bg: 0x2e1e30, border: 0xd946ef, text: 0xf5d0fe },
 };
 

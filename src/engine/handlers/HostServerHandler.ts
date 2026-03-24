@@ -1,5 +1,5 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { HostServerNodeData, ResourceUtilization } from '@/types';
 import { ResourceManager } from '../ResourceManager';
 
@@ -106,17 +106,40 @@ export class HostServerHandler implements NodeRequestHandler {
       }
     }
 
-    // Fallback : forward vers tous les outgoing edges (fan-out)
+    // Fallback : router vers le premier enfant direct (pas de fan-out)
     if (outgoingEdges.length > 0) {
-      const targets = outgoingEdges.map((edge) => ({
-        nodeId: edge.target,
-        edgeId: edge.id,
-      }));
-      return { action: 'forward', targets };
+      const childEdges = outgoingEdges.filter((e) => {
+        const targetNode = allNodes.find((n) => n.id === e.target);
+        return targetNode && (targetNode as GraphNode & { parentId?: string }).parentId === node.id;
+      });
+
+      if (childEdges.length > 0) {
+        const edge = childEdges[0];
+        return {
+          action: 'forward',
+          targets: [{ nodeId: edge.target, edgeId: edge.id }],
+        };
+      }
+
+      // Aucun enfant direct, router vers le premier edge sortant
+      const edge = outgoingEdges[0];
+      return {
+        action: 'forward',
+        targets: [{ nodeId: edge.target, edgeId: edge.id }],
+      };
     }
 
     // Pas d'edges sortants : répondre directement
     return { action: 'respond', isError: false };
+  }
+
+  handleResponsePassthrough(
+    node: GraphNode,
+    _context: RequestContext,
+    isError: boolean
+  ): ResponseDecision {
+    this.recordRequestCompleted(node.id);
+    return { action: 'passthrough', isError };
   }
 
   /**

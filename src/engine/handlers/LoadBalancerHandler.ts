@@ -1,5 +1,5 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
+import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { LoadBalancerNodeData } from '@/types';
 import { LoadBalancerManager } from '../LoadBalancerManager';
 
@@ -34,7 +34,7 @@ export class LoadBalancerHandler implements NodeRequestHandler {
     node: GraphNode,
     context: RequestContext,
     outgoingEdges: GraphEdge[],
-    _allNodes: GraphNode[]
+    allNodes: GraphNode[]
   ): RequestDecision {
     // Pas d'edges sortants = pas de backends
     if (outgoingEdges.length === 0) {
@@ -43,6 +43,9 @@ export class LoadBalancerHandler implements NodeRequestHandler {
 
     // Enregistrer les backends si pas déjà fait
     this.ensureBackendsRegistered(node.id, outgoingEdges);
+
+    // Mettre à jour la santé des backends en fonction du statut des noeuds
+    this.updateBackendHealth(node.id, outgoingEdges, allNodes);
 
     // Construire l'identifiant client pour sticky sessions / ip-hash
     const clientId = context.virtualClientId?.toString() ?? context.originNodeId;
@@ -77,6 +80,20 @@ export class LoadBalancerHandler implements NodeRequestHandler {
   }
 
   /**
+   * Met à jour la santé des backends en fonction du statut des noeuds dans le graphe
+   */
+  private updateBackendHealth(lbNodeId: string, outgoingEdges: GraphEdge[], allNodes: GraphNode[]): void {
+    for (const edge of outgoingEdges) {
+      const targetNode = allNodes.find((n) => n.id === edge.target);
+      if (targetNode) {
+        const status = (targetNode.data as Record<string, unknown>).status as string | undefined;
+        const isHealthy = status !== 'down' && status !== 'error';
+        this.manager.setBackendHealth(lbNodeId, edge.target, isHealthy);
+      }
+    }
+  }
+
+  /**
    * S'assure que tous les backends (edges sortants) sont enregistrés
    */
   private ensureBackendsRegistered(lbNodeId: string, outgoingEdges: GraphEdge[]): void {
@@ -85,6 +102,20 @@ export class LoadBalancerHandler implements NodeRequestHandler {
       // Le poids pourrait être extrait d'une propriété de l'edge si nécessaire
       this.manager.registerBackend(lbNodeId, edge.target, 1);
     });
+  }
+
+  handleResponsePassthrough(
+    node: GraphNode,
+    context: RequestContext,
+    isError: boolean
+  ): ResponseDecision {
+    // Le noeud suivant dans le path (après le LB) est le backend sélectionné
+    const lbIndex = context.currentPath.indexOf(node.id);
+    if (lbIndex >= 0 && lbIndex + 1 < context.currentPath.length) {
+      const backendNodeId = context.currentPath[lbIndex + 1];
+      this.recordResponseReceived(node.id, backendNodeId, !isError);
+    }
+    return { action: 'passthrough', isError };
   }
 
   /**

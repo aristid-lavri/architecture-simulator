@@ -43,6 +43,8 @@ export interface ForwardTarget {
   nodeId: string;
   edgeId: string;
   delay?: number;
+  /** Enrichissement du contexte de la requête propagé à la chain (ex: authToken généré par l'IdP) */
+  contextEnrichment?: Partial<Pick<RequestContext, 'authToken'>>;
 }
 
 /**

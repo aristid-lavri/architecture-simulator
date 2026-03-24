@@ -196,15 +196,19 @@ export class MessageQueueHandler implements NodeRequestHandler {
   /**
    * Tick called periodically (from SimulationEngine resource sampling).
    * Checks visibility timeouts and handles retry/DLQ routing.
+   * @returns Liste des chainIds dead-lettered pour notification DLQ
    */
-  tick(nodeId: string): void {
+  tick(nodeId: string): string[] {
     const state = this.queueStates.get(nodeId);
-    if (!state) return;
+    if (!state) return [];
 
     const now = Date.now();
     const config = state.config;
+    const deadLetteredChainIds: string[] = [];
 
-    for (const message of state.messages) {
+    for (let i = state.messages.length - 1; i >= 0; i--) {
+      const message = state.messages[i];
+
       // Skip visible messages (not in-flight)
       if (message.invisibleUntil === null) continue;
 
@@ -222,13 +226,12 @@ export class MessageQueueHandler implements NodeRequestHandler {
       } else {
         // Max retries exhausted → Dead Letter Queue
         state.messagesDeadLettered++;
-        // Remove the message from the queue
-        const index = state.messages.indexOf(message);
-        if (index !== -1) {
-          state.messages.splice(index, 1);
-        }
+        deadLetteredChainIds.push(message.chainId);
+        state.messages.splice(i, 1);
       }
     }
+
+    return deadLetteredChainIds;
   }
 
   /**

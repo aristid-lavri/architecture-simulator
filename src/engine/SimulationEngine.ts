@@ -8,6 +8,9 @@ import type {
   IdentityProviderNodeData,
   ApiGatewayNodeData,
   HttpClientNodeData,
+  HttpServerNodeData,
+  ApiServiceNodeData,
+  AutoTokenMode,
 } from '@/types';
 import {
   generateParticleId,
@@ -417,14 +420,15 @@ export class SimulationEngine {
     return null;
   }
 
-  private createAutoToken(clientId: string): SimulatedToken {
+  private createAutoToken(clientId: string, mode: AutoTokenMode = 'valid'): SimulatedToken {
+    const now = Date.now();
     const token: SimulatedToken = {
       tokenId: `auto_${generateParticleId()}`,
       clientId,
       idpId: 'auto',
       format: 'jwt',
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 3600_000,
+      issuedAt: mode === 'expired' ? now - 7200_000 : now,
+      expiresAt: mode === 'expired' ? now - 1 : now + 3600_000,
     };
     this.tokenStore.storeToken(token);
     return token;
@@ -435,11 +439,23 @@ export class SimulationEngine {
     targetNode: GraphNode,
     virtualClientId: number | undefined
   ): { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: GraphNode; idpEdge: GraphEdge } {
-    if (targetNode.type !== 'api-gateway') return { needsAsync: false };
-    const gwData = targetNode.data as ApiGatewayNodeData;
-    if (gwData.authType === 'none') return { needsAsync: false };
+    // Déterminer si le noeud cible exige une authentification
+    const authType = this.getNodeAuthType(targetNode);
+    if (authType === 'none') return { needsAsync: false };
+
     const idp = this.findConnectedIdP(client.id);
     if (!idp) {
+      const autoTokenMode = this.getNodeAutoTokenMode(targetNode);
+      // Mode 'none' : pas de token auto-généré → le serveur rejettera avec 'no-token'
+      if (autoTokenMode === 'none') {
+        return { needsAsync: false };
+      }
+      // Mode 'expired' : génère un token expiré → le serveur rejettera avec 'token-expired'
+      if (autoTokenMode === 'expired') {
+        const token = this.createAutoToken(client.id, 'expired');
+        return { needsAsync: false, token };
+      }
+      // Mode 'valid' (défaut) : comportement existant
       const token = this.tokenStore.getValidToken(client.id, 'auto', virtualClientId)
         || this.createAutoToken(client.id);
       return { needsAsync: false, token };
@@ -447,6 +463,37 @@ export class SimulationEngine {
     const existingToken = this.tokenStore.getValidToken(client.id, idp.node.id, virtualClientId);
     if (existingToken) return { needsAsync: false, token: existingToken };
     return { needsAsync: true, idp: idp.node, idpEdge: idp.edge };
+  }
+
+  /**
+   * Extrait le type d'authentification d'un noeud (api-gateway, http-server, api-service).
+   * Retourne 'none' si le noeud ne supporte pas l'auth ou si l'auth est désactivée.
+   */
+  private getNodeAuthType(node: GraphNode): string {
+    switch (node.type) {
+      case 'api-gateway':
+        return (node.data as ApiGatewayNodeData).authType ?? 'none';
+      case 'http-server':
+        return (node.data as HttpServerNodeData).authType ?? 'none';
+      case 'api-service':
+        return (node.data as ApiServiceNodeData).authType ?? 'none';
+      default:
+        return 'none';
+    }
+  }
+
+  /** Retourne le mode auto-token configuré sur le noeud cible. */
+  private getNodeAutoTokenMode(node: GraphNode): AutoTokenMode {
+    switch (node.type) {
+      case 'api-gateway':
+        return (node.data as ApiGatewayNodeData).autoTokenMode ?? 'valid';
+      case 'http-server':
+        return (node.data as HttpServerNodeData).autoTokenMode ?? 'valid';
+      case 'api-service':
+        return (node.data as ApiServiceNodeData).autoTokenMode ?? 'valid';
+      default:
+        return 'valid';
+    }
   }
 
   private acquireToken(

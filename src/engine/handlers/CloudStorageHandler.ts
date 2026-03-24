@@ -1,11 +1,12 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision } from './types';
 import type { CloudStorageNodeData } from '@/types';
+import { ThroughputLimiter } from '../ThroughputLimiter';
 
 export class CloudStorageHandler implements NodeRequestHandler {
   readonly nodeType = 'cloud-storage';
 
-  private requestCounts: Map<string, number> = new Map();
+  private throughputLimiter = new ThroughputLimiter();
 
   getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as CloudStorageNodeData;
@@ -17,7 +18,7 @@ export class CloudStorageHandler implements NodeRequestHandler {
   }
 
   cleanup(nodeId: string): void {
-    this.requestCounts.delete(nodeId);
+    this.throughputLimiter.cleanup(nodeId);
   }
 
   handleRequestArrival(
@@ -29,16 +30,9 @@ export class CloudStorageHandler implements NodeRequestHandler {
     const data = node.data as CloudStorageNodeData;
     const method = context.httpMethod || 'GET';
 
-    // Rate limiting
-    const count = this.requestCounts.get(node.id) || 0;
-    if (count >= data.maxRequestsPerSecond) {
+    // Rate limiting via ThroughputLimiter
+    if (!this.throughputLimiter.tryAcquire(node.id, data.maxRequestsPerSecond)) {
       return { action: 'reject', reason: 'rate-limit' };
-    }
-    this.requestCounts.set(node.id, count + 1);
-
-    // Reset counter every second
-    if (count === 0) {
-      setTimeout(() => this.requestCounts.set(node.id, 0), 1000);
     }
 
     // Differentiate latency based on HTTP method

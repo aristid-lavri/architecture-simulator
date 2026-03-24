@@ -94,18 +94,29 @@ export class IdentityProviderHandler implements NodeRequestHandler {
       return { action: 'reject', reason: 'auth-failure' };
     }
 
+    // Construire le token enrichi pour le contexte
+    const tokenEnrichment = {
+      authToken: {
+        tokenId: `tok_${context.chainId}_${now}`,
+        format: data.tokenFormat as 'jwt' | 'opaque' | 'saml-assertion',
+        issuerId: node.id,
+        issuedAt: now,
+        expiresAt: now + data.tokenTTLSeconds * 1000,
+      },
+    };
+
     // Vérifier le cache de sessions
     if (data.sessionCacheEnabled) {
       const cached = state.sessionCache.get(sourceKey);
       if (cached && cached.expiresAt > now) {
-        // Token en cache valide — forward directement
+        // Token en cache valide — forward directement avec token
         if (outgoingEdges.length === 0) {
           return { action: 'respond', isError: false };
         }
         const edge = outgoingEdges[0];
         return {
           action: 'forward',
-          targets: [{ nodeId: edge.target, edgeId: edge.id }],
+          targets: [{ nodeId: edge.target, edgeId: edge.id, contextEnrichment: tokenEnrichment }],
         };
       }
     }
@@ -117,7 +128,7 @@ export class IdentityProviderHandler implements NodeRequestHandler {
       });
     }
 
-    // Forward vers le service en aval
+    // Forward vers le service en aval avec token attaché
     if (outgoingEdges.length === 0) {
       return { action: 'respond', isError: false };
     }
@@ -125,7 +136,7 @@ export class IdentityProviderHandler implements NodeRequestHandler {
     const edge = outgoingEdges[0];
     return {
       action: 'forward',
-      targets: [{ nodeId: edge.target, edgeId: edge.id }],
+      targets: [{ nodeId: edge.target, edgeId: edge.id, contextEnrichment: tokenEnrichment }],
     };
   }
 
