@@ -8,7 +8,8 @@ export type TourTrigger =
   | { type: 'mode-changed'; targetMode: AppMode }
   | { type: 'simulation-state-changed'; targetState: 'running' | 'idle' | 'paused' }
   | { type: 'node-selected'; nodeType: string }
-  | { type: 'node-config-changed'; nodeType: string; field: string; value: string };
+  | { type: 'node-config-changed'; nodeType: string; field: string; value: string }
+  | { type: 'analysis-activated' };
 
 export type TooltipPosition = 'top' | 'bottom' | 'left' | 'right';
 
@@ -189,14 +190,6 @@ export const TOUR_STEPS: TourStepConfig[] = [
     trigger: { type: 'simulation-state-changed', targetState: 'paused' },
   },
   {
-    id: 'analyze-button',
-    titleKey: 'onboarding.analyzeButton.title',
-    descriptionKey: 'onboarding.analyzeButton.description',
-    targetSelector: '[data-tour="analyze-button"]',
-    tooltipPosition: 'top',
-    trigger: { type: 'click-next' },
-  },
-  {
     id: 'metrics-tab',
     titleKey: 'onboarding.metricsTab.title',
     descriptionKey: 'onboarding.metricsTab.description',
@@ -239,11 +232,12 @@ export const TOUR_STEPS: TourStepConfig[] = [
     trigger: { type: 'simulation-state-changed', targetState: 'idle' },
   },
   {
-    id: 'view-report',
-    titleKey: 'onboarding.viewReport.title',
-    descriptionKey: 'onboarding.viewReport.description',
-    targetSelector: '[data-tour="report-drawer"]',
-    tooltipPosition: 'bottom',
-    trigger: { type: 'click-next' },
+    id: 'analyze-button',
+    titleKey: 'onboarding.analyzeButton.title',
+    descriptionKey: 'onboarding.analyzeButton.description',
+    targetSelector: '[data-tour="analyze-button"]',
+    tooltipPosition: 'top',
+    trigger: { type: 'analysis-activated' },
+    allowInteraction: true,
   },
 ];
