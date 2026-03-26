@@ -63,7 +63,8 @@ export type RejectionReason =
   | 'queue-full'
   | 'no-token'
   | 'token-expired'
-  | 'token-invalid';
+  | 'token-invalid'
+  | 'no-healthy-backend';
 
 /**
  * Décision retournée par un handler après traitement

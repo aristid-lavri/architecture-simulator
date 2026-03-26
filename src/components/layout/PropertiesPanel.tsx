@@ -27,6 +27,14 @@ import type { HttpServerNodeData, HttpClientNodeData, ProcessingComplexity, Clie
 import { complexityMultipliers } from '@/types';
 import type { ConnectionProtocol, ComponentType } from '@/types';
 import { validateConnection } from '@/lib/connection-validator';
+import {
+  type LoadBalancerProvider,
+  type ApiGatewayProvider,
+  loadBalancerProviderPresets,
+  apiGatewayProviderPresets,
+  getAvailableLBProviders,
+  getAvailableGWProviders,
+} from '@/data/provider-presets';
 import { useTranslation } from '@/i18n';
 import type { GraphNode } from '@/types/graph';
 
@@ -475,6 +483,7 @@ export function PropertiesPanel() {
             <LoadBalancerConfig
               data={selectedNode.data as LoadBalancerNodeData}
               onUpdate={updateNodeData}
+              hasParent={!!selectedNode.parentId}
             />
           )}
 
@@ -491,6 +500,7 @@ export function PropertiesPanel() {
             <ApiGatewayConfig
               data={selectedNode.data as ApiGatewayNodeData}
               onUpdate={updateNodeData}
+              hasParent={!!selectedNode.parentId}
               availableServices={nodes
                 .filter((n): n is typeof n & { data: HttpServerNodeData } =>
                   n.type === 'http-server' &&
@@ -2243,20 +2253,28 @@ function CacheConfig({ data, onUpdate }: CacheConfigProps) {
 interface LoadBalancerConfigProps {
   data: LoadBalancerNodeData;
   onUpdate: (updates: Partial<LoadBalancerNodeData>) => void;
+  hasParent: boolean;
 }
 
-function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
+function LoadBalancerConfig({ data, onUpdate, hasParent }: LoadBalancerConfigProps) {
   const config = {
     ...defaultLoadBalancerNodeData,
     ...data,
     healthCheck: { ...defaultLoadBalancerNodeData.healthCheck, ...data.healthCheck },
   };
 
+  const currentProvider = (config.provider || 'generic') as LoadBalancerProvider;
+  const availableProviders = getAvailableLBProviders(hasParent);
+  const currentPreset = loadBalancerProviderPresets[currentProvider] || loadBalancerProviderPresets.generic;
+
   // Local state for sliders
   const [healthCheckInterval, setHealthCheckInterval] = useState(config.healthCheck.intervalMs);
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(config.healthCheck.timeoutMs);
   const [unhealthyThreshold, setUnhealthyThreshold] = useState(config.healthCheck.unhealthyThreshold);
   const [sessionTTL, setSessionTTL] = useState(config.sessionTTLSeconds);
+  const [maxConnections, setMaxConnections] = useState(config.maxConnections);
+  const [maxRPS, setMaxRPS] = useState(config.maxRPS);
+  const [baseLatency, setBaseLatency] = useState(config.baseLatencyMs);
 
   // Sync local state when data changes
   useEffect(() => {
@@ -2264,6 +2282,9 @@ function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
     setHealthCheckTimeout(config.healthCheck.timeoutMs);
     setUnhealthyThreshold(config.healthCheck.unhealthyThreshold);
     setSessionTTL(config.sessionTTLSeconds);
+    setMaxConnections(config.maxConnections);
+    setMaxRPS(config.maxRPS);
+    setBaseLatency(config.baseLatencyMs);
   }, [data]);
 
   const updateHealthCheck = (updates: Partial<LoadBalancerNodeData['healthCheck']>) => {
@@ -2272,8 +2293,118 @@ function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
     });
   };
 
+  const handleProviderChange = (provider: LoadBalancerProvider) => {
+    const preset = loadBalancerProviderPresets[provider];
+    // Appliquer les presets du provider
+    const updates: Partial<LoadBalancerNodeData> = {
+      provider,
+      maxConnections: preset.maxConnections,
+      maxRPS: preset.maxRPS,
+      baseLatencyMs: preset.baseLatencyMs,
+      label: preset.label === 'Générique' ? config.label : preset.label,
+    };
+    // Vérifier si l'algorithme actuel est supporté par le provider
+    if (!preset.algorithms.includes(config.algorithm)) {
+      updates.algorithm = preset.algorithms[0];
+    }
+    // Sticky sessions
+    if (!preset.supportsStickySession && config.stickySessions) {
+      updates.stickySessions = false;
+    }
+    onUpdate(updates);
+  };
+
   return (
     <>
+      {/* Provider */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Provider
+        </span>
+        <Separator />
+        <Select
+          value={currentProvider}
+          onValueChange={(value) => handleProviderChange(value as LoadBalancerProvider)}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {availableProviders.map((provider) => {
+              const preset = loadBalancerProviderPresets[provider];
+              return (
+                <SelectItem key={provider} value={provider}>
+                  {preset.label} ({preset.hostingType === 'self-hosted' ? 'Self-hosted' : preset.hostingType === 'managed' ? 'Managed' : 'Libre'})
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {currentPreset.description}
+        </p>
+        {currentPreset.hostingType !== 'configurable' && (
+          <Badge variant="outline" className="text-xs">
+            {currentPreset.layer} · {currentPreset.hostingType}
+          </Badge>
+        )}
+      </div>
+
+      {/* Capacity */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Capacité
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Max connexions</label>
+              <span className="text-muted-foreground">{maxConnections.toLocaleString()}</span>
+            </div>
+            <Slider
+              value={[maxConnections]}
+              onValueChange={([value]) => setMaxConnections(value)}
+              onValueCommit={([value]) => onUpdate({ maxConnections: value })}
+              min={100}
+              max={1000000}
+              step={100}
+              disabled={currentProvider !== 'generic'}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Max RPS</label>
+              <span className="text-muted-foreground">{maxRPS.toLocaleString()}</span>
+            </div>
+            <Slider
+              value={[maxRPS]}
+              onValueChange={([value]) => setMaxRPS(value)}
+              onValueCommit={([value]) => onUpdate({ maxRPS: value })}
+              min={50}
+              max={100000}
+              step={50}
+              disabled={currentProvider !== 'generic'}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Latence de base</label>
+              <span className="text-muted-foreground">{baseLatency}ms</span>
+            </div>
+            <Slider
+              value={[baseLatency]}
+              onValueChange={([value]) => setBaseLatency(value)}
+              onValueCommit={([value]) => onUpdate({ baseLatencyMs: value })}
+              min={0}
+              max={50}
+              step={1}
+              disabled={currentProvider !== 'generic'}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Algorithm */}
       <div className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
@@ -2288,10 +2419,18 @@ function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="round-robin">Round Robin</SelectItem>
-            <SelectItem value="least-connections">Least Connections</SelectItem>
-            <SelectItem value="ip-hash">IP Hash</SelectItem>
-            <SelectItem value="weighted">Weighted</SelectItem>
+            {currentPreset.algorithms.includes('round-robin') && (
+              <SelectItem value="round-robin">Round Robin</SelectItem>
+            )}
+            {currentPreset.algorithms.includes('least-connections') && (
+              <SelectItem value="least-connections">Least Connections</SelectItem>
+            )}
+            {currentPreset.algorithms.includes('ip-hash') && (
+              <SelectItem value="ip-hash">IP Hash</SelectItem>
+            )}
+            {currentPreset.algorithms.includes('weighted') && (
+              <SelectItem value="weighted">Weighted</SelectItem>
+            )}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
@@ -2371,42 +2510,44 @@ function LoadBalancerConfig({ data, onUpdate }: LoadBalancerConfigProps) {
       </div>
 
       {/* Sticky Sessions */}
-      <div className="space-y-3">
-        <span className="text-xs text-muted-foreground uppercase tracking-wide">
-          Sessions persistantes
-        </span>
-        <Separator />
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="sticky-sessions">Activer</Label>
-            <Switch
-              id="sticky-sessions"
-              checked={config.stickySessions}
-              onCheckedChange={(checked) => onUpdate({ stickySessions: checked })}
-            />
-          </div>
-
-          {config.stickySessions && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <label>Durée de session</label>
-                <span className="text-muted-foreground">{sessionTTL}s</span>
-              </div>
-              <Slider
-                value={[sessionTTL]}
-                onValueChange={([value]) => setSessionTTL(value)}
-                onValueCommit={([value]) => onUpdate({ sessionTTLSeconds: value })}
-                min={60}
-                max={86400}
-                step={60}
+      {currentPreset.supportsStickySession && (
+        <div className="space-y-3">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">
+            Sessions persistantes
+          </span>
+          <Separator />
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="sticky-sessions">Activer</Label>
+              <Switch
+                id="sticky-sessions"
+                checked={config.stickySessions}
+                onCheckedChange={(checked) => onUpdate({ stickySessions: checked })}
               />
-              <p className="text-xs text-muted-foreground">
-                Les requêtes d'un même client sont routées vers le même serveur
-              </p>
             </div>
-          )}
+
+            {config.stickySessions && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <label>Durée de session</label>
+                  <span className="text-muted-foreground">{sessionTTL}s</span>
+                </div>
+                <Slider
+                  value={[sessionTTL]}
+                  onValueChange={([value]) => setSessionTTL(value)}
+                  onValueCommit={([value]) => onUpdate({ sessionTTLSeconds: value })}
+                  min={60}
+                  max={86400}
+                  step={60}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Les requêtes d'un même client sont routées vers le même serveur
+                </p>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
@@ -2736,10 +2877,11 @@ interface AvailableService {
 interface ApiGatewayConfigProps {
   data: ApiGatewayNodeData;
   onUpdate: (updates: Partial<ApiGatewayNodeData>) => void;
+  hasParent: boolean;
   availableServices: AvailableService[];
 }
 
-function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfigProps) {
+function ApiGatewayConfig({ data, onUpdate, hasParent, availableServices }: ApiGatewayConfigProps) {
   const config = {
     ...defaultApiGatewayNodeData,
     ...data,
@@ -2748,6 +2890,10 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
     routeRules: data.routeRules || [],
   };
 
+  const currentProvider = (config.provider || 'generic') as ApiGatewayProvider;
+  const availableProviders = getAvailableGWProviders(hasParent);
+  const currentPreset = apiGatewayProviderPresets[currentProvider] || apiGatewayProviderPresets.generic;
+
   // Local state for sliders
   const [authFailureRate, setAuthFailureRate] = useState(config.authFailureRate);
   const [requestsPerSecond, setRequestsPerSecond] = useState(config.rateLimiting.requestsPerSecond);
@@ -2755,6 +2901,8 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
   const [timeout, setTimeout] = useState(config.routing.timeout);
   const [baseLatency, setBaseLatency] = useState(config.baseLatencyMs);
   const [errorRate, setErrorRate] = useState(config.errorRate);
+  const [maxConnections, setMaxConnections] = useState(config.maxConnections);
+  const [maxRPS, setMaxRPS] = useState(config.maxRPS);
 
   // Sync local state when data changes
   useEffect(() => {
@@ -2764,7 +2912,25 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
     setTimeout(config.routing.timeout);
     setBaseLatency(config.baseLatencyMs);
     setErrorRate(config.errorRate);
+    setMaxConnections(config.maxConnections);
+    setMaxRPS(config.maxRPS);
   }, [data]);
+
+  const handleProviderChange = (provider: ApiGatewayProvider) => {
+    const preset = apiGatewayProviderPresets[provider];
+    const updates: Partial<ApiGatewayNodeData> = {
+      provider,
+      maxConnections: preset.maxConnections,
+      maxRPS: preset.maxRPS,
+      baseLatencyMs: preset.baseLatencyMs,
+      label: preset.label === 'Générique' ? config.label : preset.label,
+    };
+    // Vérifier si le type d'auth actuel est supporté
+    if (!preset.supportedAuthTypes.includes(config.authType)) {
+      updates.authType = preset.supportedAuthTypes[0];
+    }
+    onUpdate(updates);
+  };
 
   const updateRateLimiting = (updates: Partial<ApiGatewayNodeData['rateLimiting']>) => {
     onUpdate({
@@ -2804,6 +2970,80 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
 
   return (
     <>
+      {/* Provider */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Provider
+        </span>
+        <Separator />
+        <Select
+          value={currentProvider}
+          onValueChange={(value) => handleProviderChange(value as ApiGatewayProvider)}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {availableProviders.map((provider) => {
+              const preset = apiGatewayProviderPresets[provider];
+              return (
+                <SelectItem key={provider} value={provider}>
+                  {preset.label} ({preset.hostingType === 'self-hosted' ? 'Self-hosted' : preset.hostingType === 'managed' ? 'Managed' : 'Libre'})
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {currentPreset.description}
+        </p>
+        {currentPreset.hostingType !== 'configurable' && (
+          <Badge variant="outline" className="text-xs">
+            {currentPreset.hostingType}
+          </Badge>
+        )}
+      </div>
+
+      {/* Capacity */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Capacité
+        </span>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Max connexions</label>
+              <span className="text-muted-foreground">{maxConnections.toLocaleString()}</span>
+            </div>
+            <Slider
+              value={[maxConnections]}
+              onValueChange={([value]) => setMaxConnections(value)}
+              onValueCommit={([value]) => onUpdate({ maxConnections: value })}
+              min={100}
+              max={100000}
+              step={100}
+              disabled={currentProvider !== 'generic'}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <label>Max RPS</label>
+              <span className="text-muted-foreground">{maxRPS.toLocaleString()}</span>
+            </div>
+            <Slider
+              value={[maxRPS]}
+              onValueChange={([value]) => setMaxRPS(value)}
+              onValueCommit={([value]) => onUpdate({ maxRPS: value })}
+              min={50}
+              max={50000}
+              step={50}
+              disabled={currentProvider !== 'generic'}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Authentication */}
       <div className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
@@ -2821,10 +3061,18 @@ function ApiGatewayConfig({ data, onUpdate, availableServices }: ApiGatewayConfi
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Aucune</SelectItem>
-                <SelectItem value="api-key">Clé API</SelectItem>
-                <SelectItem value="jwt">JWT</SelectItem>
-                <SelectItem value="oauth2">OAuth2</SelectItem>
+                {currentPreset.supportedAuthTypes.includes('none') && (
+                  <SelectItem value="none">Aucune</SelectItem>
+                )}
+                {currentPreset.supportedAuthTypes.includes('api-key') && (
+                  <SelectItem value="api-key">Clé API</SelectItem>
+                )}
+                {currentPreset.supportedAuthTypes.includes('jwt') && (
+                  <SelectItem value="jwt">JWT</SelectItem>
+                )}
+                {currentPreset.supportedAuthTypes.includes('oauth2') && (
+                  <SelectItem value="oauth2">OAuth2</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>

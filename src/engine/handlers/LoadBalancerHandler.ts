@@ -11,14 +11,26 @@ export class LoadBalancerHandler implements NodeRequestHandler {
   readonly nodeType = 'load-balancer';
 
   private manager: LoadBalancerManager;
-  private readonly baseDelay = 5; // LB a une latence très faible
+  /** Connexions actives par LB (compteur propre au LB, pas aux backends) */
+  private activeConnections: Map<string, number> = new Map();
 
   constructor(manager: LoadBalancerManager) {
     this.manager = manager;
   }
 
-  getProcessingDelay(_node: GraphNode, speed: number): number {
-    return this.baseDelay / speed;
+  getProcessingDelay(node: GraphNode, speed: number): number {
+    const data = node.data as LoadBalancerNodeData;
+    const baseLatency = data.baseLatencyMs ?? 5;
+    const active = this.activeConnections.get(node.id) ?? 0;
+
+    // Dégradation de latence sous charge (formule quadratique)
+    if (data.maxConnections > 0 && active > 0) {
+      const utilization = active / data.maxConnections;
+      const degradationFactor = 1 + Math.pow(Math.min(utilization, 1), 2);
+      return (baseLatency * degradationFactor) / speed;
+    }
+
+    return baseLatency / speed;
   }
 
   initialize(node: GraphNode): void {
@@ -28,6 +40,7 @@ export class LoadBalancerHandler implements NodeRequestHandler {
 
   cleanup(nodeId: string): void {
     this.manager.cleanup(nodeId);
+    this.activeConnections.delete(nodeId);
   }
 
   handleRequestArrival(
@@ -36,9 +49,17 @@ export class LoadBalancerHandler implements NodeRequestHandler {
     outgoingEdges: GraphEdge[],
     allNodes: GraphNode[]
   ): RequestDecision {
+    const data = node.data as LoadBalancerNodeData;
+
     // Pas d'edges sortants = pas de backends
     if (outgoingEdges.length === 0) {
       return { action: 'respond', isError: true };
+    }
+
+    // Vérifier la capacité du LB lui-même (maxConnections)
+    const active = this.activeConnections.get(node.id) ?? 0;
+    if (data.maxConnections > 0 && active >= data.maxConnections) {
+      return { action: 'reject', reason: 'capacity' };
     }
 
     // Enregistrer les backends si pas déjà fait
@@ -55,7 +76,7 @@ export class LoadBalancerHandler implements NodeRequestHandler {
 
     if (!selectedBackendId) {
       // Aucun backend disponible/healthy
-      return { action: 'reject', reason: 'capacity' };
+      return { action: 'reject', reason: 'no-healthy-backend' };
     }
 
     // Trouver l'edge correspondant au backend sélectionné
@@ -65,7 +86,8 @@ export class LoadBalancerHandler implements NodeRequestHandler {
       return { action: 'respond', isError: true };
     }
 
-    // Enregistrer la requête envoyée
+    // Incrémenter les connexions actives du LB + enregistrer la requête
+    this.activeConnections.set(node.id, active + 1);
     this.manager.recordRequestSent(node.id, selectedBackendId);
 
     return {
@@ -109,6 +131,12 @@ export class LoadBalancerHandler implements NodeRequestHandler {
     context: RequestContext,
     isError: boolean
   ): ResponseDecision {
+    // Décrémenter les connexions actives du LB
+    const active = this.activeConnections.get(node.id) ?? 0;
+    if (active > 0) {
+      this.activeConnections.set(node.id, active - 1);
+    }
+
     // Le noeud suivant dans le path (après le LB) est le backend sélectionné
     const lbIndex = context.currentPath.indexOf(node.id);
     if (lbIndex >= 0 && lbIndex + 1 < context.currentPath.length) {

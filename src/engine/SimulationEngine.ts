@@ -1159,6 +1159,7 @@ export class SimulationEngine {
             blockedRequests: stats.blockedRequests,
             authFailures: stats.authFailures,
             rateLimitHits: stats.rateLimitHits,
+            capacityRejections: stats.capacityRejections,
             activeConnections: stats.activeRequests,
             avgLatency: 0,
           };

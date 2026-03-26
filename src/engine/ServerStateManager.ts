@@ -336,6 +336,7 @@ export class ServerStateManager {
             blockedRequests: stats.blockedRequests,
             authFailures: stats.authFailures,
             rateLimitHits: stats.rateLimitHits,
+            capacityRejections: stats.capacityRejections,
             avgLatency: 0,
             activeConnections: stats.activeRequests,
           };
