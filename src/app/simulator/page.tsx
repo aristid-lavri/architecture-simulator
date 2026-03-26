@@ -11,6 +11,9 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SimulationErrorBoundary } from '@/components/SimulationErrorBoundary';
 import { useSimulationStore } from '@/store/simulation-store';
 import { useProjectStore } from '@/store/project-store';
+import { useArchitectureStore } from '@/store/architecture-store';
+import { useAppStore } from '@/store/app-store';
+import { useOnboardingStore } from '@/store/onboarding-store';
 
 export default function SimulatorPage() {
   const analysisMode = useSimulationStore((s) => s.analysisMode);
@@ -19,6 +22,17 @@ export default function SimulatorPage() {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Expose stores on window for Playwright e2e tests (dev only)
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      const w = window as Record<string, unknown>;
+      w.__archStore = useArchitectureStore;
+      w.__appStore = useAppStore;
+      w.__simStore = useSimulationStore;
+      w.__onboardingStore = useOnboardingStore;
+    }
+  }, []);
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">

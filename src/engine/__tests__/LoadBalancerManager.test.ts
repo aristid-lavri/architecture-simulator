@@ -4,6 +4,10 @@ import type { LoadBalancerNodeData } from '@/types';
 
 const defaultConfig: LoadBalancerNodeData = {
   label: 'Test LB',
+  provider: 'generic',
+  maxConnections: 10000,
+  maxRPS: 5000,
+  baseLatencyMs: 5,
   algorithm: 'round-robin',
   healthCheck: {
     enabled: true,

@@ -12,6 +12,8 @@ interface GatewayState {
   blockedRequests: number;
   authFailures: number;
   rateLimitHits: number;
+  /** Rejets pour dépassement de capacité (maxConnections) */
+  capacityRejections: number;
   /** Nombre de requêtes actuellement en cours de traitement (forwarded, pas encore répondues) */
   activeRequests: number;
   /** True quand le rate limit a été atteint — bloque toutes nouvelles requêtes jusqu'à ce que activeRequests tombe à 0 */
@@ -35,7 +37,17 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
   getProcessingDelay(node: GraphNode, speed: number): number {
     const data = node.data as ApiGatewayNodeData;
-    return data.baseLatencyMs / speed;
+    const state = this.gatewayStates.get(node.id);
+    const baseLatency = data.baseLatencyMs;
+
+    // Dégradation de latence sous charge (formule quadratique)
+    if (state && data.maxConnections > 0 && state.activeRequests > 0) {
+      const utilization = state.activeRequests / data.maxConnections;
+      const degradationFactor = 1 + Math.pow(Math.min(utilization, 1), 2);
+      return (baseLatency * degradationFactor) / speed;
+    }
+
+    return baseLatency / speed;
   }
 
   initialize(node: GraphNode): void {
@@ -78,6 +90,13 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     state.lastSeenAuthType = data.authType;
 
     state.totalRequests++;
+
+    // Vérifier la capacité (maxConnections) — la gateway a des limites physiques/cloud
+    if (data.maxConnections > 0 && state.activeRequests >= data.maxConnections) {
+      state.capacityRejections++;
+      state.blockedRequests++;
+      return { action: 'reject', reason: 'capacity' };
+    }
 
     // Vérifier l'authentification (Issue #52 — vrai contrôle de token)
     if (data.authType !== 'none') {
@@ -285,6 +304,7 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     blockedRequests: number;
     authFailures: number;
     rateLimitHits: number;
+    capacityRejections: number;
     activeRequests: number;
   } | null {
     const state = this.gatewayStates.get(nodeId);
@@ -295,6 +315,7 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       blockedRequests: state.blockedRequests,
       authFailures: state.authFailures,
       rateLimitHits: state.rateLimitHits,
+      capacityRejections: state.capacityRejections,
       activeRequests: state.activeRequests,
     };
   }
@@ -316,6 +337,7 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       blockedRequests: 0,
       authFailures: 0,
       rateLimitHits: 0,
+      capacityRejections: 0,
       activeRequests: 0,
       isRateLimited: false,
     };

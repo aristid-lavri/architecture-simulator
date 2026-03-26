@@ -950,6 +950,16 @@ export interface LoadBalancerUtilization {
 export interface LoadBalancerNodeData {
   label: string;
   status?: NodeStatus;
+
+  /** Provider/implémentation du load balancer (ex: nginx, haproxy, aws-alb) */
+  provider: string;
+  /** Nombre maximum de connexions simultanées */
+  maxConnections: number;
+  /** Requêtes par seconde maximum */
+  maxRPS: number;
+  /** Latence de base en ms (dépend du provider) */
+  baseLatencyMs: number;
+
   algorithm: LoadBalancerAlgorithm;
 
   healthCheck: LoadBalancerHealthCheck;
@@ -965,6 +975,10 @@ export interface LoadBalancerNodeData {
 /** Valeurs par defaut pour un noeud Load Balancer (round-robin, health check actif). */
 export const defaultLoadBalancerNodeData: LoadBalancerNodeData = {
   label: 'Load Balancer',
+  provider: 'generic',
+  maxConnections: 10000,
+  maxRPS: 5000,
+  baseLatencyMs: 5,
   algorithm: 'round-robin',
   healthCheck: {
     enabled: true,
@@ -1172,6 +1186,7 @@ export interface ApiGatewayUtilization {
   avgLatency: number;
   activeConnections: number;
   rateLimitHits: number;
+  capacityRejections: number;
 }
 
 /**
@@ -1181,6 +1196,13 @@ export interface ApiGatewayUtilization {
 export interface ApiGatewayNodeData {
   label: string;
   status?: NodeStatus;
+
+  /** Provider/implémentation de l'API Gateway (ex: kong, aws-api-gateway) */
+  provider: string;
+  /** Nombre maximum de connexions simultanées */
+  maxConnections: number;
+  /** Requêtes par seconde maximum */
+  maxRPS: number;
 
   // Authentication
   authType: ApiGatewayAuthType;
@@ -1603,6 +1625,9 @@ export const defaultCloudFunctionData: CloudFunctionNodeData = {
 
 export const defaultApiGatewayNodeData: ApiGatewayNodeData = {
   label: 'API Gateway',
+  provider: 'generic',
+  maxConnections: 10000,
+  maxRPS: 5000,
   authType: 'none',
   authFailureRate: 0,
   autoTokenMode: 'valid',
