@@ -365,6 +365,10 @@
       "name": "Multi-Pole Banking Group",
       "description": "Banking group with 3 poles, 3 provinces, internal apps, cross-province replication (48 nodes)"
     },
+    "bankingOnline": {
+      "name": "Online Banking (demo)",
+      "description": "Focused banking journey: clients → WAF/CDN/API GW → Auth + 2 services → DB + Redis + Kafka + Circuit Breaker to External Payment (14 nodes)"
+    },
     "confirmReplace": "Replace current architecture?"
   },
   "chaos": {

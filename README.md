@@ -10,6 +10,9 @@ Architecture Simulator est un outil interactif open source permettant de concevo
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 ![License](https://img.shields.io/badge/License-BSL_1.1-blue)
 
+🌐 **Démo en ligne :** [archi.atryleo.com](https://archi.atryleo.com)
+📧 **Contact licence commerciale :** info@atryleo.com
+
 ---
 
 ## Fonctionnalités

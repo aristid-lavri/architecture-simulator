@@ -365,6 +365,10 @@
       "name": "Banque Multi-Pôles",
       "description": "Groupe bancaire 3 pôles, 3 provinces, apps internes, réplication inter-provinciale (48 nœuds)"
     },
+    "bankingOnline": {
+      "name": "Banque Online (démo)",
+      "description": "Parcours bancaire focusé : clients → WAF/CDN/API GW → Auth + 2 services → DB + Redis + Kafka + Circuit Breaker vers Paiement Externe (14 nœuds)"
+    },
     "confirmReplace": "Remplacer l'architecture actuelle?"
   },
   "chaos": {
