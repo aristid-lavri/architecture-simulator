@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AppMode, ConnectionProtocol } from '@/types';
 import type { ValidationResult } from '@/lib/simulation-validator';
+import type { OwaspValidationResult } from '@/lib/owasp-validation/types';
 
 type Theme = 'dark' | 'light';
 
@@ -47,6 +48,12 @@ interface AppState {
   // Validation
   validationResult: ValidationResult | null;
   setValidationResult: (result: ValidationResult | null) => void;
+
+  // OWASP Validation Drawer
+  owaspDrawerOpen: boolean;
+  setOwaspDrawerOpen: (open: boolean) => void;
+  owaspValidationResult: OwaspValidationResult | null;
+  setOwaspValidationResult: (r: OwaspValidationResult | null) => void;
 }
 
 function getInitialTheme(): Theme {
@@ -136,5 +143,11 @@ export const useAppStore = create<AppState>((set) => {
     // Validation
     validationResult: null,
     setValidationResult: (result) => set({ validationResult: result }),
+
+    // OWASP Validation Drawer
+    owaspDrawerOpen: false,
+    setOwaspDrawerOpen: (open) => set({ owaspDrawerOpen: open }),
+    owaspValidationResult: null,
+    setOwaspValidationResult: (r) => set({ owaspValidationResult: r }),
   };
 });
