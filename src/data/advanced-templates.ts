@@ -2280,11 +2280,11 @@ components:
           targetServiceName: "auth-keycloak"
           priority: 1
         - id: route-comptes
-          pathPattern: "/comptes/*"
+          pathPattern: "/api/comptes/**"
           targetServiceName: "comptes-api"
           priority: 2
         - id: route-virements
-          pathPattern: "/virements/*"
+          pathPattern: "/api/virements/**"
           targetServiceName: "virements-api"
           priority: 3
       baseLatencyMs: 5

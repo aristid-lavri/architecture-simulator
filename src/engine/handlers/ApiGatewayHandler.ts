@@ -225,7 +225,11 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     const serviceToEdge = new Map<string, GraphEdge>();
     for (const edge of outgoingEdges) {
       const targetNode = allNodes.find((n) => n.id === edge.target);
-      if (targetNode && (targetNode.type === 'http-server' || targetNode.type === 'api-service')) {
+      if (targetNode && (
+        targetNode.type === 'http-server' ||
+        targetNode.type === 'api-service' ||
+        targetNode.type === 'identity-provider'
+      )) {
         const serverData = targetNode.data as { serviceName?: string };
         if (serverData.serviceName) {
           serviceToEdge.set(serverData.serviceName, edge);
