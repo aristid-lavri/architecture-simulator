@@ -254,9 +254,14 @@ export class EdgeRenderer {
   ): void {
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const protocol = edgeData?.protocol as string | undefined;
-    const color = isSelected ? EDGE_SELECTED_COLOR : (PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor);
-    const width = isSelected ? (PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH) + 1 : (PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH);
-    const alpha = isSelected ? 1 : 0.6;
+    const customColor = edgeData?.color as string | undefined;
+    const customColorNum = customColor ? parseInt(customColor.replace('#', ''), 16) : undefined;
+    const customWidth = edgeData?.strokeWidth as number | undefined;
+    const baseColor = customColorNum ?? PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor;
+    const baseWidth = customWidth ?? PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH;
+    const color = isSelected ? EDGE_SELECTED_COLOR : baseColor;
+    const width = isSelected ? baseWidth + 1 : baseWidth;
+    const alpha = isSelected ? 1 : canvasTheme().edgeAlpha;
 
     // Compute absolute positions
     const sourceAbs = this.getAbsolutePosition(source);

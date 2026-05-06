@@ -145,6 +145,95 @@ describe('ApiGatewayHandler', () => {
         expect(decision.targets[0].nodeId).toBe('server-2');
       }
     });
+
+    it('matches "/foo/**" against "/foo" without trailing slash', () => {
+      const node = createGatewayNode({
+        routeRules: [
+          { pathPattern: '/api/virements/**', targetServiceName: 'virements', priority: 1 },
+        ],
+      });
+      handler.initialize(node);
+
+      const edges = [createEdge('idp-1'), createEdge('server-virements')];
+      const allNodes: GraphNode[] = [
+        { id: 'idp-1', type: 'identity-provider', position: { x: 0, y: 0 }, data: { serviceName: 'auth' } },
+        { id: 'server-virements', type: 'api-service', position: { x: 0, y: 0 }, data: { serviceName: 'virements' } },
+      ];
+
+      const noSuffix = handler.handleRequestArrival(node, createContext('/api/virements'), edges, allNodes);
+      expect(noSuffix.action).toBe('forward');
+      if (noSuffix.action === 'forward') {
+        expect(noSuffix.targets[0].nodeId).toBe('server-virements');
+      }
+
+      const withSlash = handler.handleRequestArrival(node, createContext('/api/virements/'), edges, allNodes);
+      expect(withSlash.action).toBe('forward');
+
+      const withSubpath = handler.handleRequestArrival(node, createContext('/api/virements/123'), edges, allNodes);
+      expect(withSubpath.action).toBe('forward');
+    });
+
+    it('does not match "/foo/**" against "/fooX" (boundary check)', () => {
+      const node = createGatewayNode({
+        routeRules: [
+          { pathPattern: '/api/virements/**', targetServiceName: 'virements', priority: 1 },
+        ],
+      });
+      handler.initialize(node);
+      const edges = [createEdge('server-virements')];
+      const allNodes: GraphNode[] = [
+        { id: 'server-virements', type: 'api-service', position: { x: 0, y: 0 }, data: { serviceName: 'virements' } },
+      ];
+
+      const decision = handler.handleRequestArrival(node, createContext('/api/virementsExtra'), edges, allNodes);
+      // Pas de match → reject 'no-route' (et non fallback sur outgoingEdges[0])
+      expect(decision.action).toBe('reject');
+      if (decision.action === 'reject') {
+        expect(decision.reason).toBe('no-route');
+      }
+    });
+
+    it('rejects with "no-route" when route rules exist but none match', () => {
+      const node = createGatewayNode({
+        routeRules: [
+          { pathPattern: '/api/users/**', targetServiceName: 'users', priority: 1 },
+        ],
+      });
+      handler.initialize(node);
+
+      const edges = [createEdge('idp-1'), createEdge('server-users')];
+      const allNodes: GraphNode[] = [
+        { id: 'idp-1', type: 'identity-provider', position: { x: 0, y: 0 }, data: { serviceName: 'auth' } },
+        { id: 'server-users', type: 'http-server', position: { x: 0, y: 0 }, data: { serviceName: 'users' } },
+      ];
+
+      const decision = handler.handleRequestArrival(node, createContext('/api/orders/42'), edges, allNodes);
+      expect(decision.action).toBe('reject');
+      if (decision.action === 'reject') {
+        expect(decision.reason).toBe('no-route');
+      }
+    });
+
+    it('preserves single "*" semantics (one segment, no slashes)', () => {
+      const node = createGatewayNode({
+        routeRules: [
+          { pathPattern: '/users/*/orders', targetServiceName: 'orders', priority: 1 },
+        ],
+      });
+      handler.initialize(node);
+
+      const edges = [createEdge('server-orders')];
+      const allNodes: GraphNode[] = [
+        { id: 'server-orders', type: 'api-service', position: { x: 0, y: 0 }, data: { serviceName: 'orders' } },
+      ];
+
+      const ok = handler.handleRequestArrival(node, createContext('/users/42/orders'), edges, allNodes);
+      expect(ok.action).toBe('forward');
+
+      // "*" ne doit pas matcher plusieurs segments
+      const tooMany = handler.handleRequestArrival(node, createContext('/users/42/extra/orders'), edges, allNodes);
+      expect(tooMany.action).toBe('reject');
+    });
   });
 
   describe('responds when no outgoing edges', () => {

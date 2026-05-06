@@ -671,7 +671,8 @@
     "next": "Suivant",
     "start": "Commencer",
     "finish": "Terminer",
-    "stepOf": "sur"
+    "stepOf": "sur",
+    "skip": "Passer le tour"
   },
   "projects": {
     "title": "Projets",

@@ -19,6 +19,7 @@ import type {
   HttpClientConfig,
 } from '@/types';
 import { CONTAINER_TYPES } from '@/types';
+import { outgoingEdges, incomingEdges } from './graph-helpers';
 
 // ============================================
 // Validation Types
@@ -66,13 +67,6 @@ function getNodeType(node: GraphNode): ComponentType {
   return node.type as ComponentType;
 }
 
-function outgoingEdges(edges: GraphEdge[], nodeId: string): GraphEdge[] {
-  return edges.filter((e) => e.source === nodeId);
-}
-
-function incomingEdges(edges: GraphEdge[], nodeId: string): GraphEdge[] {
-  return edges.filter((e) => e.target === nodeId);
-}
 
 // ============================================
 // Category 1: Connection Rules

@@ -671,7 +671,8 @@
     "next": "Next",
     "start": "Start",
     "finish": "Finish",
-    "stepOf": "of"
+    "stepOf": "of",
+    "skip": "Skip tour"
   },
   "projects": {
     "title": "Projects",

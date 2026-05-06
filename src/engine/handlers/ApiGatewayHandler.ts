@@ -169,6 +169,14 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     // Trouver la cible en fonction des règles de routage
     const targetEdge = this.findTargetEdge(data, outgoingEdges, allNodes, context);
 
+    // Si des routeRules existent mais qu'aucune ne matche, rejeter au lieu de
+    // tomber aveuglément sur outgoingEdges[0] (qui peut être un IdP voisin et
+    // produire un routage incorrect).
+    if (!targetEdge) {
+      state.blockedRequests++;
+      return { action: 'reject', reason: 'no-route' };
+    }
+
     // Incrémenter le compteur de requêtes actives (en vol)
     state.activeRequests++;
 
@@ -184,14 +192,16 @@ export class ApiGatewayHandler implements NodeRequestHandler {
   }
 
   /**
-   * Trouve l'edge cible en fonction des règles de routage configurées
+   * Trouve l'edge cible en fonction des règles de routage configurées.
+   * Retourne `null` si des `routeRules` sont définies mais qu'aucune ne matche
+   * — le caller doit alors transformer en `reject { reason: 'no-route' }`.
    */
   private findTargetEdge(
     data: ApiGatewayNodeData,
     outgoingEdges: GraphEdge[],
     allNodes: GraphNode[],
     context: RequestContext
-  ): GraphEdge {
+  ): GraphEdge | null {
     const routeRules = data.routeRules || [];
     const requestPath = context.requestPath || '/';
 
@@ -213,9 +223,9 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       }
     }
 
-    // Si pas de règles, utiliser le premier edge
+    // Si aucune règle n'est configurée, conserver le comportement legacy (1er edge)
     if (routeRules.length === 0) {
-      return outgoingEdges[0];
+      return outgoingEdges[0] ?? null;
     }
 
     // Trier les règles par priorité
@@ -247,8 +257,8 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       }
     }
 
-    // Fallback: premier edge
-    return outgoingEdges[0];
+    // Aucune routeRule ne matche : ne PAS fallback aveuglément.
+    return null;
   }
 
   /**
@@ -281,31 +291,30 @@ export class ApiGatewayHandler implements NodeRequestHandler {
   }
 
   /**
-   * Vérifie si un path correspond à un pattern
-   * Supporte les wildcards: * (match tout segment), ** (match tous les segments restants)
-   * Ex: "/api/users/*" match "/api/users/123"
-   * Ex: "/api/**" match "/api/users/123/orders"
+   * Vérifie si un path correspond à un pattern.
+   * Supporte les wildcards : `*` (un segment), `**` (zero ou plusieurs segments).
+   * Convention Spring/Express : "/foo/**" matche "/foo", "/foo/", et "/foo/bar/baz".
    */
   private matchPath(path: string, pattern: string): boolean {
-    // Normaliser les paths
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const normalizedPattern = pattern.startsWith('/') ? pattern : `/${pattern}`;
 
-    // Cas simple: pattern exact
     if (normalizedPattern === normalizedPath) {
       return true;
     }
 
-    // Convertir le pattern en regex
-    // * -> match un segment (tout sauf /)
-    // ** -> match tout (y compris /)
+    // Ordre de substitution :
+    //   1. "/**" (préfixé par /) → suffixe optionnel "(?:/.*)?" — matche aussi le path nu
+    //   2. "**" orphelin (rare)  → ".*"
+    //   3. "*" simple             → "[^/]+" (un segment, sans /)
     const regexPattern = normalizedPattern
+      .replace(/\/\*\*/g, '<<<SLASHDOUBLESTAR>>>')
       .replace(/\*\*/g, '<<<DOUBLESTAR>>>')
       .replace(/\*/g, '[^/]+')
+      .replace(/<<<SLASHDOUBLESTAR>>>/g, '(?:/.*)?')
       .replace(/<<<DOUBLESTAR>>>/g, '.*');
 
-    const regex = new RegExp(`^${regexPattern}$`);
-    return regex.test(normalizedPath);
+    return new RegExp(`^${regexPattern}$`).test(normalizedPath);
   }
 
   /**

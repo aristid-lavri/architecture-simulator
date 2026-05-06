@@ -16,6 +16,7 @@ import { EdgeRenderer } from './EdgeRenderer';
 import { GridRenderer } from './GridRenderer';
 import { ParticleRenderer } from './ParticleRenderer';
 import { HandleRenderer } from './HandleRenderer';
+import { loadIconTextures } from './IconRegistry';
 import {
   Z_GRID, Z_ZONES, Z_EDGES, Z_NODES, Z_EDGE_HIT, Z_HANDLES, Z_PARTICLES,
   CONTAINER_COMPONENT_TYPES, ZONE_DEFAULT_WIDTH, ZONE_DEFAULT_HEIGHT,
@@ -158,6 +159,9 @@ export function PixiCanvas() {
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
       });
+
+      // Pré-charge les textures d'icônes lucide avant le 1er render des nœuds
+      await loadIconTextures();
 
       container.appendChild(app.canvas as HTMLCanvasElement);
 
@@ -468,12 +472,29 @@ export function PixiCanvas() {
       useAppStore.getState().setPropertiesPanelOpen(true);
     };
 
+    // Chaos icon click → ouvrir le menu chaos à la position du clic
+    nodeRenderer.onChaosClick = (nodeId: string, screenX: number, screenY: number) => {
+      nodeClickedRef.current = true; // empêche viewport.clicked de refermer le menu
+      setContextMenu({ x: screenX, y: screenY, nodeId });
+    };
+
     // Trash icon click → delete node
     nodeRenderer.onDeleteClick = (nodeId: string) => {
       useArchitectureStore.getState().removeNode(nodeId);
     };
 
   }, [isEditable, viewportReady]);
+
+  // Sync chaosEnabled avec le mode (l'icône ⚡ n'apparaît qu'en mode simulation)
+  useEffect(() => {
+    if (!nodeRendererRef.current) return;
+    nodeRendererRef.current.chaosEnabled = (mode === 'simulation');
+    // Re-render unique au changement de mode pour appliquer la visibilité
+    nodeRendererRef.current.renderNodes(
+      useArchitectureStore.getState().nodes,
+      useAppStore.getState().selectedNodeId,
+    );
+  }, [mode, viewportReady]);
 
   // Push analytics data to node footer metrics
   useEffect(() => {
@@ -961,6 +982,7 @@ export function PixiCanvas() {
         className="flex-1 relative overflow-hidden"
         onDragOver={handleDragOver}
         onDrop={handleDrop}
+        onContextMenu={(e) => e.preventDefault()}
         style={{ cursor: isDragging ? 'grabbing' : 'default' }}
       />
 

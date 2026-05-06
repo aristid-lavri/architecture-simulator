@@ -19,6 +19,7 @@ import type { RequestChainManager, RequestChain } from './RequestChainManager';
 import type { ServerStateManager } from './ServerStateManager';
 import type { ApiGatewayNodeData } from '@/types';
 import { CacheManager } from './CacheManager';
+import { CacheHandler } from './handlers/CacheHandler';
 
 /**
  * Callbacks dont le RequestDispatcher a besoin pour notifier React et l'engine.
@@ -360,6 +361,9 @@ export class RequestDispatcher {
             edgePath: [],
             startTime: Date.now(),
             requestPath: context.requestPath,
+            // Fire-and-forget: le consumer ne repondra pas au broker
+            // (pas de particle backward sur le dernier saut consumer → MQ).
+            fireAndForget: true,
           };
           this.chainManager.createChain(notifyChain);
 
@@ -445,6 +449,7 @@ export class RequestDispatcher {
         edgePath: chain.edgePath,
         requestPath: chain.requestPath,
         targetPort: (chainEdgeData?.targetPort as number) ?? undefined,
+        incomingTopic: (chainEdgeData?.topic as string) ?? undefined,
         httpMethod: chain.httpMethod,
         queryType: chain.queryType,
         contentType: chain.contentType,
@@ -453,6 +458,7 @@ export class RequestDispatcher {
         cacheHit: chain.cacheHit,
         cacheNodeId: chain.cacheNodeId,
         waitingForDb: chain.waitingForDb,
+        allEdges: this.edges,
         authToken: chain.authToken,
         isAuthRequest: chain.isAuthRequest,
       };
@@ -492,7 +498,9 @@ export class RequestDispatcher {
             this.callbacks.onNodeStatusChange(targetNode.id, 'success');
             this.callbacks.onNodeStatusChange(cacheNode.id, 'processing');
 
-            const cacheKey = `resource:${chain.originNodeId}`;
+            // Utiliser la même fonction de génération de clé que CacheHandler
+            // pour que la prochaine requête sur le même path retrouve l'entrée.
+            const cacheKey = CacheHandler.generateCacheKey(context);
             this.cacheManager.set(chain.cacheNodeId, cacheKey, `db_response_${Date.now()}`);
 
             const cacheStoreDelay = this.getNodeProcessingDelay(cacheNode);
@@ -534,6 +542,7 @@ export class RequestDispatcher {
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
+      allEdges: this.edges,
       authToken: chain.authToken,
       isAuthRequest: chain.isAuthRequest,
     };

@@ -539,6 +539,8 @@ connections:
     to: cache-sessions
   - from: svc-calcul
     to: cache-baremes
+  - from: cache-baremes
+    to: db-contribuables
   - from: svc-calcul
     to: db-contribuables
   - from: svc-calcul
@@ -979,6 +981,10 @@ components:
       retryEnabled: true
       maxRetries: 5
       deadLetterEnabled: true
+      topics:
+        - name: medical-events
+          partitions: 6
+          retentionMs: 604800000
 
   mq-alertes:
     type: message-queue
@@ -1178,6 +1184,8 @@ connections:
     to: svc-imagerie
   - from: svc-patients-read
     to: cache-dsq
+  - from: cache-dsq
+    to: db-patients
   - from: svc-patients-read
     to: db-patients
   - from: svc-patients-read
@@ -1194,12 +1202,14 @@ connections:
     to: db-patients
   - from: svc-patients-write
     to: mq-events
+    topic: medical-events
   - from: svc-resultats-write
     to: db-resultats
   - from: svc-resultats-write
     to: db-patients
   - from: svc-resultats-write
     to: mq-events
+    topic: medical-events
   - from: svc-resultats-write
     to: mq-alertes
   - from: svc-ordonnances-write
@@ -1208,20 +1218,25 @@ connections:
     to: db-patients
   - from: svc-ordonnances-write
     to: mq-events
+    topic: medical-events
   - from: svc-imagerie
     to: storage-dicom
   - from: svc-imagerie
     to: db-patients
   - from: svc-imagerie
     to: mq-events
+    topic: medical-events
   - from: svc-imagerie
     to: job-images
   - from: mq-events
     to: job-audit
+    topic: medical-events
   - from: mq-events
     to: job-alertes
+    topic: medical-events
   - from: mq-events
     to: job-sync-dsq
+    topic: medical-events
   - from: mq-alertes
     to: job-alertes
   - from: job-audit
@@ -1934,6 +1949,10 @@ components:
       retryEnabled: true
       maxRetries: 5
       deadLetterEnabled: true
+      topics:
+        - name: inter-pole-events
+          partitions: 6
+          retentionMs: 604800000
 
   mq-replication:
     type: message-queue
@@ -1954,6 +1973,10 @@ components:
       retryEnabled: true
       maxRetries: 10
       deadLetterEnabled: true
+      topics:
+        - name: replication-stream
+          partitions: 12
+          retentionMs: 259200000
 
   mq-notifications:
     type: message-queue
@@ -2069,12 +2092,15 @@ connections:
     to: svc-assur-bc
   - from: svc-comptes-part
     to: cache-clients
+  - from: cache-clients
+    to: db-clients
   - from: svc-comptes-part
     to: db-clients
   - from: svc-comptes-part
     to: db-comptes
   - from: svc-comptes-part
     to: mq-replication
+    topic: replication-stream
   - from: svc-comptes-ent
     to: cache-clients
   - from: svc-comptes-ent
@@ -2087,8 +2113,10 @@ connections:
     to: cb-paiement-ext
   - from: svc-virements
     to: mq-interpoles
+    topic: inter-pole-events
   - from: svc-virements
     to: mq-replication
+    topic: replication-stream
   - from: svc-prets
     to: db-comptes
   - from: svc-prets
@@ -2101,8 +2129,10 @@ connections:
     to: db-contrats
   - from: svc-assur-part
     to: mq-interpoles
+    topic: inter-pole-events
   - from: svc-assur-part
     to: mq-replication
+    topic: replication-stream
   - from: svc-patrimoine
     to: db-contrats
   - from: svc-patrimoine
@@ -2127,14 +2157,18 @@ connections:
     to: db-contrats
   - from: mq-interpoles
     to: svc-grand-livre
+    topic: inter-pole-events
   - from: mq-interpoles
     to: svc-assur-part
+    topic: inter-pole-events
   - from: mq-interpoles
     to: svc-comptes-part
+    topic: inter-pole-events
   - from: mq-interpoles
     to: mq-notifications
   - from: mq-replication
     to: job-sync
+    topic: replication-stream
   - from: job-sync
     to: db-replica-on
   - from: job-sync
@@ -2228,18 +2262,15 @@ components:
       rampUpCurve: linear
       method: GET
       requestDistribution:
-        - method: POST
-          path: "/auth/login"
-          weight: 5
         - method: GET
           path: "/api/comptes/solde"
-          weight: 45
+          weight: 47
         - method: GET
           path: "/api/comptes/historique"
-          weight: 25
+          weight: 27
         - method: POST
           path: "/api/virements"
-          weight: 25
+          weight: 26
 
   waf:
     type: waf
@@ -2257,7 +2288,7 @@ components:
     config:
       label: "CDN"
       provider: cloudfront
-      cacheHitRatio: 75
+      cacheHitRatio: 15
       edgeLatencyMs: 5
       originLatencyMs: 30
       bandwidthMbps: 2000
@@ -2423,6 +2454,10 @@ components:
       retryEnabled: true
       maxRetries: 5
       deadLetterEnabled: true
+      topics:
+        - name: transactions
+          partitions: 6
+          retentionMs: 604800000
 
 connections:
   - from: clients-mobile
@@ -2453,8 +2488,10 @@ connections:
     to: external-paiement
   - from: svc-virements
     to: mq-events
+    topic: transactions
   - from: mq-events
     to: worker-notifications
+    topic: transactions
 `;
 
 // ============================================

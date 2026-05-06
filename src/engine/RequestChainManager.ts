@@ -43,6 +43,15 @@ export interface RequestChain {
 
   /** Marque la chain comme requête d'acquisition de token (Task 22) */
   isAuthRequest?: boolean;
+
+  /**
+   * Chain fire-and-forget: émise par un broker (MQ) vers un consumer.
+   * Quand cette chain termine, AUCUN particle de réponse n'est emis sur le
+   * dernier saut consumer → broker (le consumer ne "repond" pas au broker).
+   * Le reste du retour est preserve (DB → consumer reste visible si le
+   * consumer forward vers une DB par exemple).
+   */
+  fireAndForget?: boolean;
 }
 
 /**
@@ -233,6 +242,17 @@ export class RequestChainManager {
     const previousNode = this.nodeMap.get(previousNodeId);
 
     if (!currentNode || !previousNode) return;
+
+    // Fire-and-forget: le dernier saut backward (consumer → broker) ne doit
+    // PAS emettre de particle. Le consumer ne "repond" pas au broker — la
+    // chain termine silencieusement. Les sauts intermediaires (ex: DB →
+    // consumer) restent visibles.
+    if (chain.fireAndForget && currentEdgeIndex === 0) {
+      const chainSnapshot = chain;
+      this.activeChains.delete(chainId);
+      this.callbacks.onChainCompleted(chainId, chainSnapshot, isError);
+      return;
+    }
 
     const hierarchicalLatency = this.getHierarchicalLatency(currentNodeId, previousNodeId);
     const responseDuration = 1500 / this.speed + hierarchicalLatency;

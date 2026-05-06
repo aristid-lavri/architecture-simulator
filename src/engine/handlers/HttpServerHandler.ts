@@ -3,6 +3,7 @@ import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecis
 import type { HttpServerNodeData, ResourceUtilization } from '@/types';
 import { complexityMultipliers } from '@/types';
 import { ResourceManager } from '../ResourceManager';
+import { filterCacheBypassEdges } from './cacheBypass';
 
 /**
  * État runtime d'un serveur HTTP
@@ -64,7 +65,7 @@ export class HttpServerHandler implements NodeRequestHandler {
     node: GraphNode,
     context: RequestContext,
     outgoingEdges: GraphEdge[],
-    _allNodes: GraphNode[]
+    allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as HttpServerNodeData;
     const state = this.getOrCreateState(node.id);
@@ -120,8 +121,15 @@ export class HttpServerHandler implements NodeRequestHandler {
       return { action: 'respond', isError };
     }
 
-    // Forward vers TOUS les edges sortants (pour supporter event-driven / fan-out)
-    const targets = outgoingEdges.map((edge) => ({
+    // Filtrer les edges directs qui contournent un cache déjà connecté.
+    const effectiveEdges = filterCacheBypassEdges(outgoingEdges, allNodes, context.allEdges);
+
+    if (effectiveEdges.length === 0) {
+      return { action: 'respond', isError };
+    }
+
+    // Forward vers les edges sortants restants (supporte aussi event-driven / fan-out)
+    const targets = effectiveEdges.map((edge) => ({
       nodeId: edge.target,
       edgeId: edge.id,
     }));

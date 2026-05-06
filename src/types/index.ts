@@ -571,6 +571,8 @@ export interface AnimatedEdgeData {
   strokeWidth?: number;
   strokeStyle?: 'solid' | 'dashed' | 'dotted';
   pathType?: 'bezier' | 'orthogonal';
+  /** Nom du topic Kafka (utilise quand l'edge connecte un MQ kafka). */
+  topic?: string;
 }
 
 /**
@@ -1061,6 +1063,20 @@ export type MessageQueueType = 'rabbitmq' | 'kafka' | 'sqs';
 /** Mode de distribution des messages. */
 export type MessageQueueMode = 'fifo' | 'priority' | 'pubsub';
 
+/** Topic Kafka declare sur un noeud Message Queue. */
+export interface KafkaTopic {
+  name: string;
+  partitions: number;       // 1-50, defaut 3
+  retentionMs: number;      // defaut 86400000 (24h)
+}
+
+/** Topic Kafka par defaut. */
+export const defaultKafkaTopic: KafkaTopic = {
+  name: 'events',
+  partitions: 3,
+  retentionMs: 86400000,
+};
+
 /** Configuration de la file de messages (taille, retention, delai). */
 export interface MessageQueueConfiguration {
   maxQueueSize: number;           // Max messages in queue
@@ -1110,6 +1126,9 @@ export interface MessageQueueNodeData {
   retryEnabled: boolean;
   maxRetries: number;
   deadLetterEnabled: boolean;
+
+  /** Topics declares (utilise seulement si queueType === 'kafka'). */
+  topics?: KafkaTopic[];
 
   utilization?: MessageQueueUtilization;
 
@@ -1788,6 +1807,8 @@ export const IDP_PROVIDER_CAPABILITIES: Record<IdentityProviderType, {
 export interface IdentityProviderNodeData {
   label: string;
   status?: NodeStatus;
+  /** Nom de service (utilise par l'API Gateway pour le routage par pattern). */
+  serviceName?: string;
   /** Type de fournisseur */
   providerType: IdentityProviderType;
   /** Protocole d'authentification */
@@ -1817,6 +1838,7 @@ export interface IdentityProviderNodeData {
 
 export const defaultIdentityProviderData: IdentityProviderNodeData = {
   label: 'Identity Provider',
+  serviceName: 'idp',
   providerType: 'keycloak',
   protocol: 'oidc',
   tokenFormat: 'jwt',

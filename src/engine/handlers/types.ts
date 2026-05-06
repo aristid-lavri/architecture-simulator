@@ -14,6 +14,9 @@ export interface RequestContext {
   requestPath?: string;
   // Port cible sur le nœud courant (provient de l'edge data targetPort)
   targetPort?: number;
+  // Nom du topic Kafka (provient de l'edge data topic). Utilise pour le routing
+  // par topic dans MessageQueueHandler quand queueType === 'kafka'.
+  incomingTopic?: string;
   // Enriched context fields (Issue #4)
   httpMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   queryType?: 'read' | 'write' | 'transaction';
@@ -25,6 +28,12 @@ export interface RequestContext {
   cacheHit?: boolean;
   cacheNodeId?: string;
   waitingForDb?: boolean;
+
+  // Liste complète des edges du graphe — fournie par le dispatcher pour
+  // que les handlers puissent inspecter la topologie au-delà des edges
+  // sortants directs (ex: détecter qu'un cache mène déjà à une DB pour
+  // filtrer un edge direct service→DB redondant).
+  allEdges?: GraphEdge[];
 
   // Token d'authentification attaché à la requête (Issue #52)
   authToken?: {
@@ -68,7 +77,8 @@ export type RejectionReason =
   | 'no-token'
   | 'token-expired'
   | 'token-invalid'
-  | 'no-healthy-backend';
+  | 'no-healthy-backend'
+  | 'no-route';
 
 /**
  * Décision retournée par un handler après traitement

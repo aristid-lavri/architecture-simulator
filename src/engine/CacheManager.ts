@@ -78,6 +78,13 @@ export class CacheManager {
   /**
    * Get a value from the cache
    * Returns hit status, value (if hit), and latency
+   *
+   * Réalisme :
+   *   1. Lookup déterministe sur le store réel (clés stockées après MISS+set)
+   *   2. Si la clé n'est pas (encore) en mémoire, simulation probabiliste :
+   *      hit avec p = computeHitProbability(state) (warm-up + variance)
+   *   Ce double mécanisme reproduit un cache chaud sans nécessiter de
+   *   pré-chargement explicite : le ratio configuré émerge du trafic.
    */
   get(nodeId: string, key: string): { hit: boolean; value?: string; latency: number } {
     const state = this.cacheStates.get(nodeId);
@@ -92,27 +99,66 @@ export class CacheManager {
     if (entry) {
       // Check TTL expiration
       if (entry.ttlMs && Date.now() - entry.createdAt > entry.ttlMs) {
-        // Entry expired - remove it
         state.entries.delete(key);
-        state.utilization.missCount++;
+        // Tomber sur le chemin probabiliste plutôt que MISS dur — l'entrée
+        // a peut-être expiré mais des données équivalentes peuvent encore
+        // résider dans la simulation du ratio configuré.
+      } else {
+        // Cache HIT - update access metadata
+        entry.lastAccessedAt = Date.now();
+        entry.accessCount++;
+        state.utilization.hitCount++;
         this.updateUtilization(state);
-        return { hit: false, latency };
+
+        return { hit: true, value: entry.value, latency };
       }
-
-      // Cache HIT - update access metadata
-      entry.lastAccessedAt = Date.now();
-      entry.accessCount++;
-      state.utilization.hitCount++;
-      this.updateUtilization(state);
-
-      return { hit: true, value: entry.value, latency };
     }
 
-    // Cache MISS
+    // Pas d'entrée réelle : tirer selon la probabilité configurée
+    if (Math.random() < this.computeHitProbability(state)) {
+      // Simuler un HIT : matérialiser une entrée fictive pour que les
+      // requêtes futures sur la même clé deviennent des HIT déterministes
+      const now = Date.now();
+      state.entries.set(key, {
+        key,
+        value: 'simulated_hit',
+        createdAt: now,
+        lastAccessedAt: now,
+        accessCount: 1,
+        ttlMs: config.configuration.defaultTTLSeconds * 1000,
+      });
+      state.utilization.hitCount++;
+      this.updateUtilization(state);
+      return { hit: true, value: 'simulated_hit', latency };
+    }
+
+    // Vrai MISS
     state.utilization.missCount++;
     this.updateUtilization(state);
 
     return { hit: false, latency };
+  }
+
+  /**
+   * Probabilité instantanée d'un HIT pour ce cache.
+   * - Warm-up actif et fenêtre non écoulée : ramp-up linéaire 0 → initialHitRatio
+   * - Sinon : initialHitRatio + bruit dans [-variance, +variance]
+   */
+  private computeHitProbability(state: CacheState): number {
+    const { config, startTime } = state;
+    const baseRatio = Math.max(0, Math.min(100, config.initialHitRatio)) / 100;
+
+    let effectiveRatio = baseRatio;
+    if (config.warmUpEnabled && config.warmUpDurationMs > 0) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed < config.warmUpDurationMs) {
+        effectiveRatio = baseRatio * (elapsed / config.warmUpDurationMs);
+      }
+    }
+
+    const varianceRange = Math.max(0, config.hitRatioVariance) / 100;
+    const noise = varianceRange > 0 ? (Math.random() - 0.5) * 2 * varianceRange : 0;
+    return Math.max(0, Math.min(1, effectiveRatio + noise));
   }
 
   /**

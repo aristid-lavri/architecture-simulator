@@ -543,6 +543,7 @@ export class ClientGroupSimulator {
       edgePath: chain?.edgePath || [edge.id],
       requestPath: chain?.requestPath,
       targetPort: (edgeData?.targetPort as number) ?? undefined,
+      incomingTopic: (edgeData?.topic as string) ?? undefined,
       httpMethod: chain?.httpMethod,
       queryType: chain?.queryType,
       contentType: chain?.contentType,

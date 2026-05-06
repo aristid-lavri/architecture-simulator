@@ -99,14 +99,26 @@ export class MessageQueueHandler implements NodeRequestHandler {
       state.messages.sort((a, b) => b.priority - a.priority);
     }
 
-    // Si pas de consommateurs (edges sortants), accepter le message et répondre
-    if (outgoingEdges.length === 0) {
+    // Kafka : filtrer les consumers par topic. Le publisher doit avoir configure
+    // edge.data.topic ; chaque consumer abonne via edge.data.topic. Seuls les
+    // consumers dont le topic correspond a celui du publisher sont notifies.
+    let effectiveOutgoing = outgoingEdges;
+    if (data.queueType === 'kafka' && context.incomingTopic) {
+      effectiveOutgoing = outgoingEdges.filter(
+        (e) => (e.data as { topic?: string } | undefined)?.topic === context.incomingTopic
+      );
+    }
+
+    // Si pas de consommateurs (edges sortants), accepter le message et répondre.
+    // Pour Kafka avec topic mismatch, le message reste en file mais aucun consumer
+    // n'est notifie — comportement conforme a la realite (queue persistante).
+    if (effectiveOutgoing.length === 0) {
       return { action: 'respond', isError: false };
     }
 
     // Mode pubsub: notifier tous les consumers (fire-and-forget)
     if (data.mode === 'pubsub') {
-      const targets = outgoingEdges.map((edge) => ({
+      const targets = effectiveOutgoing.map((edge) => ({
         nodeId: edge.target,
         edgeId: edge.id,
         delay: data.configuration.deliveryDelayMs,
@@ -123,8 +135,8 @@ export class MessageQueueHandler implements NodeRequestHandler {
 
     // Mode FIFO ou priority: deliver to one consumer (round-robin)
     const consumedCount = state.messagesConsumed + this.getInFlightCount(state);
-    const edgeIndex = consumedCount % outgoingEdges.length;
-    const edge = outgoingEdges[edgeIndex];
+    const edgeIndex = consumedCount % effectiveOutgoing.length;
+    const edge = effectiveOutgoing[edgeIndex];
 
     // Deliver message: set invisibility instead of removing
     this.deliverMessage(node.id, data);

@@ -293,6 +293,8 @@ connections:
     to: database
   - from: service-b
     to: cache
+  - from: cache
+    to: database
 `;
 
 // ============================================
@@ -428,6 +430,10 @@ components:
       queueType: kafka
       mode: pubsub
       consumerCount: 2
+      topics:
+        - name: order-events
+          partitions: 3
+          retentionMs: 86400000
 
   inventory-cache:
     type: cache
@@ -448,12 +454,17 @@ connections:
     to: orders-db
   - from: order-service
     to: event-bus
+    topic: order-events
   - from: event-bus
     to: notification-service
+    topic: order-events
   - from: event-bus
     to: inventory-service
+    topic: order-events
   - from: inventory-service
     to: inventory-cache
+  - from: inventory-cache
+    to: orders-db
 `;
 
 // ============================================
@@ -724,8 +735,12 @@ connections:
     to: products-db
   - from: product-service
     to: product-cache
+  - from: product-cache
+    to: products-db
   - from: cart-service
     to: cart-cache
+  - from: cart-cache
+    to: users-db
   - from: order-service
     to: users-db
   - from: order-service
