@@ -2228,9 +2228,12 @@ components:
       rampUpCurve: linear
       method: GET
       requestDistribution:
+        - method: POST
+          path: "/auth/login"
+          weight: 5
         - method: GET
           path: "/api/comptes/solde"
-          weight: 50
+          weight: 45
         - method: GET
           path: "/api/comptes/historique"
           weight: 25
@@ -2272,14 +2275,18 @@ components:
         burstSize: 100
         windowMs: 1000
       routeRules:
+        - id: route-auth
+          pathPattern: "/auth/*"
+          targetServiceName: "auth-keycloak"
+          priority: 1
         - id: route-comptes
           pathPattern: "/comptes/*"
           targetServiceName: "comptes-api"
-          priority: 1
+          priority: 2
         - id: route-virements
           pathPattern: "/virements/*"
           targetServiceName: "virements-api"
-          priority: 2
+          priority: 3
       baseLatencyMs: 5
 
   idp:
@@ -2287,6 +2294,7 @@ components:
     zone: backend
     config:
       label: "Auth (Keycloak)"
+      serviceName: "auth-keycloak"
       providerType: keycloak
       protocol: oidc
       tokenFormat: jwt
@@ -2417,8 +2425,6 @@ components:
       deadLetterEnabled: true
 
 connections:
-  - from: clients-mobile
-    to: idp
   - from: clients-mobile
     to: waf
   - from: waf
