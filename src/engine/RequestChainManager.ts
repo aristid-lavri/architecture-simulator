@@ -40,6 +40,9 @@ export interface RequestChain {
     issuedAt: number;
     expiresAt: number;
   };
+
+  /** Marque la chain comme requête d'acquisition de token (Task 22) */
+  isAuthRequest?: boolean;
 }
 
 /**
@@ -49,8 +52,12 @@ export interface RequestChainCallbacks {
   onNodeStatusChange: (nodeId: string, status: import('@/types').NodeStatus) => void;
   onMetricsUpdate: () => void;
   onSimulationComplete?: () => void;
-  /** Appele quand une chaine a fini (retour au noeud d'origine). */
-  onChainCompleted: (chainId: string) => void;
+  /**
+   * Appele quand une chaine a fini (retour au noeud d'origine).
+   * Le snapshot de la chain est fourni AVANT suppression pour permettre aux consommateurs
+   * (ex: flux d'acquisition de token) de lire `chain.authToken` ou autres champs.
+   */
+  onChainCompleted: (chainId: string, chainSnapshot?: RequestChain, isError?: boolean) => void;
 }
 
 /**
@@ -209,9 +216,11 @@ export class RequestChainManager {
             }
           }, 300 / this.speed);
         }
+        // Capturer un snapshot AVANT suppression pour les consommateurs externes
+        const chainSnapshot = chain;
         this.activeChains.delete(chainId);
 
-        this.callbacks.onChainCompleted(chainId);
+        this.callbacks.onChainCompleted(chainId, chainSnapshot, isError);
       }
       return;
     }

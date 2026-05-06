@@ -103,7 +103,9 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       // Bypass auth pour les routes ciblant un identity-provider (login flow)
       const requestPath = context.requestPath ?? '/';
       const targetingIdP = this.routeTargetsIdentityProvider(data, requestPath, outgoingEdges, allNodes);
-      if (!targetingIdP) {
+      // Bypass aussi pour les requêtes d'acquisition de token (Task 22) — pas besoin de routeRule
+      const isAuthRequest = context.isAuthRequest === true;
+      if (!targetingIdP && !isAuthRequest) {
         // 1. Vérifier la présence du token
         if (!context.authToken) {
           state.authFailures++;
@@ -192,6 +194,24 @@ export class ApiGatewayHandler implements NodeRequestHandler {
   ): GraphEdge {
     const routeRules = data.routeRules || [];
     const requestPath = context.requestPath || '/';
+
+    // Pour une requête d'acquisition de token (Task 22), router en priorité vers un IdP connecté
+    if (context.isAuthRequest === true) {
+      for (const edge of outgoingEdges) {
+        const target = allNodes.find((n) => n.id === edge.target);
+        if (target?.type === 'identity-provider') {
+          return edge;
+        }
+      }
+      // Fallback : passthrough infrastructure (waf/cdn/...) qui peut mener à un IdP
+      const PASSTHROUGH = new Set(['waf', 'cdn', 'api-gateway', 'load-balancer', 'firewall', 'dns']);
+      for (const edge of outgoingEdges) {
+        const target = allNodes.find((n) => n.id === edge.target);
+        if (target && PASSTHROUGH.has(target.type)) {
+          return edge;
+        }
+      }
+    }
 
     // Si pas de règles, utiliser le premier edge
     if (routeRules.length === 0) {

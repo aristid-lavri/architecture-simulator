@@ -19,9 +19,9 @@ export class WAFHandler implements NodeRequestHandler {
 
   handleRequestArrival(
     node: GraphNode,
-    _context: RequestContext,
+    context: RequestContext,
     outgoingEdges: GraphEdge[],
-    _allNodes: GraphNode[]
+    allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as WAFNodeData;
 
@@ -42,10 +42,36 @@ export class WAFHandler implements NodeRequestHandler {
       return { action: 'respond', isError: false };
     }
 
-    const edge = outgoingEdges[0];
+    // Pour les requêtes d'auth (Task 22), préférer un edge menant vers une infra d'auth
+    const edge = pickAuthAwareEdge(context, outgoingEdges, allNodes) ?? outgoingEdges[0];
     return {
       action: 'forward',
       targets: [{ nodeId: edge.target, edgeId: edge.id }],
     };
   }
+}
+
+/**
+ * Pour une requête d'acquisition de token (isAuthRequest), préfère un edge
+ * menant vers un identity-provider (1 hop) ou via une infrastructure passthrough.
+ * Retourne null si aucune préférence (caller utilise le défaut outgoingEdges[0]).
+ */
+function pickAuthAwareEdge(
+  context: RequestContext,
+  outgoingEdges: GraphEdge[],
+  allNodes: GraphNode[]
+): GraphEdge | null {
+  if (context.isAuthRequest !== true) return null;
+  // 1. Préférer un edge direct vers un IdP
+  for (const edge of outgoingEdges) {
+    const target = allNodes.find((n) => n.id === edge.target);
+    if (target?.type === 'identity-provider') return edge;
+  }
+  // 2. Fallback : edge vers un noeud passthrough (qui peut éventuellement mener à un IdP)
+  const PASSTHROUGH = new Set(['waf', 'cdn', 'api-gateway', 'load-balancer', 'firewall', 'dns']);
+  for (const edge of outgoingEdges) {
+    const target = allNodes.find((n) => n.id === edge.target);
+    if (target && PASSTHROUGH.has(target.type)) return edge;
+  }
+  return null;
 }

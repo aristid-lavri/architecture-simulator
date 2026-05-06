@@ -34,6 +34,10 @@ export interface RequestContext {
     issuedAt: number;
     expiresAt: number;
   };
+
+  // Marque la chain comme requête d'acquisition de token (Task 22)
+  // L'IdP génère un token et l'enrichit dans la response decision
+  isAuthRequest?: boolean;
 }
 
 /**
@@ -71,7 +75,7 @@ export type RejectionReason =
  */
 export type RequestDecision =
   | { action: 'forward'; targets: ForwardTarget[] }
-  | { action: 'respond'; isError: boolean; delay?: number }
+  | { action: 'respond'; isError: boolean; delay?: number; contextEnrichment?: Partial<Pick<RequestContext, 'authToken'>> }
   | { action: 'reject'; reason: RejectionReason }
   | { action: 'queue'; priority?: number }
   | { action: 'cache-miss'; dbTarget: ForwardTarget; cacheNodeId: string }

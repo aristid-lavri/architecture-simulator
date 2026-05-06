@@ -181,6 +181,14 @@ export class SimulationEngine {
   // Token store for authentication flow
   private tokenStore: TokenStore = new TokenStore();
 
+  // Pending auth requests : chainId → callback à invoquer quand le token revient (Task 22)
+  private pendingAuthRequests: Map<string, {
+    client: GraphNode;
+    idpNode: GraphNode;
+    virtualClientId: number | undefined;
+    callback: (token: SimulatedToken | null) => void;
+  }> = new Map();
+
   // Bottleneck analysis
   private bottleneckAnalyzer: BottleneckAnalyzer = new BottleneckAnalyzer();
 
@@ -279,7 +287,10 @@ export class SimulationEngine {
         onNodeStatusChange: callbacks.onNodeStatusChange,
         onMetricsUpdate: () => this.pushMetricsUpdate(),
         onSimulationComplete: callbacks.onSimulationComplete,
-        onChainCompleted: () => this.chainManager.checkCompletion(),
+        onChainCompleted: (chainId, chainSnapshot, isError) => {
+          this.handleAuthChainCompletion(chainId, chainSnapshot, isError);
+          this.chainManager.checkCompletion();
+        },
       },
       this.particleManager,
       this.virtualClientManager,
@@ -528,98 +539,205 @@ export class SimulationEngine {
     }
   }
 
+  /**
+   * Acquiert un token via le flux d'authentification routé (Task 22).
+   *
+   * Émet une vraie requête (chain) qui traverse la topologie via le dispatcher
+   * (client → WAF → CDN → API Gateway → IdP), en passant par les handlers de chaque
+   * nœud. L'IdP enrichit `chain.authToken` via le mécanisme de contextEnrichment
+   * (cf. IdentityProviderHandler.handleRequestArrival).
+   *
+   * Quand la chain revient à l'origine (sendChainResponse), `onChainCompleted`
+   * vérifie si c'était une chain d'auth (via pendingAuthRequests) et invoque le
+   * callback avec le token enrichi.
+   *
+   * @param idpEdge L'edge à utiliser pour la PREMIÈRE arête du chemin (rétrocompat).
+   *                Note : pour la version routée, on utilise les edges sortants
+   *                directs du client comme point de départ.
+   */
   private acquireToken(
     client: GraphNode,
-    idpEdge: GraphEdge,
+    _idpEdge: GraphEdge,
     idpNode: GraphNode,
     virtualClientId: number | undefined,
-    callback: (token: SimulatedToken) => void
+    callback: (token: SimulatedToken | null) => void
   ): void {
-    const idpData = idpNode.data as IdentityProviderNodeData;
-    const duration = 2000 / this.speed;
-    const tokenChainId = generateParticleId();
+    // Toujours utiliser le flux routé (Task 22) : la chain traverse la topologie
+    // via le dispatcher et le token est extrait à la complétion de la chain.
+    // Le paramètre _idpEdge est conservé pour la rétrocompat de signature.
+    this.acquireTokenRouted(client, idpNode, virtualClientId, callback);
+  }
+
+  /**
+   * Acquisition de token via dispatcher (vraie chain routée).
+   * Le token revient via chain.authToken, capturé dans handleAuthChainCompletion.
+   */
+  private acquireTokenRouted(
+    client: GraphNode,
+    idpNode: GraphNode,
+    virtualClientId: number | undefined,
+    callback: (token: SimulatedToken | null) => void,
+  ): void {
+    if (this.state !== 'running') {
+      callback(null);
+      return;
+    }
+
+    // Trouver la première edge sortant du client (entrée dans le chemin auth)
+    const outgoingFromClient = this.edges.filter((e) => e.source === client.id);
+    if (outgoingFromClient.length === 0) {
+      // Fallback : pas de connexion → générer un token auto
+      this.acquireTokenLegacy(client, idpNode, virtualClientId, callback);
+      return;
+    }
+    // Préférer une edge qui mène à l'IdP (directement ou via passthrough)
+    const PASSTHROUGH = new Set(['waf', 'cdn', 'api-gateway', 'load-balancer', 'firewall', 'dns']);
+    let firstEdge: GraphEdge | null = null;
+    for (const e of outgoingFromClient) {
+      const t = this.nodeMap.get(e.target);
+      if (!t) continue;
+      if (t.id === idpNode.id || t.type === 'identity-provider') { firstEdge = e; break; }
+    }
+    if (!firstEdge) {
+      for (const e of outgoingFromClient) {
+        const t = this.nodeMap.get(e.target);
+        if (t && PASSTHROUGH.has(t.type)) { firstEdge = e; break; }
+      }
+    }
+    if (!firstEdge) firstEdge = outgoingFromClient[0];
+
+    const targetNode = this.nodeMap.get(firstEdge.target);
+    if (!targetNode) {
+      this.acquireTokenLegacy(client, idpNode, virtualClientId, callback);
+      return;
+    }
+
+    const chainId = generateParticleId();
+    const chain: RequestChain = {
+      id: chainId,
+      originNodeId: client.id,
+      currentPath: [client.id],
+      edgePath: [],
+      virtualClientId,
+      startTime: Date.now(),
+      requestPath: '/auth/login',
+      httpMethod: 'POST',
+      queryType: 'write',
+      contentType: 'dynamic',
+      payloadSizeBytes: 256,
+      sourceIP: generateSourceIP(),
+      isAuthRequest: true,
+    };
+    this.chainManager.createChain(chain);
+
+    // Enregistrer le callback pendant
+    this.pendingAuthRequests.set(chainId, {
+      client,
+      idpNode,
+      virtualClientId,
+      callback,
+    });
+
+    // Tracking : timeout de sécurité au cas où la chain ne se termine jamais
+    // (pour éviter une fuite de mémoire)
+    setTimeout(() => {
+      if (this.pendingAuthRequests.has(chainId)) {
+        const entry = this.pendingAuthRequests.get(chainId);
+        this.pendingAuthRequests.delete(chainId);
+        entry?.callback(null);
+      }
+    }, 30000);
+
+    // Émettre le particle de la première hop (token-request via vraie chain)
+    const requestDuration = 2000 / this.speed;
     const particle: Particle = {
       id: generateParticleId(),
-      edgeId: idpEdge.id,
+      edgeId: firstEdge.id,
       type: 'token-request',
       direction: 'forward',
       progress: 0,
-      duration,
+      duration: requestDuration,
       startTime: Date.now(),
-      data: { chainId: tokenChainId },
+      data: { chainId, authenticated: false },
     };
     this.particleManager.add(particle);
+    this.callbacks.onNodeStatusChange(client.id, 'processing');
 
+    const dispatchEdge = firstEdge;
     setTimeout(() => {
-      if (this.state !== 'running') return;
-      this.particleManager.remove(particle.id);
+      if (this.state !== 'running') {
+        this.particleManager.remove(particle.id);
+        return;
+      }
+      // Le particle a atteint le 1er noeud : on délègue au dispatcher
+      this.dispatcher.handleChainRequestArrival(particle, client, targetNode, dispatchEdge, chainId);
+    }, requestDuration);
+  }
 
-      const handler = this.handlerRegistry.getHandler('identity-provider');
-      const context: RequestContext = {
-        chainId: tokenChainId,
-        originNodeId: client.id,
-        virtualClientId,
-        startTime: Date.now(),
-        currentPath: [client.id, idpNode.id],
-        edgePath: [idpEdge.id],
-      };
-      const processingDelay = handler.getProcessingDelay(idpNode, this.speed, context);
-      this.callbacks.onNodeStatusChange(idpNode.id, 'processing');
+  /**
+   * Implémentation legacy : animation single-edge directe client→IdP.
+   * Conservée comme fallback si le flux routé n'est pas disponible
+   * (ex: aucune edge sortant du client).
+   */
+  private acquireTokenLegacy(
+    client: GraphNode,
+    idpNode: GraphNode,
+    virtualClientId: number | undefined,
+    callback: (token: SimulatedToken | null) => void
+  ): void {
+    const idpData = idpNode.data as IdentityProviderNodeData;
+    // Synthétiser un token directement (pas de routage)
+    const token: SimulatedToken = {
+      tokenId: `tok_${generateParticleId()}`,
+      clientId: client.id,
+      idpId: idpNode.id,
+      format: idpData.tokenFormat as 'jwt' | 'opaque' | 'saml-assertion',
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + idpData.tokenTTLSeconds * 1000,
+      virtualClientId,
+    };
+    this.tokenStore.storeToken(token);
+    callback(token);
+  }
 
-      setTimeout(() => {
-        if (this.state !== 'running') return;
-        const outgoing = this.edges.filter((e) => e.source === idpNode.id);
-        const decision = handler.handleRequestArrival(idpNode, context, outgoing, this.nodes);
-        this.callbacks.onNodeStatusChange(idpNode.id, 'idle');
+  /**
+   * Hook : appelé quand une chain se termine (depuis RequestChainManager.onChainCompleted).
+   * Si la chain était une auth-chain (présente dans pendingAuthRequests), résout le callback
+   * en lisant le token enrichi par l'IdP dans chain.authToken.
+   */
+  private handleAuthChainCompletion(
+    chainId: string,
+    chainSnapshot?: RequestChain,
+    isError?: boolean,
+  ): void {
+    const entry = this.pendingAuthRequests.get(chainId);
+    if (!entry) return;
+    this.pendingAuthRequests.delete(chainId);
 
-        if (decision.action === 'reject') {
-          const errParticle: Particle = {
-            id: generateParticleId(),
-            edgeId: idpEdge.id,
-            type: 'response-error',
-            direction: 'backward',
-            progress: 0,
-            duration: 1500 / this.speed,
-            startTime: Date.now(),
-            data: { chainId: tokenChainId },
-          };
-          this.particleManager.add(errParticle);
-          setTimeout(() => { this.particleManager.remove(errParticle.id); }, errParticle.duration);
-          this.metrics.recordRejection();
-          this.metrics.recordResponse(false, Date.now() - context.startTime);
-          this.pushMetricsUpdate();
-          return;
-        }
+    if (isError === true || !chainSnapshot) {
+      entry.callback(null);
+      return;
+    }
 
-        const token: SimulatedToken = {
-          tokenId: `tok_${generateParticleId()}`,
-          clientId: client.id,
-          idpId: idpNode.id,
-          format: idpData.tokenFormat as 'jwt' | 'opaque' | 'saml-assertion',
-          issuedAt: Date.now(),
-          expiresAt: Date.now() + idpData.tokenTTLSeconds * 1000,
-          virtualClientId,
-        };
-        this.tokenStore.storeToken(token);
+    const enrichedToken = chainSnapshot.authToken;
+    if (!enrichedToken) {
+      // L'IdP n'a pas enrichi la chain (ex: chain n'a jamais atteint l'IdP) → fallback null
+      entry.callback(null);
+      return;
+    }
 
-        const respParticle: Particle = {
-          id: generateParticleId(),
-          edgeId: idpEdge.id,
-          type: 'token-response',
-          direction: 'backward',
-          progress: 0,
-          duration: 1500 / this.speed,
-          startTime: Date.now(),
-          data: { chainId: tokenChainId },
-        };
-        this.particleManager.add(respParticle);
-        setTimeout(() => {
-          if (this.state !== 'running') return;
-          this.particleManager.remove(respParticle.id);
-          callback(token);
-        }, respParticle.duration);
-      }, processingDelay);
-    }, duration);
+    // Construire un SimulatedToken et le stocker dans le TokenStore
+    const token: SimulatedToken = {
+      tokenId: enrichedToken.tokenId,
+      clientId: entry.client.id,
+      idpId: entry.idpNode.id,
+      format: enrichedToken.format,
+      issuedAt: enrichedToken.issuedAt,
+      expiresAt: enrichedToken.expiresAt,
+      virtualClientId: entry.virtualClientId,
+    };
+    this.tokenStore.storeToken(token);
+    entry.callback(token);
   }
 
   private validateTokenViaIdP(
@@ -903,7 +1021,9 @@ export class SimulationEngine {
       const authResult = this.resolveAuthToken(client, targetNode, undefined);
       if (authResult.needsAsync) {
         this.acquireToken(client, authResult.idpEdge, authResult.idp, undefined, (token) => {
-          this.sendRequest(client, edge, token);
+          // Si l'acquisition échoue (null), envoie quand même la requête sans token
+          // → le serveur cible rejettera avec 'no-token' (comportement attendu)
+          this.sendRequest(client, edge, token ?? undefined);
         });
         return;
       }

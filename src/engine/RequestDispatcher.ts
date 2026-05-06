@@ -266,6 +266,12 @@ export class RequestDispatcher {
         break;
 
       case 'respond':
+        // Propager le contextEnrichment du handler sur la chain (ex: authToken généré par l'IdP terminal)
+        if (decision.contextEnrichment && chain) {
+          if (decision.contextEnrichment.authToken) {
+            chain.authToken = decision.contextEnrichment.authToken;
+          }
+        }
         if (decision.delay) {
           setTimeout(() => {
             this.callbacks.onNodeStatusChange(sourceNode.id, decision.isError ? 'error' : 'success');
@@ -432,6 +438,8 @@ export class RequestDispatcher {
         cacheHit: chain.cacheHit,
         cacheNodeId: chain.cacheNodeId,
         waitingForDb: chain.waitingForDb,
+        authToken: chain.authToken,
+        isAuthRequest: chain.isAuthRequest,
       };
 
       let processingDelay = this.getNodeProcessingDelay(targetNode, context);
@@ -512,6 +520,7 @@ export class RequestDispatcher {
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
       authToken: chain.authToken,
+      isAuthRequest: chain.isAuthRequest,
     };
   }
 }
