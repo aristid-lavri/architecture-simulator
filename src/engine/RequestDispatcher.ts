@@ -244,6 +244,11 @@ export class RequestDispatcher {
 
           const zoneLatency = this.getHierarchicalLatency(sourceNode.id, targetNode.id);
           const requestDuration = (target.delay ?? 1500) / this.speed + zoneLatency;
+          // Read authentication state from the effective chain AFTER any
+          // contextEnrichment was applied above (e.g. IdP-issued token on the
+          // forwarded hop). This ensures the visual padlock appears as soon as
+          // the chain carries a token.
+          const effectiveChainForAuth = this.chainManager.getChain(effectiveChainId);
           const particle: Particle = {
             id: generateParticleId(),
             edgeId: target.edgeId,
@@ -252,7 +257,10 @@ export class RequestDispatcher {
             progress: 0,
             duration: requestDuration,
             startTime: Date.now(),
-            data: { chainId: effectiveChainId },
+            data: {
+              chainId: effectiveChainId,
+              authenticated: !!effectiveChainForAuth?.authToken,
+            },
           };
 
           this.particleManager.add(particle);
@@ -317,7 +325,7 @@ export class RequestDispatcher {
             progress: 0,
             duration: requestDuration,
             startTime: Date.now(),
-            data: { chainId },
+            data: { chainId, authenticated: !!chain?.authToken },
           };
 
           this.particleManager.add(particle);

@@ -246,7 +246,7 @@ export class RequestChainManager {
       progress: 0,
       duration: responseDuration,
       startTime: Date.now(),
-      data: { chainId },
+      data: { chainId, authenticated: !!chain.authToken },
     };
 
     this.particleManager.add(particle);

@@ -34,6 +34,29 @@ const PARTICLE_GLOW: Record<ParticleType, number> = {
   'token-response':   0xbbf7d0,
 };
 
+// Authenticated variants: gold/amber-tinted colors signaling a secured channel.
+// Practical equivalent of a padlock at small particle dimensions (16x3.5px).
+const PARTICLE_COLORS_AUTH: Record<ParticleType, number> = {
+  'request':          0xfbbf24, // gold (vs blue) — secured request
+  'response-success': 0x10b981, // emerald (vs lighter green) — secured success
+  'response-error':   0xdc2626, // crimson (vs red) — secured error
+  'token-request':    0xfbbf24, // unchanged (auth flow itself)
+  'token-response':   0x86efac, // unchanged (auth flow itself)
+};
+
+const PARTICLE_GLOW_AUTH: Record<ParticleType, number> = {
+  'request':          0xfde68a, // pale gold
+  'response-success': 0x6ee7b7, // pale emerald
+  'response-error':   0xfca5a5, // unchanged
+  'token-request':    0xfde68a,
+  'token-response':   0xbbf7d0,
+};
+
+// Leading-edge dot color for authenticated particles (gold "lock" dot, larger).
+const AUTH_DOT_COLOR = 0xfde047; // bright gold
+const AUTH_DOT_RADIUS = 2.5;     // larger than default 1.5px white dot
+const DEFAULT_DOT_RADIUS = 1.5;
+
 /**
  * GPU-accelerated particle renderer using sprite pooling.
  *
@@ -45,6 +68,7 @@ export class ParticleRenderer {
   private pool: Sprite[] = [];
   private activeCount = 0;
   private textures: Map<ParticleType, Texture> = new Map();
+  private texturesAuth: Map<ParticleType, Texture> = new Map();
   private pathCache: EdgePathCache;
   private animFrameId: number | null = null;
 
@@ -60,11 +84,17 @@ export class ParticleRenderer {
   /**
    * Generate streak textures for each particle type.
    * Each texture is a small rounded rectangle with glow.
+   *
+   * Two variants are generated per type:
+   * - Default (this.textures) — used when particle.data.authenticated is falsy
+   * - Auth (this.texturesAuth) — gold/amber palette + larger gold leading dot,
+   *   visually signaling that the chain carries an authToken (secured channel).
    */
   private createTextures(): void {
     const types: ParticleType[] = ['request', 'response-success', 'response-error', 'token-request', 'token-response'];
 
     for (const type of types) {
+      // Default variant
       const g = new Graphics();
 
       // Glow (wider, semi-transparent)
@@ -76,7 +106,7 @@ export class ParticleRenderer {
       g.fill({ color: PARTICLE_COLORS[type], alpha: 0.9 });
 
       // Leading bright dot
-      g.circle(PARTICLE_WIDTH - 1.5, PARTICLE_HEIGHT / 2, 1.5);
+      g.circle(PARTICLE_WIDTH - DEFAULT_DOT_RADIUS, PARTICLE_HEIGHT / 2, DEFAULT_DOT_RADIUS);
       g.fill({ color: 0xffffff, alpha: 0.8 });
 
       const texture = this.app.renderer.generateTexture({
@@ -85,6 +115,33 @@ export class ParticleRenderer {
       });
       this.textures.set(type, texture);
       g.destroy();
+
+      // Auth variant — gold/emerald/crimson palette + larger gold leading dot.
+      // Token particles (token-request / token-response) use the same palette as
+      // the default variant since they're already visually distinct as the auth flow,
+      // but we still register an entry to keep the lookup branchless in renderFrame.
+      const gAuth = new Graphics();
+
+      gAuth.roundRect(-2, -2, PARTICLE_WIDTH + 4, PARTICLE_HEIGHT + 4, 3);
+      gAuth.fill({ color: PARTICLE_GLOW_AUTH[type], alpha: 0.35 });
+
+      gAuth.roundRect(0, 0, PARTICLE_WIDTH, PARTICLE_HEIGHT, 1.5);
+      gAuth.fill({ color: PARTICLE_COLORS_AUTH[type], alpha: 0.95 });
+
+      // Larger gold "lock" dot at the leading edge for the 3 affected types;
+      // token particles keep the default white dot.
+      const isLockable = type === 'request' || type === 'response-success' || type === 'response-error';
+      const dotColor = isLockable ? AUTH_DOT_COLOR : 0xffffff;
+      const dotRadius = isLockable ? AUTH_DOT_RADIUS : DEFAULT_DOT_RADIUS;
+      gAuth.circle(PARTICLE_WIDTH - dotRadius, PARTICLE_HEIGHT / 2, dotRadius);
+      gAuth.fill({ color: dotColor, alpha: 0.95 });
+
+      const textureAuth = this.app.renderer.generateTexture({
+        target: gAuth,
+        resolution: 2,
+      });
+      this.texturesAuth.set(type, textureAuth);
+      gAuth.destroy();
     }
   }
 
@@ -162,8 +219,14 @@ export class ParticleRenderer {
       const sprite = this.pool[idx];
       if (!sprite) break;
 
-      // Set texture for particle type (only if changed)
-      const tex = this.textures.get(particle.type);
+      // Set texture for particle type (only if changed).
+      // Pick the auth-variant texture when the chain carries an authToken
+      // (signaled by data.authenticated === true). Token particles
+      // (token-request / token-response) are unaffected since their auth-variant
+      // textures intentionally use the same palette as the default.
+      const isAuth = !!(particle.data && (particle.data as { authenticated?: boolean }).authenticated);
+      const texMap = isAuth ? this.texturesAuth : this.textures;
+      const tex = texMap.get(particle.type);
       if (tex && sprite.texture !== tex) {
         sprite.texture = tex;
       }
@@ -214,6 +277,10 @@ export class ParticleRenderer {
       tex.destroy(true);
     }
     this.textures.clear();
+    for (const tex of this.texturesAuth.values()) {
+      tex.destroy(true);
+    }
+    this.texturesAuth.clear();
     this.pathCache.clear();
   }
 }
