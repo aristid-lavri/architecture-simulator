@@ -477,18 +477,51 @@ export class SimulationEngine {
     return token;
   }
 
+  /**
+   * Cherche le premier noeud en aval qui exige une authentification, en traversant
+   * les passthrough infrastructure (waf, cdn, api-gateway, load-balancer, firewall, dns).
+   * Retourne null si aucun noeud en aval n'exige de token.
+   *
+   * Utilisé par resolveAuthToken pour décider si une chaîne de requêtes traversera
+   * un point d'authentification, même si le voisin direct du client est un passthrough.
+   */
+  private findFirstAuthRequiringNode(startNodeId: string): GraphNode | null {
+    const PASSTHROUGH_TYPES = new Set([
+      'waf', 'cdn', 'api-gateway', 'load-balancer', 'firewall', 'dns',
+    ]);
+    const visited = new Set<string>([startNodeId]);
+    const queue: string[] = [startNodeId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const edge of this.edges.filter((e) => e.source === current)) {
+        const target = this.nodeMap.get(edge.target);
+        if (!target || visited.has(target.id)) continue;
+        visited.add(target.id);
+        if (this.getNodeAuthType(target) !== 'none') return target;
+        if (PASSTHROUGH_TYPES.has(target.type)) queue.push(target.id);
+      }
+    }
+    return null;
+  }
+
   private resolveAuthToken(
     client: GraphNode,
     targetNode: GraphNode,
     virtualClientId: number | undefined
   ): { needsAsync: false; token?: SimulatedToken } | { needsAsync: true; idp: GraphNode; idpEdge: GraphEdge } {
-    // Déterminer si le noeud cible exige une authentification
-    const authType = this.getNodeAuthType(targetNode);
-    if (authType === 'none') return { needsAsync: false };
+    // Déterminer le premier noeud en aval qui exige une authentification.
+    // Si le voisin direct est un passthrough (waf/cdn/lb/...), on regarde plus loin.
+    let authNode: GraphNode | null = null;
+    if (this.getNodeAuthType(targetNode) !== 'none') {
+      authNode = targetNode;
+    } else {
+      authNode = this.findFirstAuthRequiringNode(targetNode.id);
+    }
+    if (!authNode) return { needsAsync: false };
 
     const idp = this.findConnectedIdP(client.id);
     if (!idp) {
-      const autoTokenMode = this.getNodeAutoTokenMode(targetNode);
+      const autoTokenMode = this.getNodeAutoTokenMode(authNode);
       // Mode 'none' : pas de token auto-généré → le serveur rejettera avec 'no-token'
       if (autoTokenMode === 'none') {
         return { needsAsync: false };
