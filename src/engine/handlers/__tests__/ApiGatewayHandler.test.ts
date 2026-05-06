@@ -156,6 +156,55 @@ describe('ApiGatewayHandler', () => {
     });
   });
 
+  describe('ApiGatewayHandler — IDP route auth bypass', () => {
+    it('allows /auth/* requests without token when route targets an identity-provider', () => {
+      const node = createGatewayNode({
+        authType: 'jwt',
+        routeRules: [
+          { pathPattern: '/auth/**', targetServiceName: 'auth-keycloak', priority: 1 },
+          { pathPattern: '/api/**', targetServiceName: 'comptes-service', priority: 2 },
+        ],
+      });
+      handler.initialize(node);
+
+      const edges = [createEdge('idp-1'), createEdge('server-1')];
+      const allNodes: GraphNode[] = [
+        { id: 'idp-1', type: 'identity-provider', position: { x: 0, y: 0 }, data: { serviceName: 'auth-keycloak' } },
+        { id: 'server-1', type: 'http-server', position: { x: 0, y: 0 }, data: { serviceName: 'comptes-service' } },
+      ];
+
+      // No authToken on context — would normally be rejected
+      const decision = handler.handleRequestArrival(node, createContext('/auth/login'), edges, allNodes);
+      expect(decision.action).toBe('forward');
+      if (decision.action === 'forward') {
+        expect(decision.targets[0].nodeId).toBe('idp-1');
+      }
+    });
+
+    it('still rejects non-auth paths without token', () => {
+      const node = createGatewayNode({
+        authType: 'jwt',
+        routeRules: [
+          { pathPattern: '/auth/**', targetServiceName: 'auth-keycloak', priority: 1 },
+          { pathPattern: '/api/**', targetServiceName: 'comptes-service', priority: 2 },
+        ],
+      });
+      handler.initialize(node);
+
+      const edges = [createEdge('idp-1'), createEdge('server-1')];
+      const allNodes: GraphNode[] = [
+        { id: 'idp-1', type: 'identity-provider', position: { x: 0, y: 0 }, data: { serviceName: 'auth-keycloak' } },
+        { id: 'server-1', type: 'http-server', position: { x: 0, y: 0 }, data: { serviceName: 'comptes-service' } },
+      ];
+
+      const decision = handler.handleRequestArrival(node, createContext('/api/comptes/solde'), edges, allNodes);
+      expect(decision.action).toBe('reject');
+      if (decision.action === 'reject') {
+        expect(decision.reason).toBe('no-token');
+      }
+    });
+  });
+
   describe('stats', () => {
     it('tracks total and blocked requests', () => {
       const node = createGatewayNode({

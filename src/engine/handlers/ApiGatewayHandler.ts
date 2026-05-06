@@ -100,26 +100,32 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
     // Vérifier l'authentification (Issue #52 — vrai contrôle de token)
     if (data.authType !== 'none') {
-      // 1. Vérifier la présence du token
-      if (!context.authToken) {
-        state.authFailures++;
-        state.blockedRequests++;
-        return { action: 'reject', reason: 'no-token' };
-      }
+      // Bypass auth pour les routes ciblant un identity-provider (login flow)
+      const requestPath = context.requestPath ?? '/';
+      const targetingIdP = this.routeTargetsIdentityProvider(data, requestPath, outgoingEdges, allNodes);
+      if (!targetingIdP) {
+        // 1. Vérifier la présence du token
+        if (!context.authToken) {
+          state.authFailures++;
+          state.blockedRequests++;
+          return { action: 'reject', reason: 'no-token' };
+        }
 
-      // 2. Vérifier l'expiration du token
-      if (context.authToken.expiresAt < Date.now()) {
-        state.authFailures++;
-        state.blockedRequests++;
-        return { action: 'reject', reason: 'token-expired' };
-      }
+        // 2. Vérifier l'expiration du token
+        if (context.authToken.expiresAt < Date.now()) {
+          state.authFailures++;
+          state.blockedRequests++;
+          return { action: 'reject', reason: 'token-expired' };
+        }
 
-      // 3. authFailureRate reste comme couche additionnelle (simule des erreurs aléatoires)
-      if (data.authFailureRate > 0 && Math.random() * 100 < data.authFailureRate) {
-        state.authFailures++;
-        state.blockedRequests++;
-        return { action: 'reject', reason: 'auth-failure' };
+        // 3. authFailureRate reste comme couche additionnelle (simule des erreurs aléatoires)
+        if (data.authFailureRate > 0 && Math.random() * 100 < data.authFailureRate) {
+          state.authFailures++;
+          state.blockedRequests++;
+          return { action: 'reject', reason: 'auth-failure' };
+        }
       }
+      // Si targetingIdP, on saute les checks et on laisse passer (login flow)
     }
 
     // Vérifier le rate limiting
@@ -219,6 +225,35 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
     // Fallback: premier edge
     return outgoingEdges[0];
+  }
+
+  /**
+   * Vérifie si une route rule du gateway, qui matche le requestPath, cible
+   * un nœud de type identity-provider. Utilisé pour bypass l'auth check sur
+   * les routes /auth/* (login flow OIDC).
+   */
+  private routeTargetsIdentityProvider(
+    data: ApiGatewayNodeData,
+    requestPath: string,
+    outgoingEdges: GraphEdge[],
+    allNodes: GraphNode[]
+  ): boolean {
+    const routeRules = data.routeRules ?? [];
+    const sortedRules = [...routeRules].sort((a, b) => a.priority - b.priority);
+    for (const rule of sortedRules) {
+      if (this.matchPath(requestPath, rule.pathPattern)) {
+        // Trouver le nœud cible par serviceName parmi les outgoingEdges
+        for (const edge of outgoingEdges) {
+          const target = allNodes.find((n) => n.id === edge.target);
+          if (!target) continue;
+          const tName = (target.data as { serviceName?: string }).serviceName;
+          if (tName === rule.targetServiceName && target.type === 'identity-provider') {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /**
