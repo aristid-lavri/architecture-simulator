@@ -27,7 +27,7 @@ export default function SimulatorPage() {
   // Expose stores on window for Playwright e2e tests (dev only)
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {
-      const w = window as Record<string, unknown>;
+      const w = window as unknown as Record<string, unknown>;
       w.__archStore = useArchitectureStore;
       w.__appStore = useAppStore;
       w.__simStore = useSimulationStore;

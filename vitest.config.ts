@@ -7,11 +7,7 @@ export default defineConfig({
     globals: true,
     setupFiles: './src/test/setup.ts',
     pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-    },
+    fileParallelism: false,
   },
   resolve: {
     alias: {
