@@ -140,10 +140,14 @@ export class ParticleRenderer {
    * Render a single frame: position all active particles along their edge paths.
    */
   private renderFrame(particles: Map<string, Particle>): void {
+    // Guard: pool may be empty during HMR / after destroy() but before stopRenderLoop() takes effect
+    if (this.pool.length === 0) return;
+
     let idx = 0;
+    const poolSize = this.pool.length;
 
     for (const particle of particles.values()) {
-      if (idx >= MAX_PARTICLES) break;
+      if (idx >= MAX_PARTICLES || idx >= poolSize) break;
 
       const pos = this.pathCache.getPositionOnPath(
         particle.edgeId,
@@ -156,6 +160,7 @@ export class ParticleRenderer {
       }
 
       const sprite = this.pool[idx];
+      if (!sprite) break;
 
       // Set texture for particle type (only if changed)
       const tex = this.textures.get(particle.type);
