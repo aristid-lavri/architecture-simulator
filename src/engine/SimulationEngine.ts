@@ -420,12 +420,33 @@ export class SimulationEngine {
   // Authentication helpers
   // ============================================================
 
+  /**
+   * Cherche un IDP joignable depuis nodeId, soit en direct, soit via les composants
+   * d'infrastructure passthrough (waf, cdn, api-gateway, load-balancer, firewall, dns).
+   * Retourne l'IDP + la PREMIÈRE edge du chemin (pour l'animation token-request).
+   */
   private findConnectedIdP(nodeId: string): { node: GraphNode; edge: GraphEdge } | null {
-    const edges = this.edges.filter((e) => e.source === nodeId);
-    for (const edge of edges) {
-      const target = this.nodeMap.get(edge.target);
-      if (target && target.type === 'identity-provider') {
-        return { node: target, edge };
+    const PASSTHROUGH_TYPES = new Set([
+      'waf', 'cdn', 'api-gateway', 'load-balancer', 'firewall', 'dns',
+    ]);
+    // BFS : chaque entrée garde la première edge utilisée depuis le nodeId d'origine
+    const visited = new Set<string>([nodeId]);
+    const queue: { current: string; firstEdge: GraphEdge | null }[] = [{ current: nodeId, firstEdge: null }];
+
+    while (queue.length > 0) {
+      const { current, firstEdge } = queue.shift()!;
+      const outgoing = this.edges.filter((e) => e.source === current);
+      for (const edge of outgoing) {
+        const target = this.nodeMap.get(edge.target);
+        if (!target) continue;
+        const edgeFromOrigin = firstEdge ?? edge;
+        if (target.type === 'identity-provider') {
+          return { node: target, edge: edgeFromOrigin };
+        }
+        if (PASSTHROUGH_TYPES.has(target.type) && !visited.has(target.id)) {
+          visited.add(target.id);
+          queue.push({ current: target.id, firstEdge: edgeFromOrigin });
+        }
       }
     }
     return null;
