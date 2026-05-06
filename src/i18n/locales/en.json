@@ -365,6 +365,10 @@
       "name": "Multi-Pole Banking Group",
       "description": "Banking group with 3 poles, 3 provinces, internal apps, cross-province replication (48 nodes)"
     },
+    "bankingOnline": {
+      "name": "Online Banking (demo)",
+      "description": "Focused banking journey: clients → WAF/CDN/API GW → Auth + 2 services → DB + Redis + Kafka + Circuit Breaker to External Payment (14 nodes)"
+    },
     "confirmReplace": "Replace current architecture?"
   },
   "chaos": {
@@ -485,6 +489,76 @@
       "portMappingNotChild": "Port mapping {port} on \"{label}\" references a container that is not a child of this server"
     }
   },
+  "owasp": {
+    "drawer": {
+      "title": "OWASP Validation",
+      "scoreLabel": "Rules passed",
+      "runValidation": "Run validation",
+      "noViolations": "No violations detected — well done!",
+      "exportMarkdown": "Export as Markdown",
+      "lastEvaluated": "Evaluated at",
+      "remediationLabel": "Remediation"
+    },
+    "severity": {
+      "CRITICAL": "Critical",
+      "HIGH": "High",
+      "MEDIUM": "Medium",
+      "LOW": "Low",
+      "INFO": "Info"
+    },
+    "rules": {
+      "auth001": {
+        "title": "Public endpoints must require authentication",
+        "description": "An endpoint reachable from a client without authentication exposes all data without access control.",
+        "remediation": "Configure authType=jwt (or oauth2) on the public API Gateway / HTTP Server / API Service."
+      },
+      "auth002": {
+        "title": "MFA enabled on Identity Providers",
+        "description": "An IdP without MFA is vulnerable to credential stuffing and password spraying.",
+        "remediation": "Enable mfaEnabled: true on the Identity Provider component."
+      },
+      "net001": {
+        "title": "WAF in front of public APIs",
+        "description": "An endpoint reachable from a client without an upstream WAF is vulnerable to OWASP Top 10 attacks (injection, XSS, etc.).",
+        "remediation": "Insert a WAF component on the path client → endpoint."
+      },
+      "net002": {
+        "title": "Databases must never be in DMZ zone",
+        "description": "A database placed in DMZ is potentially exposed to external traffic — defense in depth violation.",
+        "remediation": "Move the database to a Backend or Data zone."
+      },
+      "net003": {
+        "title": "Sensitive components must be inside a network zone",
+        "description": "Database, Cache and Identity Provider must be contained inside a network zone (segmentation).",
+        "remediation": "Drag the component inside a zone (Backend, Data, or private Backend)."
+      },
+      "rate001": {
+        "title": "Rate limiting required on public gateways",
+        "description": "A public API Gateway without rate limiting is exposed to DoS, brute force, and scraping.",
+        "remediation": "Enable rateLimiting.enabled=true on the API Gateway and configure requestsPerSecond."
+      },
+      "res001": {
+        "title": "Circuit breaker required on calls to external systems",
+        "description": "An internal service calling an external system without a circuit breaker can cascade its failure.",
+        "remediation": "Insert a Circuit Breaker between the internal service and the external call."
+      },
+      "res002": {
+        "title": "Connection pool configured on databases",
+        "description": "A DB without a configured pool opens connections on demand, risking resource exhaustion.",
+        "remediation": "Configure connectionPool.maxConnections on the database."
+      },
+      "dlq001": {
+        "title": "Dead Letter Queue enabled on Message Queues",
+        "description": "An MQ without a DLQ loses messages that fail beyond the max retry count.",
+        "remediation": "Enable deadLetterEnabled: true on the Message Queue."
+      },
+      "dos001": {
+        "title": "Reasonable auth failure rate",
+        "description": "An authFailureRate > 5% is abnormally high and may indicate an attack or misconfiguration.",
+        "remediation": "Lower authFailureRate to <5% in production. Audit the cause if real."
+      }
+    }
+  },
   "onboarding": {
     "welcome": {
       "title": "Welcome to Architecture Simulator",
@@ -597,7 +671,8 @@
     "next": "Next",
     "start": "Start",
     "finish": "Finish",
-    "stepOf": "of"
+    "stepOf": "of",
+    "skip": "Skip tour"
   },
   "projects": {
     "title": "Projects",

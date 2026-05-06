@@ -27,6 +27,9 @@ import type { HttpServerNodeData, HttpClientNodeData, ProcessingComplexity, Clie
 import { complexityMultipliers } from '@/types';
 import type { ConnectionProtocol, ComponentType } from '@/types';
 import { validateConnection } from '@/lib/connection-validator';
+import { incomingEdges as findIncomingEdges, outgoingEdges as findOutgoingEdges, getNodeById } from '@/lib/graph-helpers';
+import type { KafkaTopic } from '@/types';
+import { defaultKafkaTopic } from '@/types';
 import {
   type LoadBalancerProvider,
   type ApiGatewayProvider,
@@ -254,6 +257,52 @@ export function PropertiesPanel() {
                 </p>
               </div>
             </div>
+
+            {/* Kafka Topic — visible quand l'edge connecte un MQ kafka */}
+            {(() => {
+              const sourceMQData = sourceNode?.type === 'message-queue' ? sourceNode.data as MessageQueueNodeData : undefined;
+              const targetMQData = targetNode?.type === 'message-queue' ? targetNode.data as MessageQueueNodeData : undefined;
+              const kafkaMQ = sourceMQData?.queueType === 'kafka' ? sourceMQData
+                : targetMQData?.queueType === 'kafka' ? targetMQData
+                : undefined;
+              if (!kafkaMQ) return null;
+              const availableTopics = kafkaMQ.topics ?? [];
+              const NONE_VALUE = '__none__';
+              return (
+                <div className="space-y-3">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Topic Kafka
+                  </span>
+                  <Separator />
+                  <div className="space-y-2">
+                    <Label>Topic abonné/publié</Label>
+                    {availableTopics.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        Aucun topic défini sur le broker. Sélectionnez le nœud Kafka pour en créer.
+                      </p>
+                    ) : (
+                      <Select
+                        value={edgeData.topic || NONE_VALUE}
+                        onValueChange={(value) => updateEdgeData({ topic: value === NONE_VALUE ? undefined : value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Aucun topic" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_VALUE}>Aucun (pas de routing)</SelectItem>
+                          {availableTopics.map((t) => (
+                            <SelectItem key={t.name} value={t.name}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Détermine quel topic est publié (edge → Kafka) ou consommé (Kafka → edge).
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Edge Style */}
             <div className="space-y-3">
@@ -492,6 +541,9 @@ export function PropertiesPanel() {
             <MessageQueueConfig
               data={selectedNode.data as MessageQueueNodeData}
               onUpdate={updateNodeData}
+              nodeId={selectedNode.id}
+              nodes={nodes}
+              edges={edges}
             />
           )}
 
@@ -502,15 +554,19 @@ export function PropertiesPanel() {
               onUpdate={updateNodeData}
               hasParent={!!selectedNode.parentId}
               availableServices={nodes
-                .filter((n): n is typeof n & { data: HttpServerNodeData } =>
-                  n.type === 'http-server' &&
-                  typeof (n.data as HttpServerNodeData).serviceName === 'string' &&
-                  (n.data as HttpServerNodeData).serviceName !== ''
-                )
+                .filter((n) => {
+                  if (
+                    n.type !== 'http-server' &&
+                    n.type !== 'api-service' &&
+                    n.type !== 'identity-provider'
+                  ) return false;
+                  const d = n.data as { serviceName?: unknown };
+                  return typeof d.serviceName === 'string' && d.serviceName !== '';
+                })
                 .map((n) => ({
                   id: n.id,
-                  serviceName: n.data.serviceName as string,
-                  label: n.data.label as string,
+                  serviceName: (n.data as HttpServerNodeData | ApiServiceNodeData | IdentityProviderNodeData).serviceName as string,
+                  label: (n.data as HttpServerNodeData | ApiServiceNodeData | IdentityProviderNodeData).label,
                 }))}
             />
           )}
@@ -2559,9 +2615,12 @@ function LoadBalancerConfig({ data, onUpdate, hasParent }: LoadBalancerConfigPro
 interface MessageQueueConfigProps {
   data: MessageQueueNodeData;
   onUpdate: (updates: Partial<MessageQueueNodeData>) => void;
+  nodeId: string;
+  nodes: GraphNode[];
+  edges: import('@/types/graph').GraphEdge[];
 }
 
-function MessageQueueConfig({ data, onUpdate }: MessageQueueConfigProps) {
+function MessageQueueConfig({ data, onUpdate, nodeId, nodes, edges }: MessageQueueConfigProps) {
   const config = {
     ...defaultMessageQueueNodeData,
     ...data,
@@ -2605,8 +2664,119 @@ function MessageQueueConfig({ data, onUpdate }: MessageQueueConfigProps) {
     });
   };
 
+  // Auto-detection des services connectes via la topologie du graphe
+  const publishers = findIncomingEdges(edges, nodeId)
+    .map((e) => ({ edge: e, node: getNodeById(nodes, e.source) }))
+    .filter((p): p is { edge: typeof p.edge; node: GraphNode } => !!p.node);
+  const consumers = findOutgoingEdges(edges, nodeId)
+    .map((e) => ({ edge: e, node: getNodeById(nodes, e.target) }))
+    .filter((c): c is { edge: typeof c.edge; node: GraphNode } => !!c.node);
+
+  const isKafka = config.queueType === 'kafka';
+  const topics: KafkaTopic[] = config.topics ?? [];
+
+  const updateTopics = (next: KafkaTopic[]) => {
+    onUpdate({ topics: next });
+  };
+  const addTopic = () => {
+    const baseName = 'topic';
+    let n = topics.length + 1;
+    let name = `${baseName}-${n}`;
+    while (topics.some((t) => t.name === name)) {
+      n++;
+      name = `${baseName}-${n}`;
+    }
+    updateTopics([...topics, { ...defaultKafkaTopic, name }]);
+  };
+  const updateTopicAt = (index: number, patch: Partial<KafkaTopic>) => {
+    updateTopics(topics.map((t, i) => (i === index ? { ...t, ...patch } : t)));
+  };
+  const removeTopicAt = (index: number) => {
+    updateTopics(topics.filter((_, i) => i !== index));
+  };
+
   return (
     <>
+      {/* Services connectes (auto-detectes) */}
+      <div className="space-y-3">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          Services connectés
+        </span>
+        <Separator />
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm">Émetteurs (publishers)</Label>
+              <Badge variant="outline">{publishers.length}</Badge>
+            </div>
+            {publishers.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                Aucun émetteur connecté. Ajoutez une edge entrante depuis un service.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {publishers.map(({ edge, node }) => {
+                  const label = (node.data as { label?: string }).label || node.id;
+                  const edgeTopic = (edge.data as { topic?: string } | undefined)?.topic;
+                  return (
+                    <li
+                      key={edge.id}
+                      className="flex items-center justify-between text-xs px-2 py-1.5 rounded bg-muted/30 border"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="font-medium truncate">{label}</span>
+                        <span className="text-muted-foreground shrink-0">({node.type})</span>
+                      </div>
+                      {isKafka && edgeTopic && (
+                        <Badge variant="secondary" className="ml-2 shrink-0">
+                          {edgeTopic}
+                        </Badge>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm">Consommateurs (consumers)</Label>
+              <Badge variant="outline">{consumers.length}</Badge>
+            </div>
+            {consumers.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                Aucun consommateur connecté. Ajoutez une edge sortante vers un service.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {consumers.map(({ edge, node }) => {
+                  const label = (node.data as { label?: string }).label || node.id;
+                  const edgeTopic = (edge.data as { topic?: string } | undefined)?.topic;
+                  return (
+                    <li
+                      key={edge.id}
+                      className="flex items-center justify-between text-xs px-2 py-1.5 rounded bg-muted/30 border"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="font-medium truncate">{label}</span>
+                        <span className="text-muted-foreground shrink-0">({node.type})</span>
+                      </div>
+                      {isKafka && edgeTopic && (
+                        <Badge variant="secondary" className="ml-2 shrink-0">
+                          {edgeTopic}
+                        </Badge>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Queue Type */}
       <div className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
@@ -2630,9 +2800,20 @@ function MessageQueueConfig({ data, onUpdate }: MessageQueueConfigProps) {
 
       {/* Mode */}
       <div className="space-y-3">
-        <span className="text-xs text-muted-foreground uppercase tracking-wide">
-          Mode de file
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">
+            Mode de propagation
+          </span>
+          {config.queueType === 'kafka' && (
+            <Badge variant="outline" className="text-[10px]">Pub/Sub par topic recommandé</Badge>
+          )}
+          {config.queueType === 'sqs' && (
+            <Badge variant="outline" className="text-[10px]">FIFO standard</Badge>
+          )}
+          {config.queueType === 'rabbitmq' && (
+            <Badge variant="outline" className="text-[10px]">Tous modes supportés</Badge>
+          )}
+        </div>
         <Separator />
         <Select
           value={config.mode}
@@ -2652,7 +2833,90 @@ function MessageQueueConfig({ data, onUpdate }: MessageQueueConfigProps) {
           {config.mode === 'priority' && 'Les messages sont traités par ordre de priorité'}
           {config.mode === 'pubsub' && 'Les messages sont diffusés à tous les abonnés'}
         </p>
+        {config.queueType === 'kafka' && config.mode !== 'pubsub' && (
+          <p className="text-xs text-signal-warning bg-signal-warning/10 border border-signal-warning/20 rounded px-2 py-1.5">
+            Kafka utilise typiquement le mode Pub/Sub par topic. Le mode courant peut donner des résultats inattendus.
+          </p>
+        )}
       </div>
+
+      {/* Topics Kafka — visible uniquement si queueType === 'kafka' */}
+      {isKafka && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">
+              Topics Kafka
+            </span>
+            <Badge variant="outline">{topics.length}</Badge>
+          </div>
+          <Separator />
+          <p className="text-xs text-muted-foreground">
+            Les publishers et consumers s&apos;abonnent à un topic via la propriété de leur edge.
+          </p>
+          <div className="space-y-3">
+            {topics.length === 0 && (
+              <p className="text-xs text-muted-foreground italic">
+                Aucun topic défini. Ajoutez-en un pour activer le routing par topic.
+              </p>
+            )}
+            {topics.map((topic, idx) => (
+              <div key={idx} className="space-y-2 p-3 rounded border bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={topic.name}
+                    onChange={(e) => updateTopicAt(idx, { name: e.target.value })}
+                    placeholder="Nom du topic"
+                    className="h-8 text-sm"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeTopicAt(idx)}
+                    className="h-8 w-8 shrink-0"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <Label className="text-xs">Partitions</Label>
+                    <span className="text-muted-foreground">{topic.partitions}</span>
+                  </div>
+                  <Slider
+                    value={[topic.partitions]}
+                    onValueChange={([value]) => updateTopicAt(idx, { partitions: value })}
+                    min={1}
+                    max={50}
+                    step={1}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <Label className="text-xs">Rétention (heures)</Label>
+                    <span className="text-muted-foreground">{Math.round(topic.retentionMs / 3600000)}h</span>
+                  </div>
+                  <Slider
+                    value={[Math.round(topic.retentionMs / 3600000)]}
+                    onValueChange={([value]) => updateTopicAt(idx, { retentionMs: value * 3600000 })}
+                    min={1}
+                    max={168}
+                    step={1}
+                  />
+                </div>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={addTopic}
+              className="w-full"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Ajouter un topic
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Configuration */}
       <div className="space-y-3">
@@ -2761,13 +3025,13 @@ function MessageQueueConfig({ data, onUpdate }: MessageQueueConfigProps) {
       {/* Consumers */}
       <div className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
-          Consommateurs
+          Paramètres de consommation
         </span>
         <Separator />
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <label>Nombre de consommateurs</label>
+              <label>Instances de consumer (parallélisme)</label>
               <span className="text-muted-foreground">{consumerCount}</span>
             </div>
             <Slider
@@ -2778,6 +3042,9 @@ function MessageQueueConfig({ data, onUpdate }: MessageQueueConfigProps) {
               max={100}
               step={1}
             />
+            <p className="text-xs text-muted-foreground">
+              Nombre de threads/instances parallèles par service consommateur connecté.
+            </p>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
@@ -3236,7 +3503,7 @@ function ApiGatewayConfig({ data, onUpdate, hasParent, availableServices }: ApiG
 
         {availableServices.length === 0 ? (
           <p className="text-xs text-muted-foreground italic">
-            Aucun service disponible. Configurez d'abord le "Nom du service" sur vos serveurs HTTP.
+            Aucun service disponible. Configurez d'abord le "Nom du service" sur vos serveurs HTTP ou vos API services.
           </p>
         ) : config.routeRules.length === 0 ? (
           <p className="text-xs text-muted-foreground italic">
@@ -4232,6 +4499,17 @@ function IdentityProviderConfig({ data, onUpdate }: { data: IdentityProviderNode
     <div className="space-y-3">
       <span className="text-xs text-muted-foreground uppercase tracking-wide">Identity Provider</span>
       <Separator />
+      <div className="space-y-2">
+        <Label>Nom du service</Label>
+        <Input
+          value={config.serviceName ?? ''}
+          onChange={(e) => onUpdate({ serviceName: e.target.value })}
+          placeholder="idp"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Utilise par l&apos;API Gateway pour cibler cet IdP via une regle de routage (ex: /auth/*).
+        </p>
+      </div>
       <div className="space-y-2">
         <Label>Fournisseur</Label>
         <Select value={config.providerType} onValueChange={(v) => handleProviderChange(v as IdentityProviderType)}>

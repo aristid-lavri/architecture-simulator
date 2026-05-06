@@ -9,6 +9,7 @@ import {
   createRequestSentEvent,
   createErrorEvent,
   createHandlerDecisionEvent,
+  createStateTransitionEvent,
   simulationEvents,
 } from './events';
 import type { RequestChainManager, RequestChain } from './RequestChainManager';
@@ -61,6 +62,25 @@ export interface ClientGroupSimulatorCallbacks {
 }
 
 /**
+ * État d'authentification par client virtuel (Task 22).
+ *
+ * Pendant qu'un client virtuel acquiert un token, ses requêtes data sont
+ * mises en queue pour être drainées (en parallèle) une fois le token reçu.
+ */
+interface PendingDataRequest {
+  group: GraphNode;
+  edge: GraphEdge;
+  data: ClientGroupNodeData;
+  virtualClientId: number;
+}
+
+interface VirtualClientAuthState {
+  status: 'idle' | 'authenticating' | 'authenticated';
+  pendingRequests: PendingDataRequest[];
+  token?: SimulatedToken;
+}
+
+/**
  * Gere le stress testing avec les groupes de clients virtuels.
  *
  * Responsabilites :
@@ -82,6 +102,12 @@ export class ClientGroupSimulator {
   private dispatcher: RequestDispatcher;
   private tokenStore: TokenStore;
   private clientGroupTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
+  /**
+   * État d'auth par client virtuel (clé = `${groupId}:${virtualClientId}`).
+   * Permet de queuer les requêtes pendant l'acquisition du token, puis de
+   * draîner la queue en parallèle quand le token arrive (Task 22).
+   */
+  private authStateByVirtualClient: Map<string, VirtualClientAuthState> = new Map();
   private getState: () => string;
   private getNodeProcessingDelay: (node: GraphNode, context?: import('./handlers/types').RequestContext) => number;
   private resolveAuthToken: (
@@ -94,7 +120,7 @@ export class ClientGroupSimulator {
     idpEdge: GraphEdge,
     idpNode: GraphNode,
     virtualClientId: number | undefined,
-    callback: (token: SimulatedToken) => void
+    callback: (token: SimulatedToken | null) => void
   ) => void;
   private validateTokenViaIdP: (
     gateway: GraphNode,
@@ -106,6 +132,9 @@ export class ClientGroupSimulator {
     onInvalid: () => void
   ) => void;
   private findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null;
+  private getNodeFault: (nodeId: string) => 'down' | 'degraded' | null;
+  private isNodeIsolated: (nodeId: string) => boolean;
+  private isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null;
 
   constructor(
     metrics: MetricsCollector,
@@ -128,7 +157,7 @@ export class ClientGroupSimulator {
       idpEdge: GraphEdge,
       idpNode: GraphNode,
       virtualClientId: number | undefined,
-      callback: (token: SimulatedToken) => void
+      callback: (token: SimulatedToken | null) => void
     ) => void,
     validateTokenViaIdP: (
       gateway: GraphNode,
@@ -140,6 +169,9 @@ export class ClientGroupSimulator {
       onInvalid: () => void
     ) => void,
     findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null,
+    getNodeFault: (nodeId: string) => 'down' | 'degraded' | null,
+    isNodeIsolated: (nodeId: string) => boolean,
+    isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null,
   ) {
     this.metrics = metrics;
     this.callbacks = callbacks;
@@ -155,6 +187,9 @@ export class ClientGroupSimulator {
     this.acquireToken = acquireToken;
     this.validateTokenViaIdP = validateTokenViaIdP;
     this.findConnectedIdP = findConnectedIdP;
+    this.getNodeFault = getNodeFault;
+    this.isNodeIsolated = isNodeIsolated;
+    this.isParentFaulted = isParentFaulted;
   }
 
   setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[], nodeMap?: Map<string, GraphNode>): void {
@@ -253,7 +288,36 @@ export class ClientGroupSimulator {
   }
 
   /**
+   * Clé unique par client virtuel pour l'état d'auth.
+   */
+  private authStateKey(groupId: string, virtualClientId: number): string {
+    return `${groupId}:${virtualClientId}`;
+  }
+
+  /**
+   * Récupère ou crée l'état d'auth d'un client virtuel.
+   */
+  private getOrCreateAuthState(groupId: string, virtualClientId: number): VirtualClientAuthState {
+    const key = this.authStateKey(groupId, virtualClientId);
+    let state = this.authStateByVirtualClient.get(key);
+    if (!state) {
+      state = { status: 'idle', pendingRequests: [] };
+      this.authStateByVirtualClient.set(key, state);
+    }
+    return state;
+  }
+
+  /**
    * Envoie une requete depuis un client group.
+   *
+   * Logique de queueing par client virtuel (Task 22) :
+   * - Si l'auth est déjà acquise (token valide en cache) → envoi immédiat
+   * - Si l'auth est en cours → queue la requête (sera drainée à la fin de l'auth)
+   * - Sinon → kick off l'acquisition de token, queue la requête courante
+   *
+   * À la résolution du token (qui peut emprunter un chemin multi-hop via le
+   * dispatcher), toutes les requêtes en attente du même client virtuel sont
+   * envoyées en parallèle (concurrent burst).
    */
   sendClientGroupRequest(
     group: GraphNode,
@@ -268,12 +332,30 @@ export class ClientGroupSimulator {
     if (!preAcquiredToken) {
       const authResult = this.resolveAuthToken(group, targetNode, virtualClientId);
       if (authResult.needsAsync) {
-        this.acquireToken(group, authResult.idpEdge, authResult.idp, virtualClientId, (token) => {
-          this.sendClientGroupRequest(group, edge, data, virtualClientId, token);
-        });
-        return;
+        // Logique de queueing par client virtuel (Task 22)
+        const authState = this.getOrCreateAuthState(group.id, virtualClientId);
+
+        if (authState.status === 'authenticated' && authState.token
+            && authState.token.expiresAt > Date.now()) {
+          // Token déjà acquis et valide → envoyer immédiatement
+          preAcquiredToken = authState.token;
+        } else if (authState.status === 'authenticating') {
+          // Acquisition en cours → queue la requête, sera drainée plus tard
+          authState.pendingRequests.push({ group, edge, data, virtualClientId });
+          return;
+        } else {
+          // Premier client à demander un token → kick off l'acquisition
+          authState.status = 'authenticating';
+          authState.pendingRequests.push({ group, edge, data, virtualClientId });
+
+          this.acquireToken(group, authResult.idpEdge, authResult.idp, virtualClientId, (token) => {
+            this.handleAuthCompletion(group.id, virtualClientId, token);
+          });
+          return;
+        }
+      } else {
+        preAcquiredToken = authResult.token;
       }
-      preAcquiredToken = authResult.token;
     }
 
     // Check server capacity
@@ -416,9 +498,40 @@ export class ClientGroupSimulator {
     }
 
     this.callbacks.onNodeStatusChange(clientGroup.id, 'idle');
-    this.callbacks.onNodeStatusChange(server.id, 'processing');
 
     const serverState = this.serverStateManager.serverStates.get(server.id);
+
+    // Chaos mode checks (mirrors RequestDispatcher.handleChainRequestArrival
+    // and SimulationEngine.handleRequestArrival). Without this block, a node
+    // directly connected to a client-group bypasses the fault check, since
+    // ClientGroupSimulator owns the first-hop arrival flow.
+    const serverFault = this.getNodeFault(server.id);
+    const parentFault = this.isParentFaulted(server.id);
+    if (serverFault === 'down' || this.isNodeIsolated(server.id) || parentFault === 'down') {
+      this.callbacks.onNodeStatusChange(server.id, 'down');
+      this.metrics.recordRejection();
+      this.metrics.recordResponse(false, Date.now() - (chain?.startTime || Date.now()));
+      this.callbacks.onMetricsUpdate();
+      simulationEvents.emit(createErrorEvent(server.id, 'node-down', chainId));
+      simulationEvents.emit(createStateTransitionEvent(server.id, 'node-down', 'processing', 'down', chainId));
+      this.dispatcher.emitSpanStart(server.id, server.type ?? 'default', chainId);
+      this.dispatcher.emitSpanEnd(server.id, chainId, true);
+      // Symmetric cleanup: sendClientGroupRequest:455-461 added the request to
+      // serverState.activeRequests; remove it here so the utilization gauge
+      // doesn't drift up forever when the node is down/isolated.
+      if (serverState) {
+        serverState.activeRequests.delete(requestParticle.id);
+        serverState.utilization.activeConnections = serverState.activeRequests.size;
+      }
+      this.sendChainResponseWithVirtualClient(chainId, server, virtualClientId);
+      return;
+    }
+
+    const effectiveFault = serverFault === 'degraded' ? 'degraded' : parentFault === 'degraded' ? 'degraded' : null;
+    if (effectiveFault === 'degraded') {
+      simulationEvents.emit(createStateTransitionEvent(server.id, 'node-degraded', 'processing', 'degraded', chainId));
+    }
+    this.callbacks.onNodeStatusChange(server.id, effectiveFault === 'degraded' ? 'degraded' : 'processing');
 
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const context: import('./handlers/types').RequestContext = {
@@ -430,6 +543,7 @@ export class ClientGroupSimulator {
       edgePath: chain?.edgePath || [edge.id],
       requestPath: chain?.requestPath,
       targetPort: (edgeData?.targetPort as number) ?? undefined,
+      incomingTopic: (edgeData?.topic as string) ?? undefined,
       httpMethod: chain?.httpMethod,
       queryType: chain?.queryType,
       contentType: chain?.contentType,
@@ -524,9 +638,51 @@ export class ClientGroupSimulator {
     this.chainManager.sendChainResponse(chainId, terminalNode);
   }
 
+  /**
+   * Appelé quand l'acquisition d'un token se termine (Task 22).
+   *
+   * Met à jour l'état d'auth du client virtuel et draîne la queue des requêtes
+   * en attente en parallèle (concurrent burst).
+   *
+   * Si le token est null (échec d'acquisition), enregistre une rejection pour
+   * chaque requête en attente et n'envoie rien (sinon le drain provoquerait
+   * une réacquisition en boucle).
+   */
+  private handleAuthCompletion(
+    groupId: string,
+    virtualClientId: number,
+    token: SimulatedToken | null,
+  ): void {
+    const key = this.authStateKey(groupId, virtualClientId);
+    const authState = this.authStateByVirtualClient.get(key);
+    if (!authState) return;
+
+    const queued = authState.pendingRequests;
+    authState.pendingRequests = [];
+
+    if (token) {
+      authState.status = 'authenticated';
+      authState.token = token;
+      // Draîner la queue : envoyer toutes les requêtes en parallèle (concurrent burst)
+      for (const req of queued) {
+        this.sendClientGroupRequest(req.group, req.edge, req.data, req.virtualClientId, token);
+      }
+    } else {
+      // Échec d'acquisition : enregistrer rejection pour chaque requête en attente
+      // Retour à 'idle' pour permettre une nouvelle tentative au prochain tick
+      authState.status = 'idle';
+      authState.token = undefined;
+      for (const _req of queued) {
+        this.metrics.recordRejection('auth-failure');
+      }
+      this.callbacks.onMetricsUpdate();
+    }
+  }
+
   /** Arrete et nettoie tous les timers de client groups. */
   stop(): void {
     this.clientGroupTimers.forEach((timer) => clearInterval(timer));
     this.clientGroupTimers.clear();
+    this.authStateByVirtualClient.clear();
   }
 }

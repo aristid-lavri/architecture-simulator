@@ -365,6 +365,10 @@
       "name": "Banque Multi-Pôles",
       "description": "Groupe bancaire 3 pôles, 3 provinces, apps internes, réplication inter-provinciale (48 nœuds)"
     },
+    "bankingOnline": {
+      "name": "Banque Online (démo)",
+      "description": "Parcours bancaire focusé : clients → WAF/CDN/API GW → Auth + 2 services → DB + Redis + Kafka + Circuit Breaker vers Paiement Externe (14 nœuds)"
+    },
     "confirmReplace": "Remplacer l'architecture actuelle?"
   },
   "chaos": {
@@ -485,6 +489,76 @@
       "portMappingNotChild": "Le port mapping {port} sur \"{label}\" référence un container qui n'est pas un enfant de ce serveur"
     }
   },
+  "owasp": {
+    "drawer": {
+      "title": "Validation OWASP",
+      "scoreLabel": "Règles validées",
+      "runValidation": "Lancer la validation",
+      "noViolations": "Aucune violation détectée — bravo !",
+      "exportMarkdown": "Exporter en Markdown",
+      "lastEvaluated": "Évalué à",
+      "remediationLabel": "Remédiation"
+    },
+    "severity": {
+      "CRITICAL": "Critique",
+      "HIGH": "Élevée",
+      "MEDIUM": "Moyenne",
+      "LOW": "Faible",
+      "INFO": "Info"
+    },
+    "rules": {
+      "auth001": {
+        "title": "Endpoints publics doivent exiger une authentification",
+        "description": "Un endpoint joignable depuis un client mais sans authentification expose toutes les données sans contrôle.",
+        "remediation": "Configurez authType=jwt (ou oauth2) sur l'API Gateway / HTTP Server / API Service public."
+      },
+      "auth002": {
+        "title": "MFA activé sur les fournisseurs d'identité",
+        "description": "Un IDP sans MFA est vulnérable au credential stuffing et au password spraying.",
+        "remediation": "Activez mfaEnabled: true sur le composant Identity Provider."
+      },
+      "net001": {
+        "title": "WAF en frontal des APIs publiques",
+        "description": "Un endpoint joignable depuis un client sans WAF en amont est vulnérable aux attaques OWASP Top 10 (injection, XSS, etc.).",
+        "remediation": "Insérez un composant WAF dans le chemin client → endpoint."
+      },
+      "net002": {
+        "title": "Bases de données interdites en zone DMZ",
+        "description": "Une base de données placée en DMZ est exposée potentiellement au trafic externe — violation de défense en profondeur.",
+        "remediation": "Déplacez la database dans une zone Backend ou Data."
+      },
+      "net003": {
+        "title": "Composants sensibles doivent être en zone réseau",
+        "description": "Database, Cache et Identity Provider doivent être contenus dans une zone réseau (segmentation).",
+        "remediation": "Glissez le composant à l'intérieur d'une zone (Backend, Data ou Backend privé)."
+      },
+      "rate001": {
+        "title": "Rate limiting obligatoire sur les gateways publiques",
+        "description": "Une API Gateway publique sans rate limiting est exposée au DoS, brute force, scraping.",
+        "remediation": "Activez rateLimiting.enabled=true sur l'API Gateway et configurez requestsPerSecond."
+      },
+      "res001": {
+        "title": "Circuit breaker requis sur les appels vers systèmes externes",
+        "description": "Un service interne qui appelle un système externe sans circuit breaker peut cascader sa panne.",
+        "remediation": "Insérez un Circuit Breaker entre le service interne et l'appel externe."
+      },
+      "res002": {
+        "title": "Pool de connexions configuré sur les bases de données",
+        "description": "Une DB sans pool configuré ouvre des connexions à la demande, risque d'épuisement des ressources.",
+        "remediation": "Configurez connectionPool.maxConnections sur la database."
+      },
+      "dlq001": {
+        "title": "Dead Letter Queue activée sur les Message Queues",
+        "description": "Une MQ sans DLQ perd les messages qui échouent au-delà du nombre max de retries.",
+        "remediation": "Activez deadLetterEnabled: true sur le Message Queue."
+      },
+      "dos001": {
+        "title": "Auth failure rate raisonnable",
+        "description": "Un authFailureRate > 5% est anormalement élevé et peut indiquer une attaque ou une mauvaise config.",
+        "remediation": "Diminuez authFailureRate à <5% en production. Auditez la cause si réelle."
+      }
+    }
+  },
   "onboarding": {
     "welcome": {
       "title": "Bienvenue dans Architecture Simulator",
@@ -597,7 +671,8 @@
     "next": "Suivant",
     "start": "Commencer",
     "finish": "Terminer",
-    "stepOf": "sur"
+    "stepOf": "sur",
+    "skip": "Passer le tour"
   },
   "projects": {
     "title": "Projets",

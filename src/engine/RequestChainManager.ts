@@ -40,6 +40,18 @@ export interface RequestChain {
     issuedAt: number;
     expiresAt: number;
   };
+
+  /** Marque la chain comme requête d'acquisition de token (Task 22) */
+  isAuthRequest?: boolean;
+
+  /**
+   * Chain fire-and-forget: émise par un broker (MQ) vers un consumer.
+   * Quand cette chain termine, AUCUN particle de réponse n'est emis sur le
+   * dernier saut consumer → broker (le consumer ne "repond" pas au broker).
+   * Le reste du retour est preserve (DB → consumer reste visible si le
+   * consumer forward vers une DB par exemple).
+   */
+  fireAndForget?: boolean;
 }
 
 /**
@@ -49,8 +61,12 @@ export interface RequestChainCallbacks {
   onNodeStatusChange: (nodeId: string, status: import('@/types').NodeStatus) => void;
   onMetricsUpdate: () => void;
   onSimulationComplete?: () => void;
-  /** Appele quand une chaine a fini (retour au noeud d'origine). */
-  onChainCompleted: (chainId: string) => void;
+  /**
+   * Appele quand une chaine a fini (retour au noeud d'origine).
+   * Le snapshot de la chain est fourni AVANT suppression pour permettre aux consommateurs
+   * (ex: flux d'acquisition de token) de lire `chain.authToken` ou autres champs.
+   */
+  onChainCompleted: (chainId: string, chainSnapshot?: RequestChain, isError?: boolean) => void;
 }
 
 /**
@@ -209,9 +225,11 @@ export class RequestChainManager {
             }
           }, 300 / this.speed);
         }
+        // Capturer un snapshot AVANT suppression pour les consommateurs externes
+        const chainSnapshot = chain;
         this.activeChains.delete(chainId);
 
-        this.callbacks.onChainCompleted(chainId);
+        this.callbacks.onChainCompleted(chainId, chainSnapshot, isError);
       }
       return;
     }
@@ -225,6 +243,17 @@ export class RequestChainManager {
 
     if (!currentNode || !previousNode) return;
 
+    // Fire-and-forget: le dernier saut backward (consumer → broker) ne doit
+    // PAS emettre de particle. Le consumer ne "repond" pas au broker — la
+    // chain termine silencieusement. Les sauts intermediaires (ex: DB →
+    // consumer) restent visibles.
+    if (chain.fireAndForget && currentEdgeIndex === 0) {
+      const chainSnapshot = chain;
+      this.activeChains.delete(chainId);
+      this.callbacks.onChainCompleted(chainId, chainSnapshot, isError);
+      return;
+    }
+
     const hierarchicalLatency = this.getHierarchicalLatency(currentNodeId, previousNodeId);
     const responseDuration = 1500 / this.speed + hierarchicalLatency;
     const particleType: ParticleType = isError ? 'response-error' : 'response-success';
@@ -237,7 +266,7 @@ export class RequestChainManager {
       progress: 0,
       duration: responseDuration,
       startTime: Date.now(),
-      data: { chainId },
+      data: { chainId, authenticated: !!chain.authToken },
     };
 
     this.particleManager.add(particle);

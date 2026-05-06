@@ -19,6 +19,7 @@ import type { RequestChainManager, RequestChain } from './RequestChainManager';
 import type { ServerStateManager } from './ServerStateManager';
 import type { ApiGatewayNodeData } from '@/types';
 import { CacheManager } from './CacheManager';
+import { CacheHandler } from './handlers/CacheHandler';
 
 /**
  * Callbacks dont le RequestDispatcher a besoin pour notifier React et l'engine.
@@ -227,6 +228,13 @@ export class RequestDispatcher {
               virtualClientId: chain.virtualClientId,
               startTime: Date.now(),
               requestPath: chain.requestPath,
+              httpMethod: chain.httpMethod,
+              queryType: chain.queryType,
+              contentType: chain.contentType,
+              payloadSizeBytes: chain.payloadSizeBytes,
+              sourceIP: chain.sourceIP,
+              authToken: chain.authToken,
+              isAuthRequest: chain.isAuthRequest,
             };
             this.chainManager.createChain(forkedChain);
             effectiveChainId = forkedChainId;
@@ -244,6 +252,11 @@ export class RequestDispatcher {
 
           const zoneLatency = this.getHierarchicalLatency(sourceNode.id, targetNode.id);
           const requestDuration = (target.delay ?? 1500) / this.speed + zoneLatency;
+          // Read authentication state from the effective chain AFTER any
+          // contextEnrichment was applied above (e.g. IdP-issued token on the
+          // forwarded hop). This ensures the visual padlock appears as soon as
+          // the chain carries a token.
+          const effectiveChainForAuth = this.chainManager.getChain(effectiveChainId);
           const particle: Particle = {
             id: generateParticleId(),
             edgeId: target.edgeId,
@@ -252,7 +265,10 @@ export class RequestDispatcher {
             progress: 0,
             duration: requestDuration,
             startTime: Date.now(),
-            data: { chainId: effectiveChainId },
+            data: {
+              chainId: effectiveChainId,
+              authenticated: !!effectiveChainForAuth?.authToken,
+            },
           };
 
           this.particleManager.add(particle);
@@ -266,6 +282,12 @@ export class RequestDispatcher {
         break;
 
       case 'respond':
+        // Propager le contextEnrichment du handler sur la chain (ex: authToken généré par l'IdP terminal)
+        if (decision.contextEnrichment && chain) {
+          if (decision.contextEnrichment.authToken) {
+            chain.authToken = decision.contextEnrichment.authToken;
+          }
+        }
         if (decision.delay) {
           setTimeout(() => {
             this.callbacks.onNodeStatusChange(sourceNode.id, decision.isError ? 'error' : 'success');
@@ -311,7 +333,7 @@ export class RequestDispatcher {
             progress: 0,
             duration: requestDuration,
             startTime: Date.now(),
-            data: { chainId },
+            data: { chainId, authenticated: !!chain?.authToken },
           };
 
           this.particleManager.add(particle);
@@ -339,6 +361,9 @@ export class RequestDispatcher {
             edgePath: [],
             startTime: Date.now(),
             requestPath: context.requestPath,
+            // Fire-and-forget: le consumer ne repondra pas au broker
+            // (pas de particle backward sur le dernier saut consumer → MQ).
+            fireAndForget: true,
           };
           this.chainManager.createChain(notifyChain);
 
@@ -351,7 +376,7 @@ export class RequestDispatcher {
             progress: 0,
             duration: requestDuration,
             startTime: Date.now(),
-            data: { chainId: notifyChainId },
+            data: { chainId: notifyChainId, authenticated: !!chain?.authToken },
           };
 
           this.particleManager.add(particle);
@@ -424,6 +449,7 @@ export class RequestDispatcher {
         edgePath: chain.edgePath,
         requestPath: chain.requestPath,
         targetPort: (chainEdgeData?.targetPort as number) ?? undefined,
+        incomingTopic: (chainEdgeData?.topic as string) ?? undefined,
         httpMethod: chain.httpMethod,
         queryType: chain.queryType,
         contentType: chain.contentType,
@@ -432,6 +458,9 @@ export class RequestDispatcher {
         cacheHit: chain.cacheHit,
         cacheNodeId: chain.cacheNodeId,
         waitingForDb: chain.waitingForDb,
+        allEdges: this.edges,
+        authToken: chain.authToken,
+        isAuthRequest: chain.isAuthRequest,
       };
 
       let processingDelay = this.getNodeProcessingDelay(targetNode, context);
@@ -469,7 +498,9 @@ export class RequestDispatcher {
             this.callbacks.onNodeStatusChange(targetNode.id, 'success');
             this.callbacks.onNodeStatusChange(cacheNode.id, 'processing');
 
-            const cacheKey = `resource:${chain.originNodeId}`;
+            // Utiliser la même fonction de génération de clé que CacheHandler
+            // pour que la prochaine requête sur le même path retrouve l'entrée.
+            const cacheKey = CacheHandler.generateCacheKey(context);
             this.cacheManager.set(chain.cacheNodeId, cacheKey, `db_response_${Date.now()}`);
 
             const cacheStoreDelay = this.getNodeProcessingDelay(cacheNode);
@@ -511,7 +542,9 @@ export class RequestDispatcher {
       cacheHit: chain.cacheHit,
       cacheNodeId: chain.cacheNodeId,
       waitingForDb: chain.waitingForDb,
+      allEdges: this.edges,
       authToken: chain.authToken,
+      isAuthRequest: chain.isAuthRequest,
     };
   }
 }

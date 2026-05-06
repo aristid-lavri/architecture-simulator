@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from '@/i18n';
+import { useOnboardingStore } from '@/store/onboarding-store';
 import type { TourStepConfig } from './steps';
 import { TOUR_STEPS } from './steps';
 
@@ -81,6 +82,7 @@ function computePosition(
 
 export function TourStep({ step, stepIndex, onNext }: TourStepProps) {
   const { t } = useTranslation();
+  const completeTour = useOnboardingStore((s) => s.completeTour);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<Position>({ top: 0, left: 0, arrowSide: 'top' });
   const [visible, setVisible] = useState(false);
@@ -167,9 +169,17 @@ export function TourStep({ step, stepIndex, onNext }: TourStepProps) {
 
             {/* Footer */}
             <div className="flex items-center justify-between px-5 pb-4">
-              <span className="text-[10px] font-mono text-muted-foreground">
-                {stepIndex + 1} {t('onboarding.stepOf')} {TOUR_STEPS.length}
-              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={completeTour}
+                  className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer transition-colors"
+                >
+                  {t('onboarding.skip')}
+                </button>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {stepIndex + 1} {t('onboarding.stepOf')} {TOUR_STEPS.length}
+                </span>
+              </div>
 
               {isClickNext && (
                 <button

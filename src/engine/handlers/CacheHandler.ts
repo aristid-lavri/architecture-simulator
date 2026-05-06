@@ -36,8 +36,12 @@ export class CacheHandler implements NodeRequestHandler {
    * Génère une clé de cache basée sur le path HTTP de la requête.
    * Inclut la méthode HTTP si disponible pour différencier GET/POST sur le même path.
    * Fallback sur originNodeId si aucun requestPath n'est défini.
+   *
+   * Statique et publique : le RequestDispatcher l'utilise pour stocker
+   * la réponse DB après un cache-miss avec exactement la même clé que
+   * celle interrogée par handleRequestArrival.
    */
-  private generateCacheKey(context: RequestContext): string {
+  static generateCacheKey(context: RequestContext): string {
     const method = context.httpMethod ?? 'GET';
     if (context.requestPath) {
       return `${method}:${context.requestPath}`;
@@ -51,7 +55,7 @@ export class CacheHandler implements NodeRequestHandler {
     outgoingEdges: GraphEdge[],
     _allNodes: GraphNode[]
   ): RequestDecision {
-    const cacheKey = this.generateCacheKey(context);
+    const cacheKey = CacheHandler.generateCacheKey(context);
 
     // Si c'est un retour de la DB après un cache miss
     if (context.waitingForDb && context.cacheNodeId === node.id) {

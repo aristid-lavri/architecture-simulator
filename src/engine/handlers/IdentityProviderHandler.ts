@@ -121,7 +121,8 @@ export class IdentityProviderHandler implements NodeRequestHandler {
       if (cached && cached.expiresAt > now) {
         // Token en cache valide — forward directement avec token
         if (outgoingEdges.length === 0) {
-          return { action: 'respond', isError: false };
+          // IdP terminal : enrichir la response avec le token (utilisé pour le flux acquireToken)
+          return { action: 'respond', isError: false, contextEnrichment: tokenEnrichment };
         }
         const edge = outgoingEdges[0];
         return {
@@ -140,7 +141,8 @@ export class IdentityProviderHandler implements NodeRequestHandler {
 
     // Forward vers le service en aval avec token attaché
     if (outgoingEdges.length === 0) {
-      return { action: 'respond', isError: false };
+      // IdP terminal : enrichir la response avec le token (utilisé pour le flux acquireToken)
+      return { action: 'respond', isError: false, contextEnrichment: tokenEnrichment };
     }
 
     const edge = outgoingEdges[0];

@@ -16,8 +16,11 @@ function createConfig(overrides: Partial<CacheNodeData> = {}): CacheNodeData {
       getLatencyMs: 1,
       setLatencyMs: 2,
     },
-    initialHitRatio: 80,
-    hitRatioVariance: 10,
+    // Par défaut : pas de simulation probabiliste (comportement déterministe
+    // pour les tests existants). Les tests qui valident la simulation
+    // surcharge initialHitRatio/hitRatioVariance/warmUp* explicitement.
+    initialHitRatio: 0,
+    hitRatioVariance: 0,
     warmUpEnabled: false,
     warmUpDurationMs: 5000,
     ...overrides,
@@ -194,6 +197,132 @@ describe('CacheManager', () => {
       cache.initializeCache('cache-2', createConfig());
       cache.cleanupAll();
       expect(cache.getCacheIds()).toHaveLength(0);
+    });
+  });
+
+  describe('probabilistic hit simulation', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('returns simulated HIT when Math.random < initialHitRatio', () => {
+      cache.cleanup(nodeId);
+      cache.initializeCache(nodeId, createConfig({
+        initialHitRatio: 80,
+        hitRatioVariance: 0,
+        warmUpEnabled: false,
+      }));
+      vi.spyOn(Math, 'random').mockReturnValue(0.5); // 0.5 < 0.8 → HIT
+      const result = cache.get(nodeId, 'never-stored');
+      expect(result.hit).toBe(true);
+    });
+
+    it('returns MISS when Math.random >= initialHitRatio', () => {
+      cache.cleanup(nodeId);
+      cache.initializeCache(nodeId, createConfig({
+        initialHitRatio: 80,
+        hitRatioVariance: 0,
+        warmUpEnabled: false,
+      }));
+      vi.spyOn(Math, 'random').mockReturnValue(0.95); // 0.95 >= 0.8 → MISS
+      const result = cache.get(nodeId, 'never-stored');
+      expect(result.hit).toBe(false);
+    });
+
+    it('materializes simulated HIT so subsequent gets become deterministic', () => {
+      cache.cleanup(nodeId);
+      cache.initializeCache(nodeId, createConfig({
+        initialHitRatio: 100,
+        hitRatioVariance: 0,
+        warmUpEnabled: false,
+      }));
+      const first = cache.get(nodeId, 'k');
+      expect(first.hit).toBe(true);
+
+      // Mock Math.random to force MISS path on probabilistic check.
+      // Since k was materialized on first hit, this should still be a HIT
+      // via the deterministic store.
+      vi.spyOn(Math, 'random').mockReturnValue(0.99);
+      const second = cache.get(nodeId, 'k');
+      expect(second.hit).toBe(true);
+    });
+  });
+
+  describe('warm-up ramp-up', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('hit probability scales linearly during warm-up window', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+
+      cache.cleanup(nodeId);
+      cache.initializeCache(nodeId, createConfig({
+        initialHitRatio: 100,
+        hitRatioVariance: 0,
+        warmUpEnabled: true,
+        warmUpDurationMs: 10000,
+      }));
+
+      // À 50% de la fenêtre, prob = 50%. Math.random=0.4 < 0.5 → HIT
+      vi.setSystemTime(5000);
+      vi.spyOn(Math, 'random').mockReturnValue(0.4);
+      expect(cache.get(nodeId, 'a').hit).toBe(true);
+
+      // À 50% de la fenêtre, Math.random=0.6 > 0.5 → MISS
+      cache.cleanup(nodeId);
+      cache.initializeCache(nodeId, createConfig({
+        initialHitRatio: 100,
+        hitRatioVariance: 0,
+        warmUpEnabled: true,
+        warmUpDurationMs: 10000,
+      }));
+      vi.setSystemTime(5000);
+      // Need to re-mock after re-init since clock moved
+      vi.spyOn(Math, 'random').mockReturnValue(0.6);
+      expect(cache.get(nodeId, 'b').hit).toBe(false);
+    });
+
+    it('reaches full ratio after warm-up window expires', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+
+      cache.cleanup(nodeId);
+      cache.initializeCache(nodeId, createConfig({
+        initialHitRatio: 100,
+        hitRatioVariance: 0,
+        warmUpEnabled: true,
+        warmUpDurationMs: 1000,
+      }));
+
+      vi.setSystemTime(2000); // au-delà de la fenêtre
+      vi.spyOn(Math, 'random').mockReturnValue(0.99); // 0.99 < 1.0 → HIT
+      expect(cache.get(nodeId, 'after-warmup').hit).toBe(true);
+    });
+  });
+
+  describe('cache-aside flow (real HIT after MISS+set)', () => {
+    it('GET after explicit set returns deterministic HIT regardless of probabilistic ratio', () => {
+      cache.cleanup(nodeId);
+      cache.initializeCache(nodeId, createConfig({
+        initialHitRatio: 0, // simulation désactivée
+        hitRatioVariance: 0,
+        warmUpEnabled: false,
+      }));
+
+      // Première requête : MISS (cache vide, prob=0)
+      const miss = cache.get(nodeId, 'GET:/api/comptes/historique');
+      expect(miss.hit).toBe(false);
+
+      // Simulation cache-aside : DB répond, on stocke
+      cache.set(nodeId, 'GET:/api/comptes/historique', 'db_payload');
+
+      // Requête suivante : HIT déterministe via le store réel
+      const hit = cache.get(nodeId, 'GET:/api/comptes/historique');
+      expect(hit.hit).toBe(true);
+      expect(hit.value).toBe('db_payload');
     });
   });
 });

@@ -539,6 +539,8 @@ connections:
     to: cache-sessions
   - from: svc-calcul
     to: cache-baremes
+  - from: cache-baremes
+    to: db-contribuables
   - from: svc-calcul
     to: db-contribuables
   - from: svc-calcul
@@ -979,6 +981,10 @@ components:
       retryEnabled: true
       maxRetries: 5
       deadLetterEnabled: true
+      topics:
+        - name: medical-events
+          partitions: 6
+          retentionMs: 604800000
 
   mq-alertes:
     type: message-queue
@@ -1178,6 +1184,8 @@ connections:
     to: svc-imagerie
   - from: svc-patients-read
     to: cache-dsq
+  - from: cache-dsq
+    to: db-patients
   - from: svc-patients-read
     to: db-patients
   - from: svc-patients-read
@@ -1194,12 +1202,14 @@ connections:
     to: db-patients
   - from: svc-patients-write
     to: mq-events
+    topic: medical-events
   - from: svc-resultats-write
     to: db-resultats
   - from: svc-resultats-write
     to: db-patients
   - from: svc-resultats-write
     to: mq-events
+    topic: medical-events
   - from: svc-resultats-write
     to: mq-alertes
   - from: svc-ordonnances-write
@@ -1208,20 +1218,25 @@ connections:
     to: db-patients
   - from: svc-ordonnances-write
     to: mq-events
+    topic: medical-events
   - from: svc-imagerie
     to: storage-dicom
   - from: svc-imagerie
     to: db-patients
   - from: svc-imagerie
     to: mq-events
+    topic: medical-events
   - from: svc-imagerie
     to: job-images
   - from: mq-events
     to: job-audit
+    topic: medical-events
   - from: mq-events
     to: job-alertes
+    topic: medical-events
   - from: mq-events
     to: job-sync-dsq
+    topic: medical-events
   - from: mq-alertes
     to: job-alertes
   - from: job-audit
@@ -1934,6 +1949,10 @@ components:
       retryEnabled: true
       maxRetries: 5
       deadLetterEnabled: true
+      topics:
+        - name: inter-pole-events
+          partitions: 6
+          retentionMs: 604800000
 
   mq-replication:
     type: message-queue
@@ -1954,6 +1973,10 @@ components:
       retryEnabled: true
       maxRetries: 10
       deadLetterEnabled: true
+      topics:
+        - name: replication-stream
+          partitions: 12
+          retentionMs: 259200000
 
   mq-notifications:
     type: message-queue
@@ -2069,12 +2092,15 @@ connections:
     to: svc-assur-bc
   - from: svc-comptes-part
     to: cache-clients
+  - from: cache-clients
+    to: db-clients
   - from: svc-comptes-part
     to: db-clients
   - from: svc-comptes-part
     to: db-comptes
   - from: svc-comptes-part
     to: mq-replication
+    topic: replication-stream
   - from: svc-comptes-ent
     to: cache-clients
   - from: svc-comptes-ent
@@ -2087,8 +2113,10 @@ connections:
     to: cb-paiement-ext
   - from: svc-virements
     to: mq-interpoles
+    topic: inter-pole-events
   - from: svc-virements
     to: mq-replication
+    topic: replication-stream
   - from: svc-prets
     to: db-comptes
   - from: svc-prets
@@ -2101,8 +2129,10 @@ connections:
     to: db-contrats
   - from: svc-assur-part
     to: mq-interpoles
+    topic: inter-pole-events
   - from: svc-assur-part
     to: mq-replication
+    topic: replication-stream
   - from: svc-patrimoine
     to: db-contrats
   - from: svc-patrimoine
@@ -2127,14 +2157,18 @@ connections:
     to: db-contrats
   - from: mq-interpoles
     to: svc-grand-livre
+    topic: inter-pole-events
   - from: mq-interpoles
     to: svc-assur-part
+    topic: inter-pole-events
   - from: mq-interpoles
     to: svc-comptes-part
+    topic: inter-pole-events
   - from: mq-interpoles
     to: mq-notifications
   - from: mq-replication
     to: job-sync
+    topic: replication-stream
   - from: job-sync
     to: db-replica-on
   - from: job-sync
@@ -2182,6 +2216,285 @@ connections:
 `;
 
 // ============================================
+// Template : Banque Online (démo focusée)
+// Parcours bancaire à 13 composants, calibré pour démo:
+//   - Charge faible OK -> charge forte: dégradation visible
+//   - Désactivation cache: effondrement reads
+//   - Kill DB-Transactions: circuit breaker s'ouvre, cascade contenue
+// ============================================
+const bankingOnlineYaml = `
+version: 1
+name: "Banque Online"
+
+zones:
+  edge:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 280, y: 30 }
+    size: { width: 800, height: 220 }
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 280, y: 290 }
+    size: { width: 800, height: 250 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 280, y: 580 }
+    size: { width: 800, height: 250 }
+
+components:
+  clients-mobile:
+    type: client-group
+    position: { x: 50, y: 100 }
+    config:
+      label: "Clients Mobile/Web"
+      virtualClients: 100
+      requestMode: parallel
+      concurrentRequests: 10
+      baseInterval: 500
+      intervalVariance: 30
+      distribution: burst
+      burstSize: 20
+      burstInterval: 5000
+      rampUpEnabled: true
+      rampUpDuration: 30000
+      rampUpCurve: linear
+      method: GET
+      requestDistribution:
+        - method: GET
+          path: "/api/comptes/solde"
+          weight: 47
+        - method: GET
+          path: "/api/comptes/historique"
+          weight: 27
+        - method: POST
+          path: "/api/virements"
+          weight: 26
+
+  waf:
+    type: waf
+    zone: edge
+    config:
+      label: "WAF"
+      provider: aws-waf
+      inspectionLatencyMs: 3
+      blockRate: 3
+      requestsPerSecond: 5000
+
+  cdn:
+    type: cdn
+    zone: edge
+    config:
+      label: "CDN"
+      provider: cloudfront
+      cacheHitRatio: 15
+      edgeLatencyMs: 5
+      originLatencyMs: 30
+      bandwidthMbps: 2000
+
+  api-gateway:
+    type: api-gateway
+    zone: edge
+    config:
+      label: "API Gateway"
+      authType: jwt
+      authFailureRate: 1
+      rateLimiting:
+        enabled: true
+        requestsPerSecond: 500
+        burstSize: 100
+        windowMs: 1000
+      routeRules:
+        - id: route-auth
+          pathPattern: "/auth/*"
+          targetServiceName: "auth-keycloak"
+          priority: 1
+        - id: route-comptes
+          pathPattern: "/api/comptes/**"
+          targetServiceName: "comptes-api"
+          priority: 2
+        - id: route-virements
+          pathPattern: "/api/virements/**"
+          targetServiceName: "virements-api"
+          priority: 3
+      baseLatencyMs: 5
+
+  idp:
+    type: identity-provider
+    zone: backend
+    config:
+      label: "Auth (Keycloak)"
+      serviceName: "auth-keycloak"
+      providerType: keycloak
+      protocol: oidc
+      tokenFormat: jwt
+      tokenValidationLatencyMs: 5
+      tokenGenerationLatencyMs: 100
+      mfaEnabled: true
+      mfaLatencyMs: 2000
+      errorRate: 1
+
+  svc-comptes:
+    type: api-service
+    zone: backend
+    config:
+      label: "Service Comptes"
+      serviceName: "comptes-api"
+      basePath: "/api/comptes"
+      authType: jwt
+      authFailureRate: 0
+      responseTime: 40
+      errorRate: 1
+      maxConcurrentRequests: 200
+
+  svc-virements:
+    type: api-service
+    zone: backend
+    config:
+      label: "Service Virements"
+      serviceName: "virements-api"
+      basePath: "/api/virements"
+      authType: jwt
+      authFailureRate: 0
+      responseTime: 100
+      errorRate: 2
+      maxConcurrentRequests: 80
+
+  cb-paiement-ext:
+    type: circuit-breaker
+    zone: backend
+    config:
+      label: "CB Paiement Ext."
+      failureThreshold: 5
+      successThreshold: 3
+      timeout: 30000
+      halfOpenMaxRequests: 3
+
+  worker-notifications:
+    type: background-job
+    zone: backend
+    config:
+      label: "Worker Notifications"
+      jobType: worker
+      concurrency: 3
+      processingTimeMs: 50
+      errorRate: 1
+
+  external-paiement:
+    type: http-server
+    position: { x: 1120, y: 380 }
+    config:
+      label: "Paiement Externe (Interac)"
+      port: 443
+      responseStatus: 200
+      responseDelay: 200
+      errorRate: 3
+
+  db-comptes:
+    type: database
+    zone: data
+    config:
+      label: "DB Comptes"
+      databaseType: postgresql
+      connectionPool:
+        maxConnections: 30
+        minConnections: 5
+      performance:
+        readLatencyMs: 4
+        writeLatencyMs: 15
+        transactionLatencyMs: 35
+      capacity:
+        maxQueriesPerSecond: 3000
+
+  db-transactions:
+    type: database
+    zone: data
+    config:
+      label: "DB Transactions"
+      databaseType: postgresql
+      connectionPool:
+        maxConnections: 20
+        minConnections: 3
+      performance:
+        readLatencyMs: 4
+        writeLatencyMs: 18
+        transactionLatencyMs: 40
+      capacity:
+        maxQueriesPerSecond: 2000
+
+  cache-redis:
+    type: cache
+    zone: data
+    config:
+      label: "Cache Redis"
+      cacheType: redis
+      configuration:
+        maxMemoryMB: 1024
+        defaultTTLSeconds: 600
+        evictionPolicy: lfu
+      initialHitRatio: 80
+
+  mq-events:
+    type: message-queue
+    zone: data
+    config:
+      label: "Kafka Events"
+      queueType: kafka
+      mode: pubsub
+      configuration:
+        maxQueueSize: 30000
+        visibilityTimeoutMs: 30000
+      performance:
+        publishLatencyMs: 2
+        consumeLatencyMs: 3
+        messagesPerSecond: 5000
+      consumerCount: 3
+      ackMode: manual
+      retryEnabled: true
+      maxRetries: 5
+      deadLetterEnabled: true
+      topics:
+        - name: transactions
+          partitions: 6
+          retentionMs: 604800000
+
+connections:
+  - from: clients-mobile
+    to: waf
+  - from: waf
+    to: cdn
+  - from: cdn
+    to: api-gateway
+  - from: api-gateway
+    to: idp
+  - from: api-gateway
+    to: svc-comptes
+  - from: api-gateway
+    to: svc-virements
+  - from: svc-comptes
+    to: cache-redis
+  - from: cache-redis
+    to: db-comptes
+  - from: svc-comptes
+    to: db-comptes
+  - from: svc-virements
+    to: db-comptes
+  - from: svc-virements
+    to: db-transactions
+  - from: svc-virements
+    to: cb-paiement-ext
+  - from: cb-paiement-ext
+    to: external-paiement
+  - from: svc-virements
+    to: mq-events
+    topic: transactions
+  - from: mq-events
+    to: worker-notifications
+    topic: transactions
+`;
+
+// ============================================
 // Construction des templates
 // ============================================
 export const advancedTemplates: ArchitectureTemplate[] = [
@@ -2202,5 +2515,11 @@ export const advancedTemplates: ArchitectureTemplate[] = [
     'templates.bankingMultipole.name',
     'templates.bankingMultipole.description',
     bankingYaml
+  ),
+  createTemplateFromYaml(
+    'banking-online',
+    'templates.bankingOnline.name',
+    'templates.bankingOnline.description',
+    bankingOnlineYaml
   ),
 ].filter((t): t is ArchitectureTemplate => t !== null);

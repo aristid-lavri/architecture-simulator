@@ -1,4 +1,5 @@
-import { Container, Graphics, Text, TextStyle } from 'pixi.js';
+import { Container, Graphics, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import { getIconTexture } from './IconRegistry';
 import type { GraphNode } from '@/types/graph';
 import type { ComponentType, NodeStatus, ResourceUtilization } from '@/types';
 import {
@@ -29,7 +30,8 @@ interface NodeVisual {
   bg: Graphics;
   signalBar: Graphics;
   separator: Graphics;
-  headerIcon: Text;
+  headerIcon: Sprite;       // Icône lucide (mode normal)
+  headerStatusIcon: Text;   // Glyphe Unicode pour zones (⬡) et états down/degraded (✕/⚠)
   headerLabel: Text;
   contentLine1: Text;
   contentLine2: Text;
@@ -37,6 +39,7 @@ interface NodeVisual {
   toolbar: Container;
   toolbarBg: Graphics;
   statusDot: Graphics;
+  chaosIcon: Text;
   cogIcon: Text;
   trashIcon: Text;
   gauges: Graphics;
@@ -73,6 +76,9 @@ export class NodeRenderer {
   private footerMetrics: Map<string, NodeFooterMetrics> = new Map();
   private animationTicker: ReturnType<typeof setInterval> | null = null;
 
+  // Toggled par PixiCanvas selon le mode (l'icône chaos ne s'affiche qu'en simulation)
+  chaosEnabled = false;
+
   // Callbacks set by PixiCanvas
   onNodePointerDown: ((nodeId: string, event: PointerEvent) => void) | null = null;
   onNodePointerMove: ((event: PointerEvent) => void) | null = null;
@@ -80,6 +86,7 @@ export class NodeRenderer {
   onNodeRightClick: ((nodeId: string, event: PointerEvent) => void) | null = null;
   onNodeHover: ((nodeId: string | null) => void) | null = null;
   onCogClick: ((nodeId: string) => void) | null = null;
+  onChaosClick: ((nodeId: string, screenX: number, screenY: number) => void) | null = null;
   onDeleteClick: ((nodeId: string) => void) | null = null;
   onResizeStart: ((nodeId: string, corner: string, event: PointerEvent) => void) | null = null;
   onResizeMove: ((event: PointerEvent) => void) | null = null;
@@ -230,7 +237,13 @@ export class NodeRenderer {
       }),
     });
 
-    const headerIcon = new Text({
+    // Icône lucide rendue en Sprite (texture pré-générée par IconRegistry)
+    // Dimensions assignées dans updateNodeVisual après le set texture
+    const headerIcon = new Sprite(Texture.EMPTY);
+    headerIcon.visible = false;
+
+    // Fallback Text pour zones (⬡) et états down/degraded (✕/⚠)
+    const headerStatusIcon = new Text({
       text: '',
       style: new TextStyle({
         fontSize: 14,
@@ -238,6 +251,7 @@ export class NodeRenderer {
         fontFamily: 'system-ui, sans-serif',
       }),
     });
+    headerStatusIcon.visible = false;
 
     const headerLabel = new Text({
       text: '',
@@ -289,6 +303,25 @@ export class NodeRenderer {
     cogIcon.on('pointerover', () => { cogIcon.style.fill = canvasTheme().cogIconHoverColor; });
     cogIcon.on('pointerout', () => { cogIcon.style.fill = canvasTheme().cogIconColor; });
 
+    const chaosIcon = new Text({
+      text: '⚡',
+      style: new TextStyle({
+        fontSize: 11,
+        fill: 0xff9933,
+        fontFamily: 'system-ui, sans-serif',
+      }),
+    });
+    chaosIcon.eventMode = 'static';
+    chaosIcon.cursor = 'pointer';
+    // Hit area explicite pour garantir un clic robuste (le glyphe ⚡ a un bbox étroit)
+    chaosIcon.hitArea = { contains: (x: number, y: number) => x >= -2 && x <= 14 && y >= -2 && y <= 16 };
+    chaosIcon.on('pointerdown', (e) => {
+      e.stopPropagation();
+      this.onChaosClick?.(node.id, e.clientX, e.clientY);
+    });
+    chaosIcon.on('pointerover', () => { chaosIcon.style.fill = 0xffaa55; });
+    chaosIcon.on('pointerout', () => { chaosIcon.style.fill = 0xff9933; });
+
     const trashIcon = new Text({
       text: '🗑',
       style: new TextStyle({
@@ -306,8 +339,8 @@ export class NodeRenderer {
     trashIcon.on('pointerover', () => { trashIcon.style.fill = 0xff4444; });
     trashIcon.on('pointerout', () => { trashIcon.style.fill = 0xcc3333; });
 
-    toolbar.addChild(toolbarBg, statusDot, cogIcon, trashIcon);
-    container.addChild(selectionGlow, bg, signalBar, separator, headerIcon, headerLabel, contentLine1, contentLine2, gauges, footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText, footerSuccessText, footerErrorText, toolbar);
+    toolbar.addChild(toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon);
+    container.addChild(selectionGlow, bg, signalBar, separator, headerIcon, headerStatusIcon, headerLabel, contentLine1, contentLine2, gauges, footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText, footerSuccessText, footerErrorText, toolbar);
 
     // Create resize handles for all node types (functional resize for zones, visual indicator for others)
     const resizeHandles: ResizeHandle[] = [];
@@ -371,8 +404,8 @@ export class NodeRenderer {
     });
 
     return {
-      container, bg, signalBar, separator, headerIcon, headerLabel, contentLine1,
-      contentLine2, toolbar, toolbarBg, statusDot, cogIcon, trashIcon, gauges,
+      container, bg, signalBar, separator, headerIcon, headerStatusIcon, headerLabel, contentLine1,
+      contentLine2, toolbar, toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon, gauges,
       footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText,
       footerSuccessText, footerErrorText,
       selectionGlow, resizeHandles, nodeId: node.id, nodeType: node.type,
@@ -440,16 +473,35 @@ export class NodeRenderer {
       visual.signalBar.fill(barColor);
     }
 
-    // ── Header icon (from per-type renderer) ──
+    // ── Header icon ──
+    // - Mode normal : Sprite avec icône lucide (cohérent avec le rack)
+    // - Zone OU état down/degraded : Text Unicode (⬡ pour zone, ✕/⚠ pour fault)
     const renderer = getComponentRenderer(node.type);
-    const icon = visual.isZone ? ZONE_ICON : renderer.icon;
-    visual.headerIcon.text = isDown ? '✕' : isDegraded ? '⚠' : icon;
-    visual.headerIcon.style.fill = isDown ? 0xef4444 : isDegraded ? 0xf97316 : colors.border;
-    visual.headerIcon.style.fontSize = visual.isZone ? 12 : 14;
-    visual.headerIcon.position.set(
-      visual.isZone ? NODE_PADDING : NODE_PADDING + 4,
-      visual.isZone ? 6 : 10,
-    );
+    const useFallbackText = visual.isZone || isDown || isDegraded;
+    const lucideTexture = useFallbackText ? null : getIconTexture(node.type);
+
+    if (lucideTexture) {
+      // Sprite lucide visible, fallback caché
+      visual.headerIcon.texture = lucideTexture;
+      visual.headerIcon.width = 14;
+      visual.headerIcon.height = 14;
+      visual.headerIcon.tint = colors.border;
+      visual.headerIcon.visible = true;
+      visual.headerIcon.position.set(NODE_PADDING + 4, 6);
+      visual.headerStatusIcon.visible = false;
+    } else {
+      // Fallback Text visible, Sprite caché
+      visual.headerIcon.visible = false;
+      const fallbackChar = isDown ? '✕' : isDegraded ? '⚠' : visual.isZone ? ZONE_ICON : renderer.icon;
+      visual.headerStatusIcon.text = fallbackChar;
+      visual.headerStatusIcon.style.fill = isDown ? 0xef4444 : isDegraded ? 0xf97316 : colors.border;
+      visual.headerStatusIcon.style.fontSize = visual.isZone ? 12 : 14;
+      visual.headerStatusIcon.visible = true;
+      visual.headerStatusIcon.position.set(
+        visual.isZone ? NODE_PADDING : NODE_PADDING + 4,
+        visual.isZone ? 6 : 10,
+      );
+    }
 
     // ── Header label ──
     visual.headerLabel.text = dataLabel.toUpperCase();
@@ -505,10 +557,11 @@ export class NodeRenderer {
     // ── Toolbar (floating above node, right-aligned) ──
     visual.toolbar.visible = !visual.isZone;
     if (!visual.isZone) {
-      const tbW = 52;  // toolbar width (status dot + cog + trash)
-      const tbH = 16;  // toolbar height
-      const tbX = w - tbW; // right-aligned
-      const tbY = -tbH - 3; // above the node with 3px gap
+      const showChaos = this.chaosEnabled;
+      const tbW = showChaos ? 68 : 52;
+      const tbH = 16;
+      const tbX = w - tbW;
+      const tbY = -tbH - 3;
 
       visual.toolbar.position.set(tbX, tbY);
 
@@ -525,11 +578,15 @@ export class NodeRenderer {
       visual.statusDot.circle(10, tbH / 2, 3);
       visual.statusDot.fill({ color: dotColor, alpha: status === 'idle' ? 0.4 : 1 });
 
-      // Cog icon (middle of toolbar)
-      visual.cogIcon.position.set(20, 1);
+      // Chaos icon (visible uniquement en mode simulation)
+      visual.chaosIcon.visible = showChaos;
+      visual.chaosIcon.position.set(20, 1);
 
-      // Trash icon (right side of toolbar)
-      visual.trashIcon.position.set(36, 1);
+      // Cog icon (décalé si chaos visible)
+      visual.cogIcon.position.set(showChaos ? 36 : 20, 1);
+
+      // Trash icon (décalé si chaos visible)
+      visual.trashIcon.position.set(showChaos ? 52 : 36, 1);
     }
 
     // ── Footer (separator + optional gauges + minimal metrics) ──

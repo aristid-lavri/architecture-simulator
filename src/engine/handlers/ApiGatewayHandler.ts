@@ -100,26 +100,34 @@ export class ApiGatewayHandler implements NodeRequestHandler {
 
     // Vérifier l'authentification (Issue #52 — vrai contrôle de token)
     if (data.authType !== 'none') {
-      // 1. Vérifier la présence du token
-      if (!context.authToken) {
-        state.authFailures++;
-        state.blockedRequests++;
-        return { action: 'reject', reason: 'no-token' };
-      }
+      // Bypass auth pour les routes ciblant un identity-provider (login flow)
+      const requestPath = context.requestPath ?? '/';
+      const targetingIdP = this.routeTargetsIdentityProvider(data, requestPath, outgoingEdges, allNodes);
+      // Bypass aussi pour les requêtes d'acquisition de token (Task 22) — pas besoin de routeRule
+      const isAuthRequest = context.isAuthRequest === true;
+      if (!targetingIdP && !isAuthRequest) {
+        // 1. Vérifier la présence du token
+        if (!context.authToken) {
+          state.authFailures++;
+          state.blockedRequests++;
+          return { action: 'reject', reason: 'no-token' };
+        }
 
-      // 2. Vérifier l'expiration du token
-      if (context.authToken.expiresAt < Date.now()) {
-        state.authFailures++;
-        state.blockedRequests++;
-        return { action: 'reject', reason: 'token-expired' };
-      }
+        // 2. Vérifier l'expiration du token
+        if (context.authToken.expiresAt < Date.now()) {
+          state.authFailures++;
+          state.blockedRequests++;
+          return { action: 'reject', reason: 'token-expired' };
+        }
 
-      // 3. authFailureRate reste comme couche additionnelle (simule des erreurs aléatoires)
-      if (data.authFailureRate > 0 && Math.random() * 100 < data.authFailureRate) {
-        state.authFailures++;
-        state.blockedRequests++;
-        return { action: 'reject', reason: 'auth-failure' };
+        // 3. authFailureRate reste comme couche additionnelle (simule des erreurs aléatoires)
+        if (data.authFailureRate > 0 && Math.random() * 100 < data.authFailureRate) {
+          state.authFailures++;
+          state.blockedRequests++;
+          return { action: 'reject', reason: 'auth-failure' };
+        }
       }
+      // Si targetingIdP, on saute les checks et on laisse passer (login flow)
     }
 
     // Vérifier le rate limiting
@@ -161,6 +169,14 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     // Trouver la cible en fonction des règles de routage
     const targetEdge = this.findTargetEdge(data, outgoingEdges, allNodes, context);
 
+    // Si des routeRules existent mais qu'aucune ne matche, rejeter au lieu de
+    // tomber aveuglément sur outgoingEdges[0] (qui peut être un IdP voisin et
+    // produire un routage incorrect).
+    if (!targetEdge) {
+      state.blockedRequests++;
+      return { action: 'reject', reason: 'no-route' };
+    }
+
     // Incrémenter le compteur de requêtes actives (en vol)
     state.activeRequests++;
 
@@ -176,20 +192,40 @@ export class ApiGatewayHandler implements NodeRequestHandler {
   }
 
   /**
-   * Trouve l'edge cible en fonction des règles de routage configurées
+   * Trouve l'edge cible en fonction des règles de routage configurées.
+   * Retourne `null` si des `routeRules` sont définies mais qu'aucune ne matche
+   * — le caller doit alors transformer en `reject { reason: 'no-route' }`.
    */
   private findTargetEdge(
     data: ApiGatewayNodeData,
     outgoingEdges: GraphEdge[],
     allNodes: GraphNode[],
     context: RequestContext
-  ): GraphEdge {
+  ): GraphEdge | null {
     const routeRules = data.routeRules || [];
     const requestPath = context.requestPath || '/';
 
-    // Si pas de règles, utiliser le premier edge
+    // Pour une requête d'acquisition de token (Task 22), router en priorité vers un IdP connecté
+    if (context.isAuthRequest === true) {
+      for (const edge of outgoingEdges) {
+        const target = allNodes.find((n) => n.id === edge.target);
+        if (target?.type === 'identity-provider') {
+          return edge;
+        }
+      }
+      // Fallback : passthrough infrastructure (waf/cdn/...) qui peut mener à un IdP
+      const PASSTHROUGH = new Set(['waf', 'cdn', 'api-gateway', 'load-balancer', 'firewall', 'dns']);
+      for (const edge of outgoingEdges) {
+        const target = allNodes.find((n) => n.id === edge.target);
+        if (target && PASSTHROUGH.has(target.type)) {
+          return edge;
+        }
+      }
+    }
+
+    // Si aucune règle n'est configurée, conserver le comportement legacy (1er edge)
     if (routeRules.length === 0) {
-      return outgoingEdges[0];
+      return outgoingEdges[0] ?? null;
     }
 
     // Trier les règles par priorité
@@ -199,7 +235,11 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     const serviceToEdge = new Map<string, GraphEdge>();
     for (const edge of outgoingEdges) {
       const targetNode = allNodes.find((n) => n.id === edge.target);
-      if (targetNode && (targetNode.type === 'http-server' || targetNode.type === 'api-service')) {
+      if (targetNode && (
+        targetNode.type === 'http-server' ||
+        targetNode.type === 'api-service' ||
+        targetNode.type === 'identity-provider'
+      )) {
         const serverData = targetNode.data as { serviceName?: string };
         if (serverData.serviceName) {
           serviceToEdge.set(serverData.serviceName, edge);
@@ -217,36 +257,64 @@ export class ApiGatewayHandler implements NodeRequestHandler {
       }
     }
 
-    // Fallback: premier edge
-    return outgoingEdges[0];
+    // Aucune routeRule ne matche : ne PAS fallback aveuglément.
+    return null;
   }
 
   /**
-   * Vérifie si un path correspond à un pattern
-   * Supporte les wildcards: * (match tout segment), ** (match tous les segments restants)
-   * Ex: "/api/users/*" match "/api/users/123"
-   * Ex: "/api/**" match "/api/users/123/orders"
+   * Vérifie si une route rule du gateway, qui matche le requestPath, cible
+   * un nœud de type identity-provider. Utilisé pour bypass l'auth check sur
+   * les routes /auth/* (login flow OIDC).
+   */
+  private routeTargetsIdentityProvider(
+    data: ApiGatewayNodeData,
+    requestPath: string,
+    outgoingEdges: GraphEdge[],
+    allNodes: GraphNode[]
+  ): boolean {
+    const routeRules = data.routeRules ?? [];
+    const sortedRules = [...routeRules].sort((a, b) => a.priority - b.priority);
+    for (const rule of sortedRules) {
+      if (this.matchPath(requestPath, rule.pathPattern)) {
+        // Trouver le nœud cible par serviceName parmi les outgoingEdges
+        for (const edge of outgoingEdges) {
+          const target = allNodes.find((n) => n.id === edge.target);
+          if (!target) continue;
+          const tName = (target.data as { serviceName?: string }).serviceName;
+          if (tName === rule.targetServiceName && target.type === 'identity-provider') {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Vérifie si un path correspond à un pattern.
+   * Supporte les wildcards : `*` (un segment), `**` (zero ou plusieurs segments).
+   * Convention Spring/Express : "/foo/**" matche "/foo", "/foo/", et "/foo/bar/baz".
    */
   private matchPath(path: string, pattern: string): boolean {
-    // Normaliser les paths
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const normalizedPattern = pattern.startsWith('/') ? pattern : `/${pattern}`;
 
-    // Cas simple: pattern exact
     if (normalizedPattern === normalizedPath) {
       return true;
     }
 
-    // Convertir le pattern en regex
-    // * -> match un segment (tout sauf /)
-    // ** -> match tout (y compris /)
+    // Ordre de substitution :
+    //   1. "/**" (préfixé par /) → suffixe optionnel "(?:/.*)?" — matche aussi le path nu
+    //   2. "**" orphelin (rare)  → ".*"
+    //   3. "*" simple             → "[^/]+" (un segment, sans /)
     const regexPattern = normalizedPattern
+      .replace(/\/\*\*/g, '<<<SLASHDOUBLESTAR>>>')
       .replace(/\*\*/g, '<<<DOUBLESTAR>>>')
       .replace(/\*/g, '[^/]+')
+      .replace(/<<<SLASHDOUBLESTAR>>>/g, '(?:/.*)?')
       .replace(/<<<DOUBLESTAR>>>/g, '.*');
 
-    const regex = new RegExp(`^${regexPattern}$`);
-    return regex.test(normalizedPath);
+    return new RegExp(`^${regexPattern}$`).test(normalizedPath);
   }
 
   /**

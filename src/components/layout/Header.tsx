@@ -54,6 +54,7 @@ import { YamlEditor } from '@/components/YamlEditor';
 import { validateArchitecture } from '@/lib/simulation-validator';
 import { OfflineIndicator } from '@/components/layout/OfflineIndicator';
 import { ProjectSelector } from '@/components/layout/ProjectSelector';
+import { OwaspValidationButton } from '@/components/simulation/OwaspValidationButton';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -581,6 +582,8 @@ export function Header() {
           </TooltipTrigger>
           <TooltipContent side="bottom">{t('validation.tooltip')}</TooltipContent>
         </Tooltip>
+
+        <OwaspValidationButton />
 
         <span className="text-border">|</span>
 

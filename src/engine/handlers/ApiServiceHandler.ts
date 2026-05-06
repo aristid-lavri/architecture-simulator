@@ -2,6 +2,7 @@ import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NodeRequestHandler, RequestContext, RequestDecision, ResponseDecision } from './types';
 import type { ApiServiceNodeData, ResourceUtilization } from '@/types';
 import { ResourceManager } from '../ResourceManager';
+import { filterCacheBypassEdges } from './cacheBypass';
 
 /**
  * Etat runtime d'un API Service
@@ -64,7 +65,7 @@ export class ApiServiceHandler implements NodeRequestHandler {
     node: GraphNode,
     context: RequestContext,
     outgoingEdges: GraphEdge[],
-    _allNodes: GraphNode[]
+    allNodes: GraphNode[]
   ): RequestDecision {
     const data = node.data as ApiServiceNodeData;
     const state = this.getOrCreateState(node.id);
@@ -128,8 +129,16 @@ export class ApiServiceHandler implements NodeRequestHandler {
       return { action: 'respond', isError };
     }
 
-    // Forward vers tous les edges sortants
-    const targets = outgoingEdges.map((edge) => ({
+    // Filtrer les edges directs qui contournent un cache déjà connecté
+    // (ex: service connecté à la fois au cache et à la DB en aval du cache).
+    const effectiveEdges = filterCacheBypassEdges(outgoingEdges, allNodes, context.allEdges);
+
+    if (effectiveEdges.length === 0) {
+      return { action: 'respond', isError };
+    }
+
+    // Forward vers tous les edges sortants restants
+    const targets = effectiveEdges.map((edge) => ({
       nodeId: edge.target,
       edgeId: edge.id,
     }));

@@ -8,7 +8,7 @@ interface YamlArchitecture {
   zones?: Record<string, Record<string, unknown>>;
   hosts?: Record<string, Record<string, unknown>>;
   components: Record<string, Record<string, unknown>>;
-  connections: { from: string; to: string; targetPort?: number }[];
+  connections: { from: string; to: string; protocol?: string; targetPort?: number; topic?: string }[];
 }
 
 const statusKeys = ['status', 'utilization', 'circuitState', 'failureCount', 'successCount', 'currentInstances'];
@@ -103,10 +103,14 @@ export function exportToYaml(nodes: GraphNode[], edges: GraphEdge[], name = 'Arc
   arch.connections = edges.map(e => {
     const edgeData = e.data as Record<string, unknown> | undefined;
     const targetPort = edgeData?.targetPort as number | undefined;
+    const protocol = edgeData?.protocol as string | undefined;
+    const topic = edgeData?.topic as string | undefined;
     return {
       from: e.source,
       to: e.target,
+      ...(protocol ? { protocol } : {}),
       ...(targetPort ? { targetPort } : {}),
+      ...(topic ? { topic } : {}),
     };
   });
 

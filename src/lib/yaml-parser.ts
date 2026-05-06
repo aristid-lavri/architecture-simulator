@@ -77,6 +77,8 @@ interface YamlConnection {
   to: string;
   protocol?: 'rest' | 'grpc' | 'websocket' | 'graphql';
   targetPort?: number;
+  /** Topic Kafka (utilise quand l'edge connecte un MQ kafka). */
+  topic?: string;
 }
 
 const defaultDataByType: Record<string, Record<string, unknown>> = {
@@ -280,6 +282,7 @@ export function parseYamlArchitecture(yamlString: string): { nodes: GraphNode[];
         const edgeData: Record<string, unknown> = {};
         if (conn.protocol) edgeData.protocol = conn.protocol;
         if (conn.targetPort) edgeData.targetPort = conn.targetPort;
+        if (conn.topic) edgeData.topic = conn.topic;
 
         edges.push({
           id: `edge-${conn.from}-${conn.to}`,

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { Header, ComponentsPanel, PropertiesPanel, DiagramTabs } from '@/components/layout';
 import { PixiCanvas } from '@/components/canvas/PixiCanvas';
 import { SimulationReportDrawer } from '@/components/simulation/SimulationReportDrawer';
+import { OwaspValidationDrawer } from '@/components/simulation/OwaspValidationDrawer';
 import { AnalysisView } from '@/components/analysis/AnalysisView';
 import { OnboardingOverlay } from '@/components/onboarding/OnboardingOverlay';
 import { InstallPrompt } from '@/components/layout/InstallPrompt';
@@ -72,6 +73,9 @@ export default function SimulatorPage() {
           <SimulationReportDrawer />
         </>
       )}
+
+      {/* OWASP Validation Drawer (mounted at root for global access) */}
+      <OwaspValidationDrawer />
 
       {/* Onboarding Tour */}
       <OnboardingOverlay />
