@@ -347,6 +347,9 @@ export class SimulationEngine {
       (gateway, idpNode, idpEdge, chainId, context, onValid, onInvalid) =>
         this.validateTokenViaIdP(gateway, idpNode, idpEdge, chainId, context, onValid, onInvalid),
       (nodeId) => this.findConnectedIdP(nodeId),
+      (nodeId) => this.getNodeFault(nodeId),
+      (nodeId) => this.isNodeIsolated(nodeId),
+      (nodeId) => this.isParentFaulted(nodeId),
     );
   }
 

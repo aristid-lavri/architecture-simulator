@@ -227,6 +227,13 @@ export class RequestDispatcher {
               virtualClientId: chain.virtualClientId,
               startTime: Date.now(),
               requestPath: chain.requestPath,
+              httpMethod: chain.httpMethod,
+              queryType: chain.queryType,
+              contentType: chain.contentType,
+              payloadSizeBytes: chain.payloadSizeBytes,
+              sourceIP: chain.sourceIP,
+              authToken: chain.authToken,
+              isAuthRequest: chain.isAuthRequest,
             };
             this.chainManager.createChain(forkedChain);
             effectiveChainId = forkedChainId;
@@ -365,7 +372,7 @@ export class RequestDispatcher {
             progress: 0,
             duration: requestDuration,
             startTime: Date.now(),
-            data: { chainId: notifyChainId },
+            data: { chainId: notifyChainId, authenticated: !!chain?.authToken },
           };
 
           this.particleManager.add(particle);

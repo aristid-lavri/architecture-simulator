@@ -9,6 +9,7 @@ import {
   createRequestSentEvent,
   createErrorEvent,
   createHandlerDecisionEvent,
+  createStateTransitionEvent,
   simulationEvents,
 } from './events';
 import type { RequestChainManager, RequestChain } from './RequestChainManager';
@@ -131,6 +132,9 @@ export class ClientGroupSimulator {
     onInvalid: () => void
   ) => void;
   private findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null;
+  private getNodeFault: (nodeId: string) => 'down' | 'degraded' | null;
+  private isNodeIsolated: (nodeId: string) => boolean;
+  private isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null;
 
   constructor(
     metrics: MetricsCollector,
@@ -165,6 +169,9 @@ export class ClientGroupSimulator {
       onInvalid: () => void
     ) => void,
     findConnectedIdP: (nodeId: string) => { node: GraphNode; edge: GraphEdge } | null,
+    getNodeFault: (nodeId: string) => 'down' | 'degraded' | null,
+    isNodeIsolated: (nodeId: string) => boolean,
+    isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null,
   ) {
     this.metrics = metrics;
     this.callbacks = callbacks;
@@ -180,6 +187,9 @@ export class ClientGroupSimulator {
     this.acquireToken = acquireToken;
     this.validateTokenViaIdP = validateTokenViaIdP;
     this.findConnectedIdP = findConnectedIdP;
+    this.getNodeFault = getNodeFault;
+    this.isNodeIsolated = isNodeIsolated;
+    this.isParentFaulted = isParentFaulted;
   }
 
   setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[], nodeMap?: Map<string, GraphNode>): void {
@@ -488,9 +498,40 @@ export class ClientGroupSimulator {
     }
 
     this.callbacks.onNodeStatusChange(clientGroup.id, 'idle');
-    this.callbacks.onNodeStatusChange(server.id, 'processing');
 
     const serverState = this.serverStateManager.serverStates.get(server.id);
+
+    // Chaos mode checks (mirrors RequestDispatcher.handleChainRequestArrival
+    // and SimulationEngine.handleRequestArrival). Without this block, a node
+    // directly connected to a client-group bypasses the fault check, since
+    // ClientGroupSimulator owns the first-hop arrival flow.
+    const serverFault = this.getNodeFault(server.id);
+    const parentFault = this.isParentFaulted(server.id);
+    if (serverFault === 'down' || this.isNodeIsolated(server.id) || parentFault === 'down') {
+      this.callbacks.onNodeStatusChange(server.id, 'down');
+      this.metrics.recordRejection();
+      this.metrics.recordResponse(false, Date.now() - (chain?.startTime || Date.now()));
+      this.callbacks.onMetricsUpdate();
+      simulationEvents.emit(createErrorEvent(server.id, 'node-down', chainId));
+      simulationEvents.emit(createStateTransitionEvent(server.id, 'node-down', 'processing', 'down', chainId));
+      this.dispatcher.emitSpanStart(server.id, server.type ?? 'default', chainId);
+      this.dispatcher.emitSpanEnd(server.id, chainId, true);
+      // Symmetric cleanup: sendClientGroupRequest:455-461 added the request to
+      // serverState.activeRequests; remove it here so the utilization gauge
+      // doesn't drift up forever when the node is down/isolated.
+      if (serverState) {
+        serverState.activeRequests.delete(requestParticle.id);
+        serverState.utilization.activeConnections = serverState.activeRequests.size;
+      }
+      this.sendChainResponseWithVirtualClient(chainId, server, virtualClientId);
+      return;
+    }
+
+    const effectiveFault = serverFault === 'degraded' ? 'degraded' : parentFault === 'degraded' ? 'degraded' : null;
+    if (effectiveFault === 'degraded') {
+      simulationEvents.emit(createStateTransitionEvent(server.id, 'node-degraded', 'processing', 'degraded', chainId));
+    }
+    this.callbacks.onNodeStatusChange(server.id, effectiveFault === 'degraded' ? 'degraded' : 'processing');
 
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const context: import('./handlers/types').RequestContext = {
