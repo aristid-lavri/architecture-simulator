@@ -1,5 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import type { GraphNode, GraphEdge } from '@/types/graph';
+import type { ComponentType } from '@/types';
 import { NODE_WIDTH, NODE_HEIGHT, CONTAINER_COMPONENT_TYPES, HANDLE_RADIUS, HANDLE_WIDTH, HANDLE_HEIGHT, NODE_COLORS, canvasTheme, getNodeHeight } from './constants';
 
 export type HandleSide = 'left' | 'right' | 'top' | 'bottom';
@@ -64,7 +65,7 @@ export class HandleRenderer {
 
     // Create/update handles for all nodes
     for (const node of nodes) {
-      if (CONTAINER_COMPONENT_TYPES.has(node.type)) continue; // No handles on zones
+      if (CONTAINER_COMPONENT_TYPES.has(node.type as ComponentType)) continue; // No handles on zones
 
       const existing = this.handles.get(node.id);
       if (existing) {
@@ -87,7 +88,7 @@ export class HandleRenderer {
       ];
 
       const handleList: { graphics: Graphics; info: HandleInfo }[] = [];
-      const colors = NODE_COLORS[node.type] ?? { border: 0x555555 };
+      const colors = NODE_COLORS[node.type as ComponentType] ?? { border: 0x555555 };
 
       for (const config of handleConfigs) {
         const pos = this.computeHandlePosition(node, config.side, config.type);
@@ -194,7 +195,7 @@ export class HandleRenderer {
     const hitRadius = HANDLE_RADIUS + 8;
 
     for (const node of nodes) {
-      if (CONTAINER_COMPONENT_TYPES.has(node.type)) continue;
+      if (CONTAINER_COMPONENT_TYPES.has(node.type as ComponentType)) continue;
 
       const sides: HandleSide[] = ['left', 'right', 'top', 'bottom'];
       const types: HandleType[] = ['target', 'source', 'target', 'source'];

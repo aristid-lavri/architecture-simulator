@@ -12,7 +12,7 @@ export class ContainerHandler implements NodeRequestHandler {
 
   handleRequestArrival(
     node: GraphNode,
-    _context: RequestContext,
+    context: RequestContext,
     outgoingEdges: GraphEdge[],
     allNodes: GraphNode[]
   ): RequestDecision {
@@ -38,7 +38,8 @@ export class ContainerHandler implements NodeRequestHandler {
     }
 
     // Plusieurs enfants : sélection aléatoire (simule un routage interne)
-    const selected = routingEdges[Math.floor(Math.random() * routingEdges.length)];
+    const rng = context.rng ?? Math.random;
+    const selected = routingEdges[Math.floor(rng() * routingEdges.length)];
     return {
       action: 'forward',
       targets: [{ nodeId: selected.target, edgeId: selected.id }],

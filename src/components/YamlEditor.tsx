@@ -69,7 +69,7 @@ function ToolbarAction({ icon: Icon, label, shortLabel, onClick, variant = 'defa
 }
 
 export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorProps) {
-  const { nodes, edges, setNodes, setEdges } = useArchitectureStore();
+  const { nodes, edges, setNodes, setEdges, projectMeta, setProjectMeta } = useArchitectureStore();
   const [yamlContent, setYamlContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -124,11 +124,11 @@ export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorPro
   }, [yamlContent]);
 
   const handleExport = useCallback(() => {
-    const yaml = exportToYaml(nodes, edges);
+    const yaml = exportToYaml(nodes, edges, 'Architecture', projectMeta);
     setYamlContent(yaml);
     setError(null);
     setSuccess(false);
-  }, [nodes, edges]);
+  }, [nodes, edges, projectMeta]);
 
   const handleImport = useCallback(() => {
     if (!yamlContent.trim()) {
@@ -145,13 +145,14 @@ export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorPro
 
     setNodes(result.nodes);
     setEdges(result.edges);
+    setProjectMeta(result.projectMeta);
     setError(null);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 2500);
-  }, [yamlContent, setNodes, setEdges]);
+  }, [yamlContent, setNodes, setEdges, setProjectMeta]);
 
   const handleDownload = useCallback(() => {
-    const content = yamlContent || exportToYaml(nodes, edges);
+    const content = yamlContent || exportToYaml(nodes, edges, 'Architecture', projectMeta);
     const blob = new Blob([content], { type: 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -161,7 +162,7 @@ export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorPro
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [yamlContent, nodes, edges]);
+  }, [yamlContent, nodes, edges, projectMeta]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -178,11 +179,11 @@ export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorPro
   }, []);
 
   const handleCopy = useCallback(() => {
-    const content = yamlContent || exportToYaml(nodes, edges);
+    const content = yamlContent || exportToYaml(nodes, edges, 'Architecture', projectMeta);
     navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }, [yamlContent, nodes, edges]);
+  }, [yamlContent, nodes, edges, projectMeta]);
 
   const handleClear = useCallback(() => {
     setYamlContent('');

@@ -1,4 +1,5 @@
 import type { ComponentType } from '@/types';
+import { pluginRegistry } from '@/plugins/plugin-registry';
 
 // ============================================
 // Node visual constants
@@ -26,15 +27,22 @@ const GAUGED_TYPES = new Set<ComponentType>([
   'database', 'cache', 'message-queue', 'cdn', 'waf',
 ]);
 
-/** Get the correct node height for a component type */
-export function getNodeHeight(type: ComponentType): number {
-  if (CONTAINER_COMPONENT_TYPES.has(type)) return NODE_HEIGHT; // zones use their own sizing
-  return GAUGED_TYPES.has(type) ? NODE_HEIGHT_GAUGES : NODE_HEIGHT;
+/**
+ * Get the correct node height for a component type.
+ * Accepte aussi les types plugin (préfixés) — consulte `pluginRegistry.getNodeVisual().height`
+ * en fallback. Default: NODE_HEIGHT.
+ */
+export function getNodeHeight(type: string): number {
+  if (CONTAINER_COMPONENT_TYPES.has(type as ComponentType)) return NODE_HEIGHT; // zones use their own sizing
+  if (GAUGED_TYPES.has(type as ComponentType)) return NODE_HEIGHT_GAUGES;
+  // Fallback plugin : permet à un type plugin de déclarer sa hauteur via `visual.height`.
+  const pluginHeight = pluginRegistry.getNodeVisual(type)?.height;
+  return pluginHeight ?? NODE_HEIGHT;
 }
 
 /** Check if a component type has footer gauges */
-export function hasFooterGauges(type: ComponentType): boolean {
-  return GAUGED_TYPES.has(type);
+export function hasFooterGauges(type: string): boolean {
+  return GAUGED_TYPES.has(type as ComponentType);
 }
 
 // Container/zone defaults
@@ -51,9 +59,10 @@ export const Z_ZONES = 1;
 export const Z_EDGES = 2;
 export const Z_NODES = 3;
 export const Z_EDGE_HIT = 4;   // Edge hit areas above nodes for click detection
-export const Z_PARTICLES = 5;
-export const Z_HANDLES = 6;
-export const Z_SELECTION = 7;
+export const Z_OVERLAY = 5;    // Plugin overlays (visual-diff, …) — above nodes, below particles
+export const Z_PARTICLES = 6;
+export const Z_HANDLES = 7;
+export const Z_SELECTION = 8;
 
 // Handle constants (rectangular)
 export const HANDLE_WIDTH = 14;

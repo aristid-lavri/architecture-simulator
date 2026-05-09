@@ -121,7 +121,8 @@ export class ApiGatewayHandler implements NodeRequestHandler {
         }
 
         // 3. authFailureRate reste comme couche additionnelle (simule des erreurs aléatoires)
-        if (data.authFailureRate > 0 && Math.random() * 100 < data.authFailureRate) {
+        const authRng = context.rng ?? Math.random;
+        if (data.authFailureRate > 0 && authRng() * 100 < data.authFailureRate) {
           state.authFailures++;
           state.blockedRequests++;
           return { action: 'reject', reason: 'auth-failure' };
@@ -157,7 +158,8 @@ export class ApiGatewayHandler implements NodeRequestHandler {
     }
 
     // Simuler le taux d'erreur général
-    if (data.errorRate > 0 && Math.random() * 100 < data.errorRate) {
+    const errRng = context.rng ?? Math.random;
+    if (data.errorRate > 0 && errRng() * 100 < data.errorRate) {
       return { action: 'respond', isError: true };
     }
 

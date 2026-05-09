@@ -19,7 +19,7 @@ export class ServiceDiscoveryHandler implements NodeRequestHandler {
 
   handleRequestArrival(
     node: GraphNode,
-    _context: RequestContext,
+    context: RequestContext,
     outgoingEdges: GraphEdge[],
     allNodes: GraphNode[]
   ): RequestDecision {
@@ -43,7 +43,8 @@ export class ServiceDiscoveryHandler implements NodeRequestHandler {
 
     // Sélection aléatoire parmi les instances saines
     if (healthyEdges.length > 1) {
-      const selected = healthyEdges[Math.floor(Math.random() * healthyEdges.length)];
+      const rng = context.rng ?? Math.random;
+      const selected = healthyEdges[Math.floor(rng() * healthyEdges.length)];
       return {
         action: 'forward',
         targets: [{ nodeId: selected.target, edgeId: selected.id }],

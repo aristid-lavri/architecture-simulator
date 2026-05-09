@@ -80,7 +80,8 @@ export class HttpServerHandler implements NodeRequestHandler {
         return { action: 'reject', reason: 'token-expired' };
       }
       const authFailureRate = data.authFailureRate ?? 0;
-      if (authFailureRate > 0 && Math.random() * 100 < authFailureRate) {
+      const rng = context.rng ?? Math.random;
+      if (authFailureRate > 0 && rng() * 100 < authFailureRate) {
         return { action: 'reject', reason: 'auth-failure' };
       }
     }
@@ -114,7 +115,8 @@ export class HttpServerHandler implements NodeRequestHandler {
     state.lastSecondRequests++;
 
     // Simuler le taux d'erreur
-    const isError = Math.random() * 100 < data.errorRate;
+    const errRng = context.rng ?? Math.random;
+    const isError = errRng() * 100 < data.errorRate;
 
     // Si pas d'edges sortants ou erreur, répondre directement
     if (outgoingEdges.length === 0 || isError) {

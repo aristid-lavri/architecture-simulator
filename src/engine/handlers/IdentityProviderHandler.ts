@@ -100,7 +100,8 @@ export class IdentityProviderHandler implements NodeRequestHandler {
     }
 
     // Vérifier le taux d'erreur
-    if (Math.random() * 100 < data.errorRate) {
+    const rng = context.rng ?? Math.random;
+    if (rng() * 100 < data.errorRate) {
       return { action: 'reject', reason: 'auth-failure' };
     }
 

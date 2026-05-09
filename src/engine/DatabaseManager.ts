@@ -4,6 +4,7 @@ import type {
   DatabasePerformance,
   DatabaseUtilization,
 } from '@/types';
+import type { SimulationRNG } from './SimulationRNG';
 
 interface ActiveQuery {
   id: string;
@@ -28,6 +29,13 @@ interface DatabaseState {
  */
 export class DatabaseManager {
   private databaseStates: Map<string, DatabaseState> = new Map();
+
+  /** PRNG injecte pour le tirage des erreurs (B2.1). */
+  private readonly rng: SimulationRNG;
+
+  constructor(rng?: SimulationRNG) {
+    this.rng = rng ?? (() => Math.random());
+  }
 
   /**
    * Initialize a database node
@@ -221,7 +229,7 @@ export class DatabaseManager {
     const { errorRate } = state.config;
     if (errorRate <= 0) return false;
 
-    return Math.random() * 100 < errorRate;
+    return this.rng() * 100 < errorRate;
   }
 
   /**

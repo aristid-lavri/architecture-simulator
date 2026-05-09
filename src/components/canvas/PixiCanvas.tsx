@@ -1,15 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
-import { Application, Container } from 'pixi.js';
+import { useEffect, useRef, useCallback, useState, useSyncExternalStore } from 'react';
+import { Application, Container, Graphics } from 'pixi.js';
 import { Viewport } from 'pixi-viewport';
 import { useAppStore } from '@/store/app-store';
 import { useArchitectureStore } from '@/store/architecture-store';
 import { useSimulationStore } from '@/store/simulation-store';
 import { SimulationEngine } from '@/engine/SimulationEngine';
 import { AnalyticsEngine } from '@/analytics/AnalyticsEngine';
-import type { GraphNode, GraphEdge } from '@/types/graph';
-import type { ComponentType } from '@/types';
+import type { GraphNode, GraphEdge, NodeType } from '@/types/graph';
 import { useAnalyticsStore } from '@/store/analytics-store';
 import { NodeRenderer } from './NodeRenderer';
 import { EdgeRenderer } from './EdgeRenderer';
@@ -18,7 +17,7 @@ import { ParticleRenderer } from './ParticleRenderer';
 import { HandleRenderer } from './HandleRenderer';
 import { loadIconTextures } from './IconRegistry';
 import {
-  Z_GRID, Z_ZONES, Z_EDGES, Z_NODES, Z_EDGE_HIT, Z_HANDLES, Z_PARTICLES,
+  Z_GRID, Z_ZONES, Z_EDGES, Z_NODES, Z_EDGE_HIT, Z_HANDLES, Z_PARTICLES, Z_OVERLAY,
   CONTAINER_COMPONENT_TYPES, ZONE_DEFAULT_WIDTH, ZONE_DEFAULT_HEIGHT,
   HOST_DEFAULT_WIDTH, HOST_DEFAULT_HEIGHT, CONTAINER_DEFAULT_WIDTH, CONTAINER_DEFAULT_HEIGHT,
   setCanvasTheme,
@@ -26,6 +25,10 @@ import {
 import { getDefaultNodeData } from './node-defaults';
 import { findContainerAtPosition } from './hit-testing';
 import { applyAutoLayout } from '@/lib/auto-layout';
+import { computeContainerSize, resizeAncestors, resizeContainerAndAncestors } from '@/lib/container-sizing';
+import { applyCollapseView } from '@/lib/collapse-view';
+import { applyPluginCanvasView } from '@/lib/plugin-canvas-view';
+import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry } from '@/plugins/extensions';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { MiniMap } from './MiniMap';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
@@ -53,6 +56,8 @@ export function PixiCanvas() {
   const nodeLayerRef = useRef<Container | null>(null);
   const handleLayerRef = useRef<Container | null>(null);
   const particleLayerRef = useRef<Container | null>(null);
+  const overlayLayerRef = useRef<Container | null>(null);
+  const overlayGraphicsRef = useRef<Graphics | null>(null);
 
   // Drag state
   const [isDragging, setIsDragging] = useState(false);
@@ -75,6 +80,7 @@ export function PixiCanvas() {
   const mode = useAppStore((s) => s.mode);
   const theme = useAppStore((s) => s.theme);
   const edgeRoutingMode = useAppStore((s) => s.edgeRoutingMode);
+  const edgeProtocolFilters = useAppStore((s) => s.edgeProtocolFilters);
   const isComponentsPanelOpen = useAppStore((s) => s.isComponentsPanelOpen);
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
   const setSelectedNodeId = useAppStore((s) => s.setSelectedNodeId);
@@ -90,9 +96,30 @@ export function PixiCanvas() {
     redo,
     _syncVersion,
   } = useArchitectureStore();
+  const projectMeta = useArchitectureStore((s) => s.projectMeta);
+
+  // Re-render quand un plugin enregistre/désenregistre un filtre canvas (sub-phase 0).
+  // Le compteur change → effet de sync ci-dessous se ré-exécute.
+  const _canvasFilterVersion = useSyncExternalStore(
+    (cb) => canvasFilterRegistry.subscribe(cb),
+    () => (canvasFilterRegistry.hasFilters() ? 1 : 0),
+    () => 0,
+  );
+  void _canvasFilterVersion;
+
+  // Idem pour les overlays canvas (visual-diff EE-3, …). On lit la version monotone
+  // du registry pour que toute notification (incluant celles déclenchées par un
+  // provider — ex: diffMode bascule) ré-exécute l'effet de rendu d'overlay.
+  const _canvasOverlayVersion = useSyncExternalStore(
+    (cb) => canvasOverlayRegistry.subscribe(cb),
+    () => canvasOverlayRegistry.getVersion(),
+    () => 0,
+  );
 
   // Simulation store selectors
   const simulationState = useSimulationStore((s) => s.state);
+  const userSeed = useSimulationStore((s) => s.seed);
+  const setLastRunSeed = useSimulationStore((s) => s.setLastRunSeed);
   const nodeStates = useSimulationStore((s) => s.nodeStates);
   const addParticle = useSimulationStore((s) => s.addParticle);
   const removeParticle = useSimulationStore((s) => s.removeParticle);
@@ -150,6 +177,12 @@ export function PixiCanvas() {
 
     const container = canvasRef.current;
     const app = new Application();
+    // Guard contre la double-invocation des effets en dev (React strict mode) :
+    // l'init de PixiJS est asynchrone, et un cleanup déclenché avant la fin de
+    // `app.init()` provoquait `this._cancelResize is not a function` lors du
+    // `app.destroy()` sur une app pas encore initialisée.
+    let cancelled = false;
+    let initDone = false;
 
     (async () => {
       await app.init({
@@ -160,8 +193,20 @@ export function PixiCanvas() {
         autoDensity: true,
       });
 
+      if (cancelled) {
+        // Cleanup déjà exécuté pendant l'init : on détruit l'app initialisée et on sort.
+        try { app.destroy(true, { children: true }); } catch { /* ignore */ }
+        return;
+      }
+      initDone = true;
+
       // Pré-charge les textures d'icônes lucide avant le 1er render des nœuds
       await loadIconTextures();
+
+      if (cancelled) {
+        try { app.destroy(true, { children: true }); } catch { /* ignore */ }
+        return;
+      }
 
       container.appendChild(app.canvas as HTMLCanvasElement);
 
@@ -191,6 +236,7 @@ export function PixiCanvas() {
       const edgeLayer = new Container();
       const nodeLayer = new Container();
       const edgeHitLayer = new Container();
+      const overlayLayer = new Container();
       const handleLayer = new Container();
       const particleLayer = new Container();
 
@@ -199,11 +245,19 @@ export function PixiCanvas() {
       edgeLayer.zIndex = Z_EDGES;
       nodeLayer.zIndex = Z_NODES;
       edgeHitLayer.zIndex = Z_EDGE_HIT;
+      overlayLayer.zIndex = Z_OVERLAY;
       particleLayer.zIndex = Z_PARTICLES;
       handleLayer.zIndex = Z_HANDLES;
 
+      // Plugin overlay layer (visual-diff, …) hosts a single Graphics that providers
+      // collectively repaint via canvasOverlayRegistry. eventMode 'none' so it doesn't
+      // intercept clicks meant for nodes/edges below.
+      overlayLayer.eventMode = 'none';
+      const overlayGraphics = new Graphics();
+      overlayLayer.addChild(overlayGraphics);
+
       viewport.sortableChildren = true;
-      viewport.addChild(gridLayer, zoneLayer, edgeLayer, nodeLayer, edgeHitLayer, particleLayer, handleLayer);
+      viewport.addChild(gridLayer, zoneLayer, edgeLayer, nodeLayer, edgeHitLayer, overlayLayer, particleLayer, handleLayer);
 
       // Create renderers
       const gridRenderer = new GridRenderer(gridLayer);
@@ -220,6 +274,8 @@ export function PixiCanvas() {
       edgeLayerRef.current = edgeLayer;
       nodeLayerRef.current = nodeLayer;
       handleLayerRef.current = handleLayer;
+      overlayLayerRef.current = overlayLayer;
+      overlayGraphicsRef.current = overlayGraphics;
       gridRendererRef.current = gridRenderer;
       nodeRendererRef.current = nodeRenderer;
       edgeRendererRef.current = edgeRenderer;
@@ -248,8 +304,13 @@ export function PixiCanvas() {
       const currentArch = useArchitectureStore.getState();
       const currentApp = useAppStore.getState();
       if (currentArch.nodes.length > 0 || currentArch.edges.length > 0) {
-        nodeRenderer.renderNodes(currentArch.nodes, currentApp.selectedNodeId);
-        edgeRenderer.renderEdges(currentArch.edges, currentArch.nodes, currentApp.selectedEdgeId, currentApp.edgeRoutingMode);
+        const filtered = applyPluginCanvasView(currentArch.nodes, currentArch.edges, currentArch.projectMeta);
+        const view = applyCollapseView(filtered.nodes, filtered.edges);
+        nodeRenderer.renderNodes(view.visibleNodes, currentApp.selectedNodeId);
+        edgeRenderer.renderEdges(view.visibleEdges, view.visibleNodes, currentApp.selectedEdgeId, currentApp.edgeRoutingMode, {
+          focusNodeId: currentApp.selectedNodeId,
+          protocolFilters: currentApp.edgeProtocolFilters,
+        });
       }
 
       // Also subscribe to hydration in case it finishes after PixiJS init
@@ -258,21 +319,31 @@ export function PixiCanvas() {
         const arch = useArchitectureStore.getState();
         const appState = useAppStore.getState();
         if (arch.nodes.length > 0 || arch.edges.length > 0) {
-          nodeRenderer.renderNodes(arch.nodes, appState.selectedNodeId);
-          edgeRenderer.renderEdges(arch.edges, arch.nodes, appState.selectedEdgeId, appState.edgeRoutingMode);
+          const filtered = applyPluginCanvasView(arch.nodes, arch.edges, arch.projectMeta);
+          const view = applyCollapseView(filtered.nodes, filtered.edges);
+          nodeRenderer.renderNodes(view.visibleNodes, appState.selectedNodeId);
+          edgeRenderer.renderEdges(view.visibleEdges, view.visibleNodes, appState.selectedEdgeId, appState.edgeRoutingMode, {
+            focusNodeId: appState.selectedNodeId,
+            protocolFilters: appState.edgeProtocolFilters,
+          });
         }
       });
       unsubHydrationRef.current = unsub;
     })();
 
     return () => {
+      cancelled = true;
       unsubHydrationRef.current?.();
       nodeRendererRef.current?.destroy();
       edgeRendererRef.current?.destroy();
       gridRendererRef.current?.destroy();
       particleRendererRef.current?.destroy();
       handleRendererRef.current?.destroy();
-      app.destroy(true, { children: true });
+      // Ne détruit l'app que si `init()` a abouti — sinon le `cancelled` flag
+      // demande à l'IIFE de la détruire elle-même quand l'init aura fini.
+      if (initDone) {
+        try { app.destroy(true, { children: true }); } catch { /* ignore */ }
+      }
       appRef.current = null;
       viewportRef.current = null;
       initializedRef.current = false;
@@ -289,14 +360,80 @@ export function PixiCanvas() {
   useEffect(() => {
     if (!initializedRef.current || !nodeRendererRef.current || !edgeRendererRef.current) return;
 
-    nodeRendererRef.current.renderNodes(storedNodes, selectedNodeId);
-    edgeRendererRef.current.renderEdges(storedEdges, storedNodes, selectedEdgeId, edgeRoutingMode);
+    // Apply C4-style collapse view: hide descendants of collapsed containers, aggregate
+    // edges that now share the same effective endpoints, redirect particle traffic onto
+    // the visible aggregates.
+    // Apply plugin filters first (e.g. visibility per abstraction level), then collapse.
+    const filtered = applyPluginCanvasView(storedNodes, storedEdges, projectMeta);
+    const view = applyCollapseView(filtered.nodes, filtered.edges);
 
-    // Rebuild particle path cache when edges/nodes change
-    particleRendererRef.current?.rebuildPaths(storedEdges, storedNodes, edgeRoutingMode);
+    nodeRendererRef.current.renderNodes(view.visibleNodes, selectedNodeId);
+    edgeRendererRef.current.renderEdges(view.visibleEdges, view.visibleNodes, selectedEdgeId, edgeRoutingMode, {
+      focusNodeId: selectedNodeId ?? hoveredNodeIdRef.current,
+      protocolFilters: edgeProtocolFiltersRef.current,
+    });
+
+    // Rebuild particle path cache against the visible edges and tell the renderer how
+    // to translate underlying particle edge ids to their visible aggregate.
+    particleRendererRef.current?.rebuildPaths(view.visibleEdges, view.visibleNodes, edgeRoutingMode);
+    particleRendererRef.current?.setEdgeRemap(view.edgeRemap.size > 0 ? view.edgeRemap : null);
 
     prevSyncVersionRef.current = _syncVersion;
-  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady]);
+    // Hover and protocol-filter changes do NOT re-run this expensive sync — they go
+    // through the dedicated focus effect below, which only touches alphas.
+  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady, projectMeta, _canvasFilterVersion]);
+
+  // ============================================
+  // Plugin overlay layer (visual-diff EE-3, …)
+  // ============================================
+  // Demande à chaque provider sa map { nodeId → OverlayHint }, puis dessine bordure
+  // (ou bordure + strikethrough) autour de chaque nœud sur le Graphics partagé.
+  // Re-déclenché quand : storedNodes change, projectMeta change, ou un provider notifie.
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    const overlay = overlayGraphicsRef.current;
+    const nodeRenderer = nodeRendererRef.current;
+    if (!overlay || !nodeRenderer) return;
+
+    overlay.clear();
+
+    if (!canvasOverlayRegistry.hasProviders()) return;
+
+    const hints = canvasOverlayRegistry.collect({
+      allNodes: storedNodes,
+      projectMeta,
+    });
+    if (hints.size === 0) return;
+
+    for (const [nodeId, hint] of hints) {
+      const bounds = nodeRenderer.getNodeBounds(nodeId);
+      if (!bounds) continue;
+      const radius = 4;
+      overlay.roundRect(bounds.x - 2, bounds.y - 2, bounds.width + 4, bounds.height + 4, radius);
+      overlay.stroke({ width: hint.kind === 'border' ? 3 : 3, color: hint.color, alpha: hint.alpha });
+      if (hint.kind === 'strike-border') {
+        overlay.moveTo(bounds.x, bounds.y);
+        overlay.lineTo(bounds.x + bounds.width, bounds.y + bounds.height);
+        overlay.stroke({ width: 2, color: hint.color, alpha: hint.alpha * 0.78 });
+      }
+    }
+  }, [storedNodes, projectMeta, viewportReady, _syncVersion, _canvasOverlayVersion]);
+
+  // ============================================
+  // Cheap focus pass — updates only alpha values when hover/selection/filter changes
+  // ============================================
+  const hoveredNodeIdRef = useRef(hoveredNodeId);
+  const edgeProtocolFiltersRef = useRef(edgeProtocolFilters);
+  useEffect(() => { hoveredNodeIdRef.current = hoveredNodeId; }, [hoveredNodeId]);
+  useEffect(() => { edgeProtocolFiltersRef.current = edgeProtocolFilters; }, [edgeProtocolFilters]);
+
+  useEffect(() => {
+    if (!initializedRef.current || !edgeRendererRef.current) return;
+    edgeRendererRef.current.applyFocus(selectedEdgeId, {
+      focusNodeId: selectedNodeId ?? hoveredNodeId,
+      protocolFilters: edgeProtocolFilters,
+    });
+  }, [selectedNodeId, hoveredNodeId, edgeProtocolFilters, selectedEdgeId, viewportReady]);
 
   // ============================================
   // Node status updates (simulation mode)
@@ -328,8 +465,15 @@ export function PixiCanvas() {
     // Re-render nodes and edges with new colors
     const arch = useArchitectureStore.getState();
     const appState = useAppStore.getState();
-    nodeRendererRef.current?.renderNodes(arch.nodes, appState.selectedNodeId);
-    edgeRendererRef.current?.renderEdges(arch.edges, arch.nodes, appState.selectedEdgeId, appState.edgeRoutingMode);
+    {
+      const filtered = applyPluginCanvasView(arch.nodes, arch.edges, arch.projectMeta);
+      const view = applyCollapseView(filtered.nodes, filtered.edges);
+      nodeRendererRef.current?.renderNodes(view.visibleNodes, appState.selectedNodeId);
+      edgeRendererRef.current?.renderEdges(view.visibleEdges, view.visibleNodes, appState.selectedEdgeId, appState.edgeRoutingMode, {
+        focusNodeId: appState.selectedNodeId,
+        protocolFilters: appState.edgeProtocolFilters,
+      });
+    }
 
     // Re-render handles if in edit mode
     if (appState.mode === 'edit' && handleRendererRef.current) {
@@ -345,8 +489,12 @@ export function PixiCanvas() {
       handleRendererRef.current?.hideAll();
       return;
     }
-    handleRendererRef.current.renderHandles(storedNodes, selectedNodeId, hoveredNodeId);
-  }, [isEditable, storedNodes, selectedNodeId, hoveredNodeId, viewportReady]);
+    // Apply the same collapse view used by the node renderer so descendants of a
+    // collapsed container don't keep showing their connection handles.
+    const filtered = applyPluginCanvasView(storedNodes, [], projectMeta);
+    const view = applyCollapseView(filtered.nodes, []);
+    handleRendererRef.current.renderHandles(view.visibleNodes, selectedNodeId, hoveredNodeId);
+  }, [isEditable, storedNodes, selectedNodeId, hoveredNodeId, viewportReady, projectMeta, _canvasFilterVersion]);
 
   // Wire up edge click callback (selection) and edit mode sync
   useEffect(() => {
@@ -354,6 +502,14 @@ export function PixiCanvas() {
     edgeRendererRef.current.onEdgeClick = (edgeId: string) => {
       nodeClickedRef.current = true;
       useAppStore.getState().setSelectedEdgeId(edgeId);
+    };
+    edgeRendererRef.current.onEdgeDoubleClick = (edgeId: string) => {
+      const edge = useArchitectureStore.getState().edges.find((e) => e.id === edgeId);
+      if (!edge) return;
+      edgeInteractionRegistry.dispatch(
+        { type: 'doubleclick', edgeId, edge },
+        { projectMeta: useArchitectureStore.getState().projectMeta },
+      );
     };
     edgeRendererRef.current.setEditMode(isEditable);
     edgeRendererRef.current.onEdgeHover = (edgeId: string | null) => {
@@ -408,12 +564,26 @@ export function PixiCanvas() {
   useEffect(() => {
     if (!handleRendererRef.current) return;
     handleRendererRef.current.onEdgeCreated = (sourceId, targetId, sourceHandle, targetHandle) => {
-      const newEdge: GraphEdge = {
+      const draftEdge = {
         id: `edge-${sourceId}-${targetId}-${Date.now()}`,
         source: sourceId,
         target: targetId,
         sourceHandle,
         targetHandle,
+        data: {} as Record<string, unknown>,
+      };
+      // Laisser les plugins enrichir/valider la création (ex: pose `parentEdgeId` côté C4
+      // sous drill, ou refus si source/target hors des conteneurs raffinés).
+      const decoratedData = edgeCreationDecoratorRegistry.apply(draftEdge, {
+        projectMeta: useArchitectureStore.getState().projectMeta,
+      });
+      if (decoratedData === null) {
+        // Decorator a refusé la création — abandon silencieux (le plugin a déjà loggé/feedback).
+        return;
+      }
+      const newEdge: GraphEdge = {
+        ...draftEdge,
+        data: decoratedData,
       };
       saveNodesAndEdges(storedNodes, [...storedEdges, newEdge]);
     };
@@ -462,6 +632,16 @@ export function PixiCanvas() {
       setContextMenu({ x: event.clientX, y: event.clientY, nodeId });
     };
 
+    nodeRenderer.onNodeDoubleClick = (nodeId: string) => {
+      // Dispatch aux plugins. Si aucun ne consomme, comportement par défaut neutre.
+      const node = useArchitectureStore.getState().nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      nodeInteractionRegistry.dispatch(
+        { type: 'doubleclick', nodeId, node },
+        { projectMeta: useArchitectureStore.getState().projectMeta },
+      );
+    };
+
     nodeRenderer.onNodeHover = (nodeId: string | null) => {
       setHoveredNodeId(nodeId);
     };
@@ -483,6 +663,39 @@ export function PixiCanvas() {
       useArchitectureStore.getState().removeNode(nodeId);
     };
 
+    // Collapse / expand toggle on container types — flips `data.collapsed` AND swaps
+    // dimensions so a collapsed container shows as a compact standard-sized block.
+    // On expand we recompute the natural size from the (still-stored) children.
+    const COLLAPSED_WIDTH = 200;
+    const COLLAPSED_HEIGHT = 80;
+    nodeRenderer.onCollapseClick = (nodeId: string) => {
+      const arch = useArchitectureStore.getState();
+      const node = arch.nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      const data = (node.data ?? {}) as Record<string, unknown>;
+      const willBeCollapsed = !data.collapsed;
+
+      let nextWidth: number | undefined;
+      let nextHeight: number | undefined;
+      if (willBeCollapsed) {
+        nextWidth = COLLAPSED_WIDTH;
+        nextHeight = COLLAPSED_HEIGHT;
+      } else {
+        // Expanding — recompute the size that fits the (now visible again) children.
+        const expanded = { ...node, data: { ...data, collapsed: false } as GraphNode['data'] };
+        const size = computeContainerSize(expanded, arch.nodes);
+        nextWidth = size.width;
+        nextHeight = size.height;
+      }
+
+      const updatedNodes = arch.nodes.map((n) =>
+        n.id === nodeId
+          ? { ...n, width: nextWidth, height: nextHeight, data: { ...n.data, collapsed: willBeCollapsed } as GraphNode['data'] }
+          : n,
+      );
+      arch.setNodesAndEdges(updatedNodes, arch.edges);
+    };
+
   }, [isEditable, viewportReady]);
 
   // Sync chaosEnabled avec le mode (l'icône ⚡ n'apparaît qu'en mode simulation)
@@ -490,8 +703,11 @@ export function PixiCanvas() {
     if (!nodeRendererRef.current) return;
     nodeRendererRef.current.chaosEnabled = (mode === 'simulation');
     // Re-render unique au changement de mode pour appliquer la visibilité
+    const archState = useArchitectureStore.getState();
+    const filtered = applyPluginCanvasView(archState.nodes, archState.edges, archState.projectMeta);
+    const view = applyCollapseView(filtered.nodes, filtered.edges);
     nodeRendererRef.current.renderNodes(
-      useArchitectureStore.getState().nodes,
+      view.visibleNodes,
       useAppStore.getState().selectedNodeId,
     );
   }, [mode, viewportReady]);
@@ -531,7 +747,21 @@ export function PixiCanvas() {
         }
       }
     }
-  }, [analyticsComponents, storedEdges, storedNodes]);
+
+    // Plugin projections : nœuds qui dérivent leurs métriques d'autres nœuds (ex.
+    // c4-container-instance projette les métriques du Container L2 référencé).
+    // Le registry est géré par le CE et alimenté par les plugins (cf. metrics-projection.ts).
+    if (metricsProjectionRegistry.hasProviders()) {
+      const projections = metricsProjectionRegistry.collectProjections({
+        analyticsByNodeId: analyticsComponents,
+        allNodes: storedNodes,
+        projectMeta,
+      });
+      for (const [nodeId, metrics] of projections) {
+        nodeRendererRef.current.updateFooterMetrics(nodeId, metrics);
+      }
+    }
+  }, [analyticsComponents, storedEdges, storedNodes, projectMeta]);
 
   useEffect(() => {
     if (!nodeRendererRef.current || !viewportRef.current) return;
@@ -576,7 +806,10 @@ export function PixiCanvas() {
       // Re-render edges with updated size
       edgeRendererRef.current?.renderEdges(storedEdges, storedNodes.map((n) =>
         n.id === resizeNodeId ? { ...n, position: { x: result.x, y: result.y }, width: result.w, height: result.h } : n
-      ), selectedEdgeId, edgeRoutingMode);
+      ), selectedEdgeId, edgeRoutingMode, {
+        focusNodeId: selectedNodeId ?? hoveredNodeIdRef.current,
+        protocolFilters: edgeProtocolFiltersRef.current,
+      });
     };
 
     nodeRenderer.onResizeEnd = (_event: PointerEvent) => {
@@ -602,7 +835,7 @@ export function PixiCanvas() {
               storePos = { x: finalPos.x - parentAbsPos.x, y: finalPos.y - parentAbsPos.y };
             }
           }
-          const updatedNodes = storedNodes.map((n) =>
+          let updatedNodes = storedNodes.map((n) =>
             n.id === resizeNodeId ? {
               ...n,
               position: storePos,
@@ -610,12 +843,72 @@ export function PixiCanvas() {
               height: Math.round(bgBounds.height),
             } : n
           );
+          // If the resized node lives inside a container, the container may need to grow.
+          if (node.parentId) {
+            updatedNodes = resizeAncestors(updatedNodes, resizeNodeId);
+          }
           saveNodesAndEdges(updatedNodes, storedEdges);
         }
       }
 
       viewport.plugins.resume('drag');
       setIsDragging(false);
+    };
+
+    // ── Drag throttling via rAF ──
+    // Pointer-move can fire >100Hz; we batch the heavy work (move + resize + renderEdges)
+    // to one execution per animation frame so the screen never has more than 60fps of
+    // recompute pressure during a drag.
+    let pendingDragPos: { x: number; y: number } | null = null;
+    let dragRafId: number | null = null;
+
+    const flushDrag = () => {
+      dragRafId = null;
+      const pos = pendingDragPos;
+      pendingDragPos = null;
+      if (!pos || !dragStateRef.current || !isEditable) return;
+      const draggedId = dragStateRef.current.nodeId;
+      const { x: newX, y: newY } = pos;
+
+      nodeRenderer.moveNode(draggedId, newX, newY);
+
+      // Live container resize: grow the dragged node's parent so it follows the child.
+      // Stops once the child is hovering over a different container so the user can
+      // reparent freely.
+      const draggedNode = storedNodes.find((n) => n.id === draggedId);
+      const originalParentId = draggedNode?.parentId;
+      if (originalParentId && draggedNode) {
+        const hovered = findContainerAtPosition(
+          storedNodes.filter((n) => n.id !== draggedId),
+          { x: newX, y: newY },
+          draggedNode.type,
+        );
+        const stillOverOriginal = !hovered || hovered.id === originalParentId;
+        if (stillOverOriginal) {
+          const parent = storedNodes.find((n) => n.id === originalParentId);
+          const parentAbs = nodeRendererRef.current?.getNodePosition(originalParentId);
+          if (parent && parentAbs) {
+            const synthetic = storedNodes.map((n) =>
+              n.id === draggedId
+                ? { ...n, position: { x: newX - parentAbs.x, y: newY - parentAbs.y } }
+                : n,
+            );
+            const size = computeContainerSize(parent, synthetic);
+            const currentW = parent.width ?? size.width;
+            const currentH = parent.height ?? size.height;
+            if (size.width !== currentW || size.height !== currentH) {
+              nodeRendererRef.current?.resizeNodeVisual(originalParentId, parentAbs.x, parentAbs.y, size.width, size.height);
+            }
+          }
+        }
+      }
+
+      edgeRendererRef.current?.renderEdges(storedEdges, storedNodes.map((n) =>
+        n.id === draggedId ? { ...n, position: { x: newX, y: newY } } : n
+      ), selectedEdgeId, edgeRoutingMode, {
+        focusNodeId: selectedNodeId ?? hoveredNodeIdRef.current,
+        protocolFilters: edgeProtocolFiltersRef.current,
+      });
     };
 
     // Handle edge creation drag: update preview line on pointermove, finish on pointerup
@@ -639,15 +932,16 @@ export function PixiCanvas() {
         }
       }
 
-      // Node drag logic
+      // Node drag — record the latest pointer position; the rAF will pick up the freshest one.
       if (!dragStateRef.current || !isEditable) return;
       const worldPos = viewport.toWorld(event.clientX, event.clientY);
-      const newX = worldPos.x - dragStateRef.current.offset.x;
-      const newY = worldPos.y - dragStateRef.current.offset.y;
-      nodeRenderer.moveNode(dragStateRef.current.nodeId, newX, newY);
-      edgeRendererRef.current?.renderEdges(storedEdges, storedNodes.map((n) =>
-        n.id === dragStateRef.current!.nodeId ? { ...n, position: { x: newX, y: newY } } : n
-      ), selectedEdgeId, edgeRoutingMode);
+      pendingDragPos = {
+        x: worldPos.x - dragStateRef.current.offset.x,
+        y: worldPos.y - dragStateRef.current.offset.y,
+      };
+      if (dragRafId === null) {
+        dragRafId = requestAnimationFrame(flushDrag);
+      }
     };
 
     nodeRenderer.onNodePointerUp = (event: PointerEvent) => {
@@ -704,9 +998,15 @@ export function PixiCanvas() {
                 };
               }
 
-              const updatedNodes = storedNodes.map((n) =>
+              let updatedNodes = storedNodes.map((n) =>
                 n.id === nodeId ? { ...n, position: finalPosition, parentId: newParentId } : n
               );
+              // Resize the new parent chain (the moved child grew or shrunk it).
+              updatedNodes = resizeAncestors(updatedNodes, nodeId);
+              // If reparented, also recompute the OLD parent (it may have lost a child).
+              if (oldParentId && oldParentId !== newParentId) {
+                updatedNodes = resizeContainerAndAncestors(updatedNodes, oldParentId);
+              }
               saveNodesAndEdges(updatedNodes, storedEdges);
             }
           }
@@ -716,6 +1016,15 @@ export function PixiCanvas() {
           viewport.plugins.resume('drag');
         }
       }
+    };
+    // hoveredNodeId / edgeProtocolFilters are read via refs above so they don't trigger
+    // re-attachment of these expensive pointer handlers on every hover.
+    return () => {
+      if (dragRafId !== null) {
+        cancelAnimationFrame(dragRafId);
+        dragRafId = null;
+      }
+      pendingDragPos = null;
     };
   }, [isEditable, mode, storedNodes, storedEdges, selectedNodeId, selectedEdgeId, edgeRoutingMode, setSelectedNodeId, setSelectedEdgeId, saveNodesAndEdges, viewportReady]);
 
@@ -754,7 +1063,7 @@ export function PixiCanvas() {
     e.preventDefault();
     if (!isEditable || !viewportRef.current || !canvasRef.current) return;
 
-    const type = e.dataTransfer.getData('application/reactflow') as ComponentType;
+    const type = e.dataTransfer.getData('application/reactflow') as NodeType;
     if (!type) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
@@ -784,18 +1093,48 @@ export function PixiCanvas() {
     else if (type === 'host-server') { width = HOST_DEFAULT_WIDTH; height = HOST_DEFAULT_HEIGHT; }
     else if (type === 'container') { width = CONTAINER_DEFAULT_WIDTH; height = CONTAINER_DEFAULT_HEIGHT; }
 
+    const draftId = `${type}-${Date.now()}`;
+    const baseData = getDefaultNodeData(type);
+
+    // Collecte les types `dataTransfer` supplémentaires (hors le type CE primaire).
+    // Permet aux plugins de transmettre des métadonnées sans étendre l'API CE.
+    const dragExtra: Record<string, string> = {};
+    for (const item of Array.from(e.dataTransfer.types)) {
+      if (item === 'application/reactflow') continue;
+      try {
+        const value = e.dataTransfer.getData(item);
+        if (value) dragExtra[item] = value;
+      } catch {
+        /* certains types ne sont pas lisibles (ex: Files) — on ignore */
+      }
+    }
+
+    // Décore le brouillon via les plugins enregistrés (multi-niveaux, analytics, etc.).
+    // Le CE transmet seulement le mime-type primaire et les types `dataTransfer`
+    // additionnels — c'est aux decorators d'interpréter leurs propres étiquettes.
+    const decoratedData = nodeCreationDecoratorRegistry.apply(
+      { id: draftId, type, position: finalPosition, data: baseData },
+      {
+        projectMeta,
+        dragMimeType: 'application/reactflow',
+        dragExtra,
+      },
+    );
+
     const newNode: GraphNode = {
-      id: `${type}-${Date.now()}`,
+      id: draftId,
       type,
       position: finalPosition,
-      data: getDefaultNodeData(type),
+      data: decoratedData,
       ...(parent ? { parentId: parent.id } : {}),
       ...(width ? { width } : {}),
       ...(height ? { height } : {}),
     };
 
-    saveNodesAndEdges([...storedNodes, newNode], storedEdges);
-  }, [isEditable, storedNodes, storedEdges, saveNodesAndEdges]);
+    // Grow ancestor containers if the drop landed inside one (cascades zone → host → container).
+    const nextNodes = resizeAncestors([...storedNodes, newNode], newNode.id);
+    saveNodesAndEdges(nextNodes, storedEdges);
+  }, [isEditable, storedNodes, storedEdges, saveNodesAndEdges, projectMeta]);
 
   // ============================================
   // Keyboard shortcuts
@@ -916,6 +1255,13 @@ export function PixiCanvas() {
         () => useSimulationStore.getState().particles
       );
 
+      // B2.1 - Reproductibilite : appliquer le seed configure par l'utilisateur
+      // (ou null pour generer un seed entropique). Expose le seed effectif au store
+      // pour qu'il apparaisse dans le rapport de simulation.
+      const effectiveSeedInput = userSeed === null ? undefined : userSeed;
+      engineRef.current.applySeed(effectiveSeedInput);
+      setLastRunSeed(engineRef.current.getSeed());
+
       engineRef.current.start();
     } else if (simulationState === 'paused') {
       engineRef.current.pause();
@@ -926,7 +1272,7 @@ export function PixiCanvas() {
       particleRendererRef.current?.hideAll();
       resetAnalytics();
     }
-  }, [mode, simulationState, storedNodes, storedEdges, resetAnalytics]);
+  }, [mode, simulationState, storedNodes, storedEdges, resetAnalytics, userSeed, setLastRunSeed]);
 
   // Fault provider sync
   useEffect(() => {
@@ -947,12 +1293,58 @@ export function PixiCanvas() {
     if (storedNodes.length === 0 || isLayouting) return;
     setIsLayouting(true);
     try {
-      const layoutedNodes = await applyAutoLayout(storedNodes, storedEdges);
-      saveNodesAndEdges(layoutedNodes, storedEdges);
+      // Filtre par les plugins (ex: niveau actif C4 → uniquement les nœuds visibles).
+      // Sans filtre actif → renvoie toute l'archi (comportement projet libre inchangé).
+      // Avec filtre C4 → l'auto-layout ne réorganise que les nœuds du niveau actif,
+      // évitant que des nœuds invisibles influencent le placement et donnent l'impression
+      // que la commande "ne fait rien" sur la vue courante.
+      const visible = applyPluginCanvasView(storedNodes, storedEdges, projectMeta);
+      const visibleIds = new Set(visible.nodes.map((n) => n.id));
+
+      const result = await applyAutoLayout(visible.nodes, visible.edges);
+      const positionById = new Map(result.nodes.map((n) => [n.id, n.position] as const));
+      const sizeById = new Map(
+        result.nodes
+          .filter((n) => n.width !== undefined && n.height !== undefined)
+          .map((n) => [n.id, { width: n.width!, height: n.height! }] as const),
+      );
+      const waypointsByEdge = new Map(
+        result.edges
+          .filter((e) => (e.data as Record<string, unknown> | undefined)?._waypoints)
+          .map((e) => [e.id, (e.data as Record<string, unknown>)._waypoints] as const),
+      );
+
+      // Patche les nœuds visibles avec les positions/tailles ELK ; laisse les autres
+      // intacts. La filtre du registry décide à quel slot écrire (positionsByLevel pour
+      // les nœuds C4, position sinon) — fallback : `position` directement.
+      const patchedNodes = storedNodes.map((node) => {
+        if (!visibleIds.has(node.id)) return node;
+        const pos = positionById.get(node.id);
+        const size = sizeById.get(node.id);
+        if (!pos && !size) return node;
+        const ctx = { projectMeta };
+        const patch = pos
+          ? canvasFilterRegistry.commitNodePosition(node, pos, ctx)
+          : {};
+        return {
+          ...node,
+          ...patch,
+          ...(size ? { width: size.width, height: size.height } : {}),
+        };
+      });
+
+      const patchedEdges = storedEdges.map((edge) => {
+        const wp = waypointsByEdge.get(edge.id);
+        if (!wp) return edge;
+        const data = (edge.data ?? {}) as Record<string, unknown>;
+        return { ...edge, data: { ...data, _waypoints: wp } };
+      });
+
+      saveNodesAndEdges(patchedNodes, patchedEdges);
     } finally {
       setIsLayouting(false);
     }
-  }, [storedNodes, storedEdges, isLayouting, saveNodesAndEdges]);
+  }, [storedNodes, storedEdges, isLayouting, saveNodesAndEdges, projectMeta]);
 
   // ============================================
   // Resize handling

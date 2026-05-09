@@ -7,6 +7,14 @@
     "open": "Open",
     "new": "New"
   },
+  "project": {
+    "kind": {
+      "free": {
+        "label": "Free project",
+        "description": "A single canvas with the full palette. Best for fast prototyping."
+      }
+    }
+  },
   "header": {
     "title": "Architecture Simulator",
     "edit": "Edit",
@@ -21,6 +29,9 @@
   "components": {
     "title": "Components",
     "search": "Search...",
+    "searchPlaceholder": "Search (kafka, postgres, lambda…)",
+    "searchClear": "Clear search",
+    "searchNoResults": "No results. Try \"database\", \"cache\", \"kafka\"…",
     "categories": {
       "simulation": "Simulation",
       "infrastructure": "Infrastructure",
@@ -364,6 +375,10 @@
     "bankingMultipole": {
       "name": "Multi-Pole Banking Group",
       "description": "Banking group with 3 poles, 3 provinces, internal apps, cross-province replication (48 nodes)"
+    },
+    "bankingMultipoleC4": {
+      "name": "Multi-Pole Banking (C4)",
+      "description": "C4 multi-systems: 3 poles (Banking/Insurance/Accounting) with parentSystemId, 4 traffic-generating actors, L1→L2→L3 refinement via parentEdgeId. Cascade simulation demo."
     },
     "bankingOnline": {
       "name": "Online Banking (demo)",

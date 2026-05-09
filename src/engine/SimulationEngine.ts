@@ -59,10 +59,13 @@ import { criticalPathAnalyzer } from './CriticalPathAnalyzer';
 import { BottleneckAnalyzer } from './BottleneckAnalyzer';
 import type { BottleneckAnalysis } from '@/types';
 import { pluginRegistry } from '@/plugins';
+import type { SimulationEngineAPI } from '@/plugins/types';
+import { simulationHandlerRegistry } from '@/plugins/extensions';
 import { ServerStateManager } from './ServerStateManager';
 import { RequestChainManager, type RequestChain } from './RequestChainManager';
 import { RequestDispatcher } from './RequestDispatcher';
 import { ClientGroupSimulator } from './ClientGroupSimulator';
+import { createSeededRNG, randomSeed, type SimulationRNG } from './SimulationRNG';
 
 /**
  * Callbacks fournis par la couche React pour recevoir les mises a jour du moteur.
@@ -114,10 +117,22 @@ function estimatePayloadSize(method?: string): number {
 }
 
 /**
- * Generate a pseudo-random IP.
+ * Generate a pseudo-random IP using the injected RNG (or Math.random as fallback).
  */
-function generateSourceIP(): string {
-  return `10.0.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 255) + 1}`;
+function generateSourceIP(rng: SimulationRNG = Math.random): string {
+  return `10.0.${Math.floor(rng() * 256)}.${Math.floor(rng() * 255) + 1}`;
+}
+
+/**
+ * Configuration optionnelle passee au constructeur de SimulationEngine.
+ */
+export interface SimulationEngineOptions {
+  /**
+   * Seed pour le PRNG. Si non fourni, un seed entropique est genere et expose
+   * via `getSeed()` pour permettre la reproduction d'un run.
+   * Accepte soit un number (32-bit) soit une string (hashee via cyrb53).
+   */
+  seed?: number | string;
 }
 
 /**
@@ -203,10 +218,29 @@ export class SimulationEngine {
   private chainManager: RequestChainManager;
   private dispatcher: RequestDispatcher;
   private clientGroupSimulator: ClientGroupSimulator;
-  private virtualClientManager: VirtualClientManager = new VirtualClientManager();
+  private virtualClientManager: VirtualClientManager;
 
-  constructor(callbacks: SimulationCallbacks) {
+  // Seedable PRNG (B2.1 — reproductibilite). Le seed peut etre rebati avant chaque
+  // run via applySeed(). Les managers/handlers consomment via une closure stable
+  // qui delegue a `this.rngImpl`, afin que la reseed ne necessite pas de
+  // reinjecter les references partout.
+  private seed: number | string;
+  private rngImpl: SimulationRNG;
+  private readonly rng: SimulationRNG;
+
+  constructor(callbacks: SimulationCallbacks, options: SimulationEngineOptions = {}) {
     this.callbacks = callbacks;
+    this.seed = options.seed ?? randomSeed();
+    this.rngImpl = createSeededRNG(this.seed);
+    // Closure stable : tous les managers capturent `this.rng` une seule fois,
+    // et delegueent a `rngImpl` (mutable) → applySeed reste effectif partout.
+    this.rng = () => this.rngImpl();
+    if (options.seed === undefined) {
+      // Seed auto-genere : on l'imprime pour permettre la reproduction d'un run
+      // (le seed est aussi expose via getSeed() et inclus dans getReportData()).
+      console.info(`[SimulationEngine] Seed auto-generated: ${this.seed}`);
+    }
+    this.virtualClientManager = new VirtualClientManager(this.rng);
     this.metrics = new MetricsCollector();
     this.particleManager = new ParticleManager({
       onAddParticle: callbacks.onAddParticle,
@@ -214,10 +248,10 @@ export class SimulationEngine {
       onBatchUpdateProgress: callbacks.onBatchUpdateProgress,
     });
 
-    // Initialize managers
-    this.loadBalancerManager = new LoadBalancerManager();
-    this.cacheManager = new CacheManager();
-    this.databaseManager = new DatabaseManager();
+    // Initialize managers (RNG seedable injecte pour reproductibilite — B2.1)
+    this.loadBalancerManager = new LoadBalancerManager(this.rng);
+    this.cacheManager = new CacheManager(this.rng);
+    this.databaseManager = new DatabaseManager(this.rng);
     this.hierarchicalResourceManager = new HierarchicalResourceManager();
 
     // Initialize handlers
@@ -255,8 +289,13 @@ export class SimulationEngine {
       new IdentityProviderHandler(),
     ]);
 
-    // Register plugin handlers
+    // Register plugin handlers (legacy : via Plugin.nodes[].handler)
     for (const { handler } of pluginRegistry.getNodeHandlers()) {
+      this.handlerRegistry.register(handler);
+    }
+
+    // Register handlers fournis via SimulationHandlerRegistry (extension API).
+    for (const { handler } of simulationHandlerRegistry.list()) {
       this.handlerRegistry.register(handler);
     }
 
@@ -301,6 +340,7 @@ export class SimulationEngine {
       () => this.particleManager.getCount(),
       () => this.clientTimers.size,
       () => this.clientGroupSimulator.getClientGroupTimers().size,
+      this.rng,
     );
 
     this.dispatcher = new RequestDispatcher(
@@ -324,6 +364,7 @@ export class SimulationEngine {
       (nodeId) => this.findConnectedIdP(nodeId),
       (gateway, idpNode, idpEdge, chainId, context, onValid, onInvalid) =>
         this.validateTokenViaIdP(gateway, idpNode, idpEdge, chainId, context, onValid, onInvalid),
+      this.rng,
     );
 
     this.clientGroupSimulator = new ClientGroupSimulator(
@@ -350,7 +391,33 @@ export class SimulationEngine {
       (nodeId) => this.getNodeFault(nodeId),
       (nodeId) => this.isNodeIsolated(nodeId),
       (nodeId) => this.isParentFaulted(nodeId),
+      this.rng,
     );
+  }
+
+  /**
+   * Retourne le seed effectivement utilise par le moteur. Si l'utilisateur n'en
+   * a pas fourni, c'est le seed entropique genere au boot — l'imprimer dans les
+   * metriques resultantes permet de reproduire le run.
+   */
+  getSeed(): number | string {
+    return this.seed;
+  }
+
+  /**
+   * Applique un nouveau seed au moteur (B2.1).
+   * - Si `seed` est fourni, le moteur l'utilise pour le prochain run.
+   * - Si `seed === undefined`, un nouveau seed entropique est genere.
+   * Doit etre appele AVANT `start()` pour que le run soit reproductible.
+   * Les managers/handlers consomment le RNG via une closure stable, donc
+   * pas besoin de les reinjecter.
+   */
+  applySeed(seed?: number | string): void {
+    this.seed = seed ?? randomSeed();
+    this.rngImpl = createSeededRNG(this.seed);
+    if (seed === undefined) {
+      console.info(`[SimulationEngine] Seed auto-generated: ${this.seed}`);
+    }
   }
 
   // ============================================================
@@ -413,7 +480,7 @@ export class SimulationEngine {
     if (sourceServer && sourceServer === targetServer) return 0.1 / this.speed;
     const sourceZoneId = this.hierarchicalResourceManager.findContainingZone(sourceId);
     const targetZoneId = this.hierarchicalResourceManager.findContainingZone(targetId);
-    if (sourceZoneId && sourceZoneId === targetZoneId) return (1 + Math.random() * 4) / this.speed;
+    if (sourceZoneId && sourceZoneId === targetZoneId) return (1 + this.rng() * 4) / this.speed;
     if (sourceZoneId && targetZoneId && sourceZoneId !== targetZoneId) {
       const sourceZone = this.nodeMap.get(sourceZoneId);
       if (sourceZone) {
@@ -661,7 +728,7 @@ export class SimulationEngine {
       queryType: 'write',
       contentType: 'dynamic',
       payloadSizeBytes: 256,
-      sourceIP: generateSourceIP(),
+      sourceIP: generateSourceIP(this.rng),
       isAuthRequest: true,
     };
     this.chainManager.createChain(chain);
@@ -929,8 +996,21 @@ export class SimulationEngine {
 
     this.handlerRegistry.initializeAll(this.nodes);
 
+    // Construit l'API moteur exposée aux plugins pour la durée du run (ex: c4-person
+    // emitter côté EE qui injecte des particules sur les edges L2 raffinés). Référence
+    // stable, mais `sendRequest` devient no-op après stop (`isRunning` === false).
+    const engineApi: SimulationEngineAPI = {
+      sendRequest: (sourceNode, edge) => {
+        if (this.state !== 'running') return;
+        this.sendRequest(sourceNode, edge);
+      },
+      getNodes: () => this.nodes,
+      getEdges: () => this.edges,
+      getSpeed: () => this.speed,
+      isRunning: () => this.state === 'running',
+    };
     for (const hooks of pluginRegistry.getEngineHooks()) {
-      hooks.onSimulationStart?.();
+      hooks.onSimulationStart?.(engineApi);
     }
 
     this.serverStateManager.initializeServerStates();
@@ -1084,7 +1164,7 @@ export class SimulationEngine {
         queryType: deriveQueryType(data.method),
         contentType: inferContentType(data.path),
         payloadSizeBytes: estimatePayloadSize(data.method),
-        sourceIP: generateSourceIP(),
+        sourceIP: generateSourceIP(this.rng),
         authToken: preAcquiredToken ? {
           tokenId: preAcquiredToken.tokenId,
           format: preAcquiredToken.format,
@@ -1118,7 +1198,7 @@ export class SimulationEngine {
         queryType: deriveQueryType(data.method),
         contentType: inferContentType(data.path),
         payloadSizeBytes: estimatePayloadSize(data.method),
-        sourceIP: generateSourceIP(),
+        sourceIP: generateSourceIP(this.rng),
         authToken: {
           tokenId: preAcquiredToken.tokenId,
           format: preAcquiredToken.format,
@@ -1164,7 +1244,7 @@ export class SimulationEngine {
           queryType: deriveQueryType(method),
           contentType: inferContentType(clientData.path),
           payloadSizeBytes: estimatePayloadSize(method),
-          sourceIP: generateSourceIP(),
+          sourceIP: generateSourceIP(this.rng),
         };
         this.chainManager.createChain(chain);
       }
@@ -1222,6 +1302,7 @@ export class SimulationEngine {
         cacheNodeId: chain.cacheNodeId,
         waitingForDb: chain.waitingForDb,
         authToken: chain.authToken,
+        rng: this.rng,
       };
 
       let processingDelay = this.getNodeProcessingDelay(server, context);
@@ -1242,7 +1323,7 @@ export class SimulationEngine {
           this.metrics.recordDatabaseQuery(context.queryType || 'read');
         }
 
-        if (serverFault === 'degraded' && Math.random() < 0.5) {
+        if (serverFault === 'degraded' && this.rng() < 0.5) {
           decision = { action: 'respond', isError: true };
         }
 
@@ -1322,6 +1403,7 @@ export class SimulationEngine {
     messageQueueStats: Record<string, import('@/types').MessageQueueUtilization>;
     cacheStats: Record<string, import('@/types').CacheUtilization>;
     databaseStats: Record<string, import('@/types').DatabaseUtilization>;
+    seed: number | string;
   } {
     const apiGatewayStats: Record<string, import('@/types').ApiGatewayUtilization> = {};
     const messageQueueStats: Record<string, import('@/types').MessageQueueUtilization> = {};
@@ -1364,6 +1446,7 @@ export class SimulationEngine {
       messageQueueStats,
       cacheStats,
       databaseStats,
+      seed: this.seed,
     };
   }
 

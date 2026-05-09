@@ -71,6 +71,9 @@ export class ParticleRenderer {
   private texturesAuth: Map<ParticleType, Texture> = new Map();
   private pathCache: EdgePathCache;
   private animFrameId: number | null = null;
+  /** Optional remap from underlying edge id → visible (aggregated) edge id. Set by the
+   *  collapse view so particles for hidden edges still flow visibly along their aggregate. */
+  private edgeRemap: Map<string, string> | null = null;
 
   constructor(
     private layer: Container,
@@ -168,6 +171,11 @@ export class ParticleRenderer {
     this.pathCache.rebuild(edges, nodes, routingMode);
   }
 
+  /** Set the remap used to translate `particle.edgeId` to the visible edge id. Pass null to clear. */
+  setEdgeRemap(map: Map<string, string> | null): void {
+    this.edgeRemap = map;
+  }
+
   /**
    * Start the render loop that reads particles from the store and positions sprites.
    * Runs at display refresh rate via requestAnimationFrame.
@@ -206,8 +214,9 @@ export class ParticleRenderer {
     for (const particle of particles.values()) {
       if (idx >= MAX_PARTICLES || idx >= poolSize) break;
 
+      const lookupId = this.edgeRemap?.get(particle.edgeId) ?? particle.edgeId;
       const pos = this.pathCache.getPositionOnPath(
-        particle.edgeId,
+        lookupId,
         particle.progress,
         particle.direction,
       );

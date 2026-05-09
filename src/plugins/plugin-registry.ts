@@ -100,6 +100,22 @@ class PluginRegistryImpl {
   }
 
   /**
+   * Retourne la définition complète d'un type de nœud plugin (pour NodeRenderer, IconRegistry, etc.).
+   */
+  getNodeDefinition(type: string): PluginNodeDefinition | undefined {
+    return this.nodeDefinitions.get(type);
+  }
+
+  /**
+   * Retourne les hints visuels d'un type de nœud plugin (variant, colors, icon, height, …).
+   * Permet aux sous-systèmes CE qui rendent les nœuds (NodeRenderer PixiJS, IconRegistry) de retomber
+   * proprement sur ces hints pour les types qu'ils ne connaissent pas en dur.
+   */
+  getNodeVisual(type: string): PluginNodeDefinition['visual'] | undefined {
+    return this.nodeDefinitions.get(type)?.visual;
+  }
+
+  /**
    * Retourne les définitions de nœuds pour le panneau de composants.
    */
   getNodeDefinitions(): PluginNodeDefinition[] {
@@ -108,12 +124,14 @@ class PluginRegistryImpl {
 
   /**
    * Retourne les handlers de simulation des plugins.
+   * Les types documentaires (handler === null) sont filtrés — le moteur ne les voit jamais.
    */
-  getNodeHandlers(): { type: string; handler: PluginNodeDefinition['handler'] }[] {
-    return Array.from(this.nodeDefinitions.values()).map(def => ({
-      type: def.type,
-      handler: def.handler,
-    }));
+  getNodeHandlers(): { type: string; handler: NonNullable<PluginNodeDefinition['handler']> }[] {
+    const out: { type: string; handler: NonNullable<PluginNodeDefinition['handler']> }[] = [];
+    for (const def of this.nodeDefinitions.values()) {
+      if (def.handler !== null) out.push({ type: def.type, handler: def.handler });
+    }
+    return out;
   }
 
   // ── Accesseurs pour les panneaux ──

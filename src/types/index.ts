@@ -1266,6 +1266,9 @@ export interface NetworkZoneNodeData {
   subdomains?: string[];
   color: string;
   interZoneLatency: number;
+  /** When true, the zone is rendered as a single block with its descendants hidden and
+   *  inbound/outbound edges aggregated. Lets users build C4-style high-level views. */
+  collapsed?: boolean;
   [key: string]: unknown;
 }
 
@@ -1301,6 +1304,9 @@ export interface HostPortMapping {
 export interface HostServerNodeData {
   label: string;
   status?: NodeStatus;
+
+  /** When true, hide the host's descendants and aggregate edges to the host itself. */
+  collapsed?: boolean;
 
   /** Adresse IP du serveur (ex: "192.168.1.10") */
   ipAddress: string;
@@ -1501,6 +1507,8 @@ export const defaultServerlessData: ServerlessNodeData = {
 export interface ContainerNodeData {
   label: string;
   status?: NodeStatus;
+  /** When true, hide the container's descendants and aggregate edges to the container itself. */
+  collapsed?: boolean;
   image: string;
   replicas: number;
   cpuLimit: string;
@@ -1891,6 +1899,8 @@ export interface Project {
   diagrams: Diagram[];
   createdAt: number;
   updatedAt: number;
+  /** Métadonnées du kind de projet (kind + champs additionnels apportés par les plugins). */
+  projectMeta?: import('@/plugins/extensions').ProjectKindMeta;
 }
 
 /** Metadonnees legeres d'un projet pour l'index. */
@@ -1899,6 +1909,8 @@ export interface ProjectMeta {
   name: string;
   diagramCount: number;
   updatedAt: number;
+  /** Identifiant du kind (ex: 'free', 'c4'). Par défaut 'free' si absent (rétro-compat). */
+  kind?: string;
 }
 
 /** Tier de licence pour le feature gating. */

@@ -84,7 +84,7 @@ export class MessageQueueHandler implements NodeRequestHandler {
     const message: QueuedMessage = {
       id: `msg-${this.messageCounter++}`,
       chainId: context.chainId,
-      priority: data.mode === 'priority' ? Math.floor(Math.random() * 10) : 0,
+      priority: data.mode === 'priority' ? Math.floor((context.rng ?? Math.random)() * 10) : 0,
       enqueuedAt: Date.now(),
       retryCount: 0,
       invisibleUntil: null,

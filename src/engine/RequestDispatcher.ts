@@ -20,6 +20,7 @@ import type { ServerStateManager } from './ServerStateManager';
 import type { ApiGatewayNodeData } from '@/types';
 import { CacheManager } from './CacheManager';
 import { CacheHandler } from './handlers/CacheHandler';
+import type { SimulationRNG } from './SimulationRNG';
 
 /**
  * Callbacks dont le RequestDispatcher a besoin pour notifier React et l'engine.
@@ -66,6 +67,7 @@ export class RequestDispatcher {
     onValid: () => void,
     onInvalid: () => void
   ) => void;
+  private rng: SimulationRNG;
 
   // Span tracking for distributed tracing (chainId:nodeId → spanId)
   private activeSpans: Map<string, string> = new Map();
@@ -94,6 +96,7 @@ export class RequestDispatcher {
       onValid: () => void,
       onInvalid: () => void
     ) => void,
+    rng?: SimulationRNG,
   ) {
     this.metrics = metrics;
     this.callbacks = callbacks;
@@ -110,6 +113,7 @@ export class RequestDispatcher {
     this.isParentFaulted = isParentFaulted;
     this.findConnectedIdP = findConnectedIdP;
     this.validateTokenViaIdP = validateTokenViaIdP;
+    this.rng = rng ?? (() => Math.random());
   }
 
   setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[], nodeMap?: Map<string, GraphNode>): void {
@@ -461,6 +465,7 @@ export class RequestDispatcher {
         allEdges: this.edges,
         authToken: chain.authToken,
         isAuthRequest: chain.isAuthRequest,
+        rng: this.rng,
       };
 
       let processingDelay = this.getNodeProcessingDelay(targetNode, context);
@@ -484,7 +489,7 @@ export class RequestDispatcher {
         this.metrics.recordDatabaseQuery(context.queryType || 'read');
       }
 
-      if (targetFault === 'degraded' && Math.random() < 0.5) {
+      if (targetFault === 'degraded' && this.rng() < 0.5) {
         decision = { action: 'respond', isError: true };
       }
 

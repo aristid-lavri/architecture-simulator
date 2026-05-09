@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useProjectStore } from '@/store/project-store';
 import { useSimulationStore } from '@/store/simulation-store';
+import { useArchitectureStore } from '@/store/architecture-store';
+import { projectKindRegistry, DEFAULT_PROJECT_KIND } from '@/plugins/extensions';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,13 +24,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ChevronDown, Plus, Copy, Pencil, Trash2, FolderOpen, MoreHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { NewProjectDialog } from './NewProjectDialog';
 
 export function ProjectSelector() {
   const {
     projectsMeta,
     activeProjectId,
     switchProject,
-    createProject,
     renameProject,
     deleteProject,
     duplicateProject,
@@ -38,28 +40,20 @@ export function ProjectSelector() {
 
   const simulationState = useSimulationStore((s) => s.state);
   const stop = useSimulationStore((s) => s.stop);
+  const projectKind = useArchitectureStore((s) => s.projectMeta.kind);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteTargetName, setDeleteTargetName] = useState('');
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [listOpen, setListOpen] = useState(false);
 
-  const newInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const projectName = getActiveProjectName();
-
-  useEffect(() => {
-    if (newProjectDialogOpen) {
-      const t = setTimeout(() => newInputRef.current?.focus(), 50);
-      return () => clearTimeout(t);
-    }
-  }, [newProjectDialogOpen]);
 
   useEffect(() => {
     if (renameDialogOpen) {
@@ -87,16 +81,9 @@ export function ProjectSelector() {
   };
 
   const handleCreate = () => {
-    setNewProjectName('');
+    stopSimIfRunning();
     setNewProjectDialogOpen(true);
     setListOpen(false);
-  };
-
-  const confirmCreate = () => {
-    const name = newProjectName.trim() || 'Nouveau Projet';
-    stopSimIfRunning();
-    createProject(name);
-    setNewProjectDialogOpen(false);
   };
 
   const openRename = (id: string, name: string) => {
@@ -136,9 +123,17 @@ export function ProjectSelector() {
       {/* Main project dropdown: left-click to list & switch */}
       <DropdownMenu open={listOpen} onOpenChange={setListOpen}>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-1 px-1.5 py-0.5 hover:text-foreground transition-colors cursor-pointer max-w-[160px]" data-tour="project-selector">
+          <button className="flex items-center gap-1 px-1.5 py-0.5 hover:text-foreground transition-colors cursor-pointer max-w-50" data-tour="project-selector">
             <FolderOpen className="w-3 h-3 shrink-0" />
             <span className="truncate">{projectName}</span>
+            {projectKind && projectKind !== DEFAULT_PROJECT_KIND && projectKindRegistry.has(projectKind) && (
+              <span
+                className="font-mono text-[10px] text-signal-active tracking-widest shrink-0"
+                aria-label={`Type de projet : ${projectKind}`}
+              >
+                ·{projectKind.toUpperCase()}
+              </span>
+            )}
             <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
           </button>
         </DropdownMenuTrigger>
@@ -251,33 +246,8 @@ export function ProjectSelector() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* New project dialog */}
-      <AlertDialog open={newProjectDialogOpen} onOpenChange={setNewProjectDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Nouveau projet</AlertDialogTitle>
-            <AlertDialogDescription>
-              Entrez un nom pour le nouveau projet.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <input
-            ref={newInputRef}
-            value={newProjectName}
-            onChange={(e) => setNewProjectName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') confirmCreate();
-            }}
-            placeholder="Nouveau Projet"
-            className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground text-sm outline-none focus:ring-1 focus:ring-ring"
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmCreate}>
-              Cr&eacute;er
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* New project dialog: tile selector for kinds (CE 'free' + plugins, ex. C4) */}
+      <NewProjectDialog open={newProjectDialogOpen} onOpenChange={setNewProjectDialogOpen} />
     </>
   );
 }

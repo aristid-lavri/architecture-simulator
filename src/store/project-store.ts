@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import type { Project, ProjectMeta, Diagram, GraphNode, GraphEdge, ArchitectureSnapshot } from '@/types';
 import { useArchitectureStore } from './architecture-store';
+import {
+  createProjectMeta,
+  DEFAULT_PROJECT_KIND,
+  type ProjectKindMeta,
+} from '@/plugins/extensions';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,6 +90,7 @@ function buildMeta(project: Project): ProjectMeta {
     name: project.name,
     diagramCount: project.diagrams.length,
     updatedAt: project.updatedAt,
+    kind: project.projectMeta?.kind ?? DEFAULT_PROJECT_KIND,
   };
 }
 
@@ -102,7 +108,7 @@ interface ProjectStoreState {
   initialize: () => void;
 
   // Project CRUD
-  createProject: (name: string) => string;
+  createProject: (name: string, kindId?: string) => string;
   renameProject: (id: string, name: string) => void;
   deleteProject: (id: string) => void;
   duplicateProject: (id: string) => string;
@@ -152,6 +158,7 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
           }
         : d
     );
+    project.projectMeta = structuredClone(archState.projectMeta);
     project.updatedAt = now;
     saveProject(project);
 
@@ -164,11 +171,12 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
   }
 
   /** Load a diagram's data into the architecture-store working copy. */
-  function loadDiagramIntoStore(diagram: Diagram): void {
+  function loadDiagramIntoStore(diagram: Diagram, projectMeta?: ProjectKindMeta): void {
     useArchitectureStore.getState().loadDiagramState(
       structuredClone(diagram.nodes),
       structuredClone(diagram.edges),
-      structuredClone(diagram.snapshots)
+      structuredClone(diagram.snapshots),
+      projectMeta ? structuredClone(projectMeta) : undefined,
     );
   }
 
@@ -187,34 +195,51 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
 
       let meta = loadProjectsIndex();
 
+      // Migration uniquement (pas de création silencieuse de projet par défaut).
+      // Si l'utilisateur n'a aucun projet et aucune donnée legacy, on laisse l'app
+      // afficher le dialog de choix de projet au démarrage.
       if (meta.length === 0) {
-        // Migration: read legacy architecture-store data
-        const legacy = loadJSON<{ state?: { nodes?: GraphNode[]; edges?: GraphEdge[]; snapshots?: ArchitectureSnapshot[] } }>(KEYS.legacyStore);
+        const legacy = loadJSON<{
+          state?: {
+            nodes?: GraphNode[];
+            edges?: GraphEdge[];
+            snapshots?: ArchitectureSnapshot[];
+            projectMeta?: ProjectKindMeta;
+          };
+        }>(KEYS.legacyStore);
 
-        const now = Date.now();
-        const diagram: Diagram = {
-          id: generateId('diag'),
-          name: 'Diagramme 1',
-          nodes: legacy?.state?.nodes ?? [],
-          edges: legacy?.state?.edges ?? [],
-          snapshots: legacy?.state?.snapshots ?? [],
-          createdAt: now,
-          updatedAt: now,
-        };
+        const hasLegacyData =
+          (legacy?.state?.nodes?.length ?? 0) > 0 ||
+          (legacy?.state?.edges?.length ?? 0) > 0 ||
+          (legacy?.state?.snapshots?.length ?? 0) > 0;
 
-        const project: Project = {
-          id: generateId('proj'),
-          name: 'Mon Projet',
-          activeDiagramId: diagram.id,
-          diagrams: [diagram],
-          createdAt: now,
-          updatedAt: now,
-        };
+        if (hasLegacyData) {
+          const now = Date.now();
+          const diagram: Diagram = {
+            id: generateId('diag'),
+            name: 'Diagramme 1',
+            nodes: legacy?.state?.nodes ?? [],
+            edges: legacy?.state?.edges ?? [],
+            snapshots: legacy?.state?.snapshots ?? [],
+            createdAt: now,
+            updatedAt: now,
+          };
 
-        saveProject(project);
-        meta = [buildMeta(project)];
-        saveProjectsIndex(meta);
-        localStorage.setItem(KEYS.activeProject, project.id);
+          const project: Project = {
+            id: generateId('proj'),
+            name: 'Mon Projet',
+            activeDiagramId: diagram.id,
+            diagrams: [diagram],
+            createdAt: now,
+            updatedAt: now,
+            projectMeta: legacy?.state?.projectMeta ?? createProjectMeta(DEFAULT_PROJECT_KIND),
+          };
+
+          saveProject(project);
+          meta = [buildMeta(project)];
+          saveProjectsIndex(meta);
+          localStorage.setItem(KEYS.activeProject, project.id);
+        }
       }
 
       const activeProjectId = localStorage.getItem(KEYS.activeProject) ?? meta[0]?.id ?? null;
@@ -226,7 +251,7 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
           activeDiagramId = project.activeDiagramId ?? project.diagrams[0]?.id ?? null;
           const diagram = project.diagrams.find((d) => d.id === activeDiagramId);
           if (diagram) {
-            loadDiagramIntoStore(diagram);
+            loadDiagramIntoStore(diagram, project.projectMeta);
           }
         }
       }
@@ -236,11 +261,12 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
 
     // -- Project CRUD --
 
-    createProject: (name) => {
+    createProject: (name, kindId) => {
       flushToProject();
 
       const diagram = createEmptyDiagram('Diagramme 1');
       const now = Date.now();
+      const projectMeta = createProjectMeta(kindId ?? DEFAULT_PROJECT_KIND);
       const project: Project = {
         id: generateId('proj'),
         name,
@@ -248,6 +274,7 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
         diagrams: [diagram],
         createdAt: now,
         updatedAt: now,
+        projectMeta,
       };
 
       saveProject(project);
@@ -255,7 +282,7 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
       saveProjectsIndex(meta);
       localStorage.setItem(KEYS.activeProject, project.id);
 
-      loadDiagramIntoStore(diagram);
+      loadDiagramIntoStore(diagram, projectMeta);
 
       set({
         projectsMeta: meta,
@@ -283,20 +310,27 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
 
     deleteProject: (id) => {
       const { projectsMeta, activeProjectId } = get();
-      if (projectsMeta.length <= 1) return; // cannot delete last project
+      // Note : on autorise désormais la suppression du dernier projet ; l'app
+      // affichera le dialog de choix de projet si plus aucun n'existe.
 
       deleteProjectStorage(id);
       const meta = projectsMeta.filter((m) => m.id !== id);
       saveProjectsIndex(meta);
 
       if (activeProjectId === id) {
-        // Switch to the first remaining project
-        const nextId = meta[0].id;
+        const nextId = meta[0]?.id;
+        if (!nextId) {
+          // Plus aucun projet : on vide le canvas et on laisse l'UI demander la création.
+          localStorage.removeItem(KEYS.activeProject);
+          useArchitectureStore.getState().clear();
+          set({ projectsMeta: meta, activeProjectId: null, activeDiagramId: null });
+          return;
+        }
         const nextProject = loadProject(nextId);
         if (nextProject) {
           const diagramId = nextProject.activeDiagramId ?? nextProject.diagrams[0]?.id;
           const diagram = nextProject.diagrams.find((d) => d.id === diagramId);
-          if (diagram) loadDiagramIntoStore(diagram);
+          if (diagram) loadDiagramIntoStore(diagram, nextProject.projectMeta);
           localStorage.setItem(KEYS.activeProject, nextId);
           set({ projectsMeta: meta, activeProjectId: nextId, activeDiagramId: diagramId ?? null });
         } else {
@@ -328,6 +362,7 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
         diagrams: newDiagrams,
         createdAt: now,
         updatedAt: now,
+        projectMeta: original.projectMeta ? structuredClone(original.projectMeta) : undefined,
       };
 
       saveProject(project);
@@ -464,7 +499,7 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
 
       const diagramId = project.activeDiagramId ?? project.diagrams[0]?.id;
       const diagram = project.diagrams.find((d) => d.id === diagramId);
-      if (diagram) loadDiagramIntoStore(diagram);
+      if (diagram) loadDiagramIntoStore(diagram, project.projectMeta);
 
       localStorage.setItem(KEYS.activeProject, projectId);
       set({ activeProjectId: projectId, activeDiagramId: diagramId ?? null });

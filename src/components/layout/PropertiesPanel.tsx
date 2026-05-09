@@ -40,6 +40,7 @@ import {
 } from '@/data/provider-presets';
 import { useTranslation } from '@/i18n';
 import type { GraphNode } from '@/types/graph';
+import { UISlotHost } from '@/plugins/extensions';
 
 export function PropertiesPanel() {
   const { t } = useTranslation();
@@ -48,6 +49,7 @@ export function PropertiesPanel() {
   const { nodes, edges, updateNode, removeNode, updateEdge, removeEdge } = useArchitectureStore();
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const projectMeta = useArchitectureStore((s) => s.projectMeta);
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
 
   const updateNodeData = useCallback(
@@ -689,6 +691,15 @@ export function PropertiesPanel() {
               onUpdate={updateNodeData}
             />
           )}
+
+          {/* Plugin slot: panneaux additionnels apportés par les plugins
+              (ex: Component Entry Picker du multi-niveaux C4). */}
+          <UISlotHost
+            slotId="properties-extra"
+            projectMeta={projectMeta}
+            context={{ nodeId: selectedNode.id, nodeType: selectedNode.type }}
+            hideWhenEmpty
+          />
         </div>
       </ScrollArea>
 

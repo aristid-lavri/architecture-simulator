@@ -1,4 +1,5 @@
 import type { ComponentType } from '@/types';
+import { pluginRegistry } from '@/plugins/plugin-registry';
 import {
   defaultServerResources, defaultDegradation,
   defaultDatabaseNodeData, defaultCacheNodeData,
@@ -27,9 +28,16 @@ const defaultClientGroupData = {
 /**
  * Returns default node data for a given component type.
  * Extracted from PixiCanvas for reuse.
+ *
+ * Order:
+ *   1. switch hardcodé (21 types CE natifs).
+ *   2. Plugin registry fallback (`pluginRegistry.getDefaultNodeData(type)`).
+ *   3. Fallback générique (label = type formaté, status idle).
+ *
+ * Le paramètre est typé `string` pour accepter les types plugin non listés dans `ComponentType`.
  */
-export function getDefaultNodeData(type: ComponentType): Record<string, unknown> {
-  switch (type) {
+export function getDefaultNodeData(type: ComponentType | string): Record<string, unknown> {
+  switch (type as ComponentType) {
     case 'http-client':
       return {
         label: 'HTTP Client',
@@ -96,7 +104,12 @@ export function getDefaultNodeData(type: ComponentType): Record<string, unknown>
       return { ...defaultBackgroundJobData, status: 'idle' };
     case 'identity-provider':
       return { ...defaultIdentityProviderData, status: 'idle' };
-    default:
+    default: {
+      // Plugin fallback : un type non hardcodé est probablement enregistré via PluginNodeDefinition.
+      const pluginDefaults = pluginRegistry.getDefaultNodeData(type);
+      if (pluginDefaults) return { ...pluginDefaults };
+      // Type vraiment inconnu : minimum viable (label dérivé + idle).
       return { label: (type as string).replace(/-/g, ' ').toUpperCase(), status: 'idle' };
+    }
   }
 }

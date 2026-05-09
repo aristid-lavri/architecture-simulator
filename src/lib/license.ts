@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LicenseTier } from '@/types';
+import { featureGateRegistry } from '@/plugins/extensions';
 
-/** Features reservees a l'edition Enterprise. */
-const enterpriseFeatures = new Set<string>([
+/** Features reservees a l'edition Enterprise (built-in CE). */
+const builtinEnterpriseFeatures = new Set<string>([
   // Placeholder — les features EE seront ajoutees au fil des phases
   'team-collaboration',
   'sso-auth',
@@ -54,6 +55,7 @@ export const useLicenseStore = create<LicenseState>()(
  */
 export function isFeatureEnabled(feature: string): boolean {
   const { tier } = useLicenseStore.getState();
-  if (!enterpriseFeatures.has(feature)) return true;
+  const isGated = builtinEnterpriseFeatures.has(feature) || featureGateRegistry.has(feature);
+  if (!isGated) return true;
   return tier === 'enterprise';
 }

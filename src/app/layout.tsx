@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
-import "./globals.css";
+// Edition CSS — résolu vers globals.css (CE) ou ../architecture-enterprise/styles/edition.css (EE)
+// par l'alias `#edition-styles` configuré dans next.config.ts selon NEXT_PUBLIC_EDITION.
+import "#edition-styles";
 import { SwRegister } from "@/components/layout/SwRegister";
 
 const geistSans = Geist({

@@ -3,6 +3,7 @@ import type {
   CacheUtilization,
   EvictionPolicy,
 } from '@/types';
+import type { SimulationRNG } from './SimulationRNG';
 
 /**
  * Entrée dans le cache avec métadonnées LRU/LFU
@@ -32,6 +33,15 @@ interface CacheState {
  */
 export class CacheManager {
   private cacheStates: Map<string, CacheState> = new Map();
+
+  /** PRNG injecte pour la simulation HIT/MISS et le bruit de variance (B2.1). */
+  private readonly rng: SimulationRNG;
+
+  constructor(rng?: SimulationRNG) {
+    // Defaut : delegue a Math.random au moment de l'appel (pas a la construction)
+    // pour que les tests existants qui mockent Math.random via vi.spyOn fonctionnent.
+    this.rng = rng ?? (() => Math.random());
+  }
 
   /**
    * Initialize a cache node
@@ -115,7 +125,7 @@ export class CacheManager {
     }
 
     // Pas d'entrée réelle : tirer selon la probabilité configurée
-    if (Math.random() < this.computeHitProbability(state)) {
+    if (this.rng() < this.computeHitProbability(state)) {
       // Simuler un HIT : matérialiser une entrée fictive pour que les
       // requêtes futures sur la même clé deviennent des HIT déterministes
       const now = Date.now();
@@ -157,7 +167,7 @@ export class CacheManager {
     }
 
     const varianceRange = Math.max(0, config.hitRatioVariance) / 100;
-    const noise = varianceRange > 0 ? (Math.random() - 0.5) * 2 * varianceRange : 0;
+    const noise = varianceRange > 0 ? (this.rng() - 0.5) * 2 * varianceRange : 0;
     return Math.max(0, Math.min(1, effectiveRatio + noise));
   }
 

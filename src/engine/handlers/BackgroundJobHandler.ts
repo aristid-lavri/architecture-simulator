@@ -60,13 +60,13 @@ export class BackgroundJobHandler implements NodeRequestHandler {
         return this.handleCronJob(state, data, outgoingEdges, context);
 
       case 'worker':
-        return this.handleWorkerJob(state, data, outgoingEdges);
+        return this.handleWorkerJob(state, data, outgoingEdges, context);
 
       case 'batch':
         return this.handleBatchJob(state, data, outgoingEdges, context);
 
       default:
-        return this.handleWorkerJob(state, data, outgoingEdges);
+        return this.handleWorkerJob(state, data, outgoingEdges, context);
     }
   }
 
@@ -116,13 +116,14 @@ export class BackgroundJobHandler implements NodeRequestHandler {
     state: JobState,
     data: BackgroundJobNodeData,
     outgoingEdges: GraphEdge[],
-    _context: RequestContext
+    context: RequestContext
   ): RequestDecision {
     state.activeExecutions++;
     state.totalExecutions++;
 
     // Simuler le taux d'erreur
-    const isError = Math.random() * 100 < data.errorRate;
+    const rng = context.rng ?? Math.random;
+    const isError = rng() * 100 < data.errorRate;
 
     if (isError || outgoingEdges.length === 0) {
       return { action: 'respond', isError };
@@ -144,13 +145,15 @@ export class BackgroundJobHandler implements NodeRequestHandler {
   private handleWorkerJob(
     state: JobState,
     data: BackgroundJobNodeData,
-    outgoingEdges: GraphEdge[]
+    outgoingEdges: GraphEdge[],
+    context: RequestContext,
   ): RequestDecision {
     state.activeExecutions++;
     state.totalExecutions++;
 
     // Simuler le taux d'erreur
-    const isError = Math.random() * 100 < data.errorRate;
+    const rng = context.rng ?? Math.random;
+    const isError = rng() * 100 < data.errorRate;
 
     if (isError || outgoingEdges.length === 0) {
       return { action: 'respond', isError };
@@ -191,7 +194,8 @@ export class BackgroundJobHandler implements NodeRequestHandler {
     state.totalExecutions++;
 
     // Simuler le taux d'erreur
-    const isError = Math.random() * 100 < data.errorRate;
+    const rng = context.rng ?? Math.random;
+    const isError = rng() * 100 < data.errorRate;
 
     if (isError || outgoingEdges.length === 0) {
       return { action: 'respond', isError };

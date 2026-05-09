@@ -5,6 +5,7 @@ import { useOnboardingStore } from '@/store/onboarding-store';
 import { useArchitectureStore } from '@/store/architecture-store';
 import { useAppStore } from '@/store/app-store';
 import { useSimulationStore } from '@/store/simulation-store';
+import { useProjectStore } from '@/store/project-store';
 import { TOUR_STEPS } from './steps';
 import { TourSpotlight } from './TourSpotlight';
 import { TourStep } from './TourStep';
@@ -88,22 +89,27 @@ export function OnboardingOverlay() {
   const startTour = useOnboardingStore((s) => s.startTour);
   const completeTour = useOnboardingStore((s) => s.completeTour);
 
+  const projectInitialized = useProjectStore((s) => s.initialized);
+  const projectsCount = useProjectStore((s) => s.projectsMeta.length);
+
   const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevNodeCountRef = useRef<number>(0);
   const prevEdgeCountRef = useRef<number>(0);
   const hasStartedRef = useRef(false);
 
-  // Auto-start tour on first visit
+  // Auto-start tour on first visit.
+  // Attend que l'utilisateur ait créé son projet — sinon le tour démarrerait
+  // par-dessus le dialog "Nouveau projet" affiché en mode required.
   useEffect(() => {
-    if (!hasCompletedTour && !isActive && !hasStartedRef.current) {
-      hasStartedRef.current = true;
-      // Small delay to let the page render
-      const timer = setTimeout(() => {
-        startTour();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [hasCompletedTour, isActive, startTour]);
+    if (hasCompletedTour || isActive || hasStartedRef.current) return;
+    if (!projectInitialized) return;
+    if (projectsCount === 0) return;
+    hasStartedRef.current = true;
+    const timer = setTimeout(() => {
+      startTour();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [hasCompletedTour, isActive, startTour, projectInitialized, projectsCount]);
 
   // Run beforeStep on step change
   useEffect(() => {

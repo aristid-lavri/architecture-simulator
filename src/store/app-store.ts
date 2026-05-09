@@ -54,6 +54,13 @@ interface AppState {
   setOwaspDrawerOpen: (open: boolean) => void;
   owaspValidationResult: OwaspValidationResult | null;
   setOwaspValidationResult: (r: OwaspValidationResult | null) => void;
+
+  // Visual diff (EE-3)
+  diffMode: boolean;
+  diffBaselineId: string | null;
+  diffTargetId: string | null;
+  setDiffMode: (active: boolean) => void;
+  setDiffSnapshots: (baselineId: string | null, targetId: string | null) => void;
 }
 
 function getInitialTheme(): Theme {
@@ -149,5 +156,13 @@ export const useAppStore = create<AppState>((set) => {
     setOwaspDrawerOpen: (open) => set({ owaspDrawerOpen: open }),
     owaspValidationResult: null,
     setOwaspValidationResult: (r) => set({ owaspValidationResult: r }),
+
+    // Visual diff (EE-3)
+    diffMode: false,
+    diffBaselineId: null,
+    diffTargetId: null,
+    setDiffMode: (active) => set({ diffMode: active }),
+    setDiffSnapshots: (baselineId, targetId) =>
+      set({ diffBaselineId: baselineId, diffTargetId: targetId }),
   };
 });

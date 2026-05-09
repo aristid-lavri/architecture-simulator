@@ -62,6 +62,32 @@
   --color-signal-server: var(--signal-server);
   --color-signal-data: var(--signal-data);
   --color-signal-infra: var(--signal-infra);
+
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ee-elevation: var(--ee-elevation);
+  --color-ee-elevation-bright: var(--ee-elevation-bright);
+  --color-ee-elevation-deep: var(--ee-elevation-deep);
+  --color-ee-elevation-hairline: var(--ee-elevation-hairline);
+  --color-ee-elevation-glow: var(--ee-elevation-glow);
+
+  --color-ee-govern: var(--ee-govern);
+  --color-ee-govern-bright: var(--ee-govern-bright);
+  --color-ee-govern-deep: var(--ee-govern-deep);
+  --color-ee-govern-hairline: var(--ee-govern-hairline);
+  --color-ee-govern-glow: var(--ee-govern-glow);
+
+  --color-signal-fault: var(--signal-fault);
+  --color-signal-warn: var(--signal-warn);
+  --color-signal-ok: var(--signal-ok);
 }
 
 :root {
@@ -142,6 +168,45 @@
   --minimap-bg: oklch(0.95 0.006 250);
   --minimap-mask: oklch(0.97 0.005 250 / 70%);
   --controls-bg: oklch(1 0 0);
+
+  /* ═══════════════════════════════════════════════════════════════
+     EE Refonte — Light only
+     Voir: architecture-enterprise/docs/design/2026-05-08-ee-refonte-complete-design.md §3.1
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* Surfaces papier */
+  --paper:        oklch(0.97 0 90);
+  --paper-2:      oklch(0.94 0 90);
+  --paper-3:      oklch(0.90 0 90);
+
+  /* Encres */
+  --ink:          oklch(0.15 0 270);
+  --ink-2:        oklch(0.30 0 270);
+  --ink-3:        oklch(0.55 0 270);
+  --ink-4:        oklch(0.74 0 270);
+
+  /* Lignes */
+  --line:         oklch(0.86 0 90);
+  --line-strong:  oklch(0.78 0 90);
+
+  /* Tier 2 — EE Élévation (cuivre 45°) */
+  --ee-elevation:           oklch(0.55 0.13 45);
+  --ee-elevation-bright:    oklch(0.42 0.12 40);
+  --ee-elevation-deep:      oklch(0.65 0.13 50);
+  --ee-elevation-hairline:  oklch(0.55 0.13 45 / 0.30);
+  --ee-elevation-glow:      oklch(0.55 0.13 45 / 0.40);
+
+  /* Tier 3 — EE Gouvernance (navy-violet 265°) */
+  --ee-govern:           oklch(0.42 0.20 265);
+  --ee-govern-bright:    oklch(0.32 0.18 265);
+  --ee-govern-deep:      oklch(0.55 0.18 265);
+  --ee-govern-hairline:  oklch(0.42 0.20 265 / 0.30);
+  --ee-govern-glow:      oklch(0.42 0.20 265 / 0.40);
+
+  /* Sémantiques */
+  --signal-fault: oklch(0.55 0.18 25);
+  --signal-warn:  oklch(0.65 0.18 75);
+  --signal-ok:    oklch(0.55 0.16 155);
 }
 
 /* ═══════════════════════════════════════

@@ -1,11 +1,17 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import type { GraphNode, GraphEdge } from '@/types/graph';
+import type { ComponentType } from '@/types';
 import {
   EDGE_WIDTH, EDGE_COLOR, EDGE_SELECTED_COLOR,
   NODE_WIDTH, NODE_HEIGHT, CONTAINER_COMPONENT_TYPES,
   HANDLE_RADIUS, canvasTheme, getNodeHeight,
 } from './constants';
-import { computeOrthogonalRoute, parseHandleSide } from '@/lib/orthogonal-router';
+import { edgeStyleRegistry } from '@/plugins/extensions';
+import { useArchitectureStore } from '@/store/architecture-store';
+import { computeOrthogonalRoute } from '@/lib/orthogonal-router';
+import { computeEdgeAnchors, type AnchorMap, type NodeBounds } from '@/lib/edge-anchors';
+import { computeParallelGroups, parallelOffset, staggeredLabelT, type ParallelGroupInfo, type ParallelGroups } from '@/lib/edge-grouping';
+import { computeBezierParams, bezierPoint, pointAlongPolyline, readWaypoints, waypointsAreFresh } from '@/lib/edge-paths';
 import type { EdgeRoutingMode } from '@/store/app-store';
 
 // Protocol colors — each protocol has a unique color
@@ -49,6 +55,36 @@ interface EdgeVisual {
   sourceHandle: Graphics;
   targetHandle: Graphics;
   edgeId: string;
+  /** Reference to the live edge — used by `applyFocus` to recompute alpha without redrawing paths. */
+  edge: GraphEdge;
+  /** Target alpha (computed from selection/focus/filter) — restored by hover after pointerout */
+  targetAlpha: number;
+}
+
+/**
+ * Focus context controls dimming and visibility of edges:
+ * - `focusNodeId`: when set, only edges incident to this node keep full opacity
+ * - `protocolFilters`: map keyed by protocol; if `false`, edges with that protocol are hidden
+ *   (`undefined` and `true` mean visible — matches the toggle semantics in app-store)
+ */
+export interface EdgeFocusContext {
+  focusNodeId: string | null;
+  protocolFilters: Partial<Record<string, boolean>>;
+}
+
+const DIM_ALPHA = 0.15;
+
+/**
+ * Build the text shown on an edge label. Combines the protocol short name (HTTP, gRPC,
+ * WS, GQL) with the aggregate multiplier produced by collapse-view (×N when N > 1).
+ *
+ * Returns an empty string when there is nothing to display.
+ */
+function formatEdgeLabel(protocol: string | undefined, aggregateCount: number): string {
+  const proto = protocol ? PROTOCOL_LABELS[protocol] ?? '' : '';
+  const mult = aggregateCount > 1 ? `×${aggregateCount}` : '';
+  if (proto && mult) return `${proto} ${mult}`;
+  return proto || mult;
 }
 
 interface ReconnectResult {
@@ -73,8 +109,15 @@ export class EdgeRenderer {
   // Callback for edge click (selection)
   onEdgeClick: ((edgeId: string) => void) | null = null;
 
+  // Callback for edge double-click (drill-down par les plugins, ex: refinement EE).
+  onEdgeDoubleClick: ((edgeId: string) => void) | null = null;
+
   // Callback for edge hover
   onEdgeHover: ((edgeId: string | null) => void) | null = null;
+
+  // Détection de double-clic par edge — fenêtre courte entre deux pointerdown.
+  private static readonly DOUBLE_CLICK_DELAY_MS = 300;
+  private lastTapPerEdge: Map<string, number> = new Map();
 
   // Callback when reconnection drag starts (so PixiCanvas can pause viewport)
   onReconnectStart: (() => void) | null = null;
@@ -108,13 +151,24 @@ export class EdgeRenderer {
     this.editMode = editable;
   }
 
-  renderEdges(edges: GraphEdge[], nodes: GraphNode[], selectedEdgeId: string | null, routingMode: EdgeRoutingMode = 'bezier'): void {
+  renderEdges(
+    edges: GraphEdge[],
+    nodes: GraphNode[],
+    selectedEdgeId: string | null,
+    routingMode: EdgeRoutingMode = 'bezier',
+    focusContext?: EdgeFocusContext,
+  ): void {
     // Build node position map
     this.nodePositionCache.clear();
     for (const node of nodes) {
       this.nodePositionCache.set(node.id, node);
     }
     this.selectedEdgeIdCache = selectedEdgeId;
+
+    // Compute anchor distribution and parallel groups for this frame (shared with EdgePathCache).
+    const boundsById = this.buildBoundsMap(nodes);
+    const anchors = computeEdgeAnchors(edges, boundsById, { honorHandles: routingMode === 'orthogonal' });
+    const groups = computeParallelGroups(edges);
 
     const existingIds = new Set(edges.map((e) => e.id));
 
@@ -143,10 +197,70 @@ export class EdgeRenderer {
       if (!visual) {
         visual = this.createEdgeVisual(edge);
         this.visuals.set(edge.id, visual);
+      } else {
+        // Refresh the edge reference — the same id may carry updated data (e.g. new protocol).
+        visual.edge = edge;
       }
 
-      this.updateEdgeVisual(visual, edge, source, target, isSelected, nodes, routingMode);
+      this.updateEdgeVisual(visual, edge, source, target, isSelected, nodes, routingMode, anchors, groups, focusContext);
     }
+  }
+
+  /** Build a map of nodeId → absolute bounds, for the anchor calculation. */
+  private buildBoundsMap(nodes: GraphNode[]): Map<string, NodeBounds> {
+    const map = new Map<string, NodeBounds>();
+    for (const node of nodes) {
+      const abs = this.getAbsolutePosition(node);
+      map.set(node.id, {
+        x: abs.x,
+        y: abs.y,
+        width: node.width ?? NODE_WIDTH,
+        height: node.height ?? getNodeHeight(node.type),
+      });
+    }
+    return map;
+  }
+
+  /**
+   * Cheap pass that updates focus/filter alphas on existing visuals — no path or geometry
+   * recomputation. Designed to be called on hover/selection changes without triggering the
+   * full `renderEdges` pipeline (which re-runs anchor distribution, parallel grouping, and
+   * particle path sampling).
+   */
+  applyFocus(selectedEdgeId: string | null, focusContext?: EdgeFocusContext): void {
+    this.selectedEdgeIdCache = selectedEdgeId;
+    for (const visual of this.visuals.values()) {
+      const isSelected = visual.edgeId === selectedEdgeId;
+      const alphaMul = this.computeAlphaMultiplier(visual.edge, isSelected, focusContext);
+      visual.targetAlpha = alphaMul;
+      visual.line.alpha = alphaMul;
+      visual.arrow.alpha = alphaMul;
+      if (visual.label) visual.label.alpha = alphaMul;
+      visual.hitArea.eventMode = alphaMul === 0 ? 'none' : 'static';
+    }
+  }
+
+  /**
+   * Compute the multiplier applied on top of the base alpha for focus + protocol filter.
+   * Returns 0 to fully hide (filtered out), DIM_ALPHA to dim, 1 for full visibility.
+   */
+  private computeAlphaMultiplier(edge: GraphEdge, isSelected: boolean, focus?: EdgeFocusContext): number {
+    if (!focus) return 1;
+
+    // Protocol filter — `false` means hidden (matches app-store toggle convention)
+    const edgeData = edge.data as Record<string, unknown> | undefined;
+    const protocol = (edgeData?.protocol as string | undefined) ?? '_none';
+    if (focus.protocolFilters[protocol] === false) return 0;
+
+    // Selection always wins over focus dimming
+    if (isSelected) return 1;
+
+    // Focus mode — dim edges not incident to the focused node
+    if (focus.focusNodeId) {
+      const isConnected = edge.source === focus.focusNodeId || edge.target === focus.focusNodeId;
+      if (!isConnected) return DIM_ALPHA;
+    }
+    return 1;
   }
 
   private createEdgeVisual(edge: GraphEdge): EdgeVisual {
@@ -161,13 +275,27 @@ export class EdgeRenderer {
     hitArea.on('pointerdown', (e) => {
       e.stopPropagation();
       this.onEdgeClick?.(edge.id);
+      // Détection de double-clic : deux pointerdown rapprochés sur le même edge.
+      if (this.onEdgeDoubleClick) {
+        const now = performance.now();
+        const last = this.lastTapPerEdge.get(edge.id) ?? 0;
+        if (now - last <= EdgeRenderer.DOUBLE_CLICK_DELAY_MS) {
+          this.lastTapPerEdge.delete(edge.id);
+          this.onEdgeDoubleClick(edge.id);
+        } else {
+          this.lastTapPerEdge.set(edge.id, now);
+        }
+      }
     });
     hitArea.on('pointerover', () => {
       this.onEdgeHover?.(edge.id);
       const v = this.visuals.get(edge.id);
       if (v) {
         if (edge.id !== this.selectedEdgeIdCache) {
+          // Boost to full opacity on hover regardless of focus dimming
           v.line.alpha = 1;
+          v.arrow.alpha = 1;
+          if (v.label) v.label.alpha = 1;
         }
         if (this.editMode) {
           v.sourceHandle.visible = true;
@@ -179,7 +307,10 @@ export class EdgeRenderer {
       this.onEdgeHover?.(null);
       const v = this.visuals.get(edge.id);
       if (v && edge.id !== this.selectedEdgeIdCache) {
-        v.line.alpha = 0.6;
+        // Restore the focus/filter-aware alpha
+        v.line.alpha = v.targetAlpha;
+        v.arrow.alpha = v.targetAlpha;
+        if (v.label) v.label.alpha = v.targetAlpha;
         if (!this.selectedEdgeIdCache || edge.id !== this.selectedEdgeIdCache) {
           v.sourceHandle.visible = false;
           v.targetHandle.visible = false;
@@ -220,17 +351,19 @@ export class EdgeRenderer {
     // Reconnection handles go in hitLayer (above nodes) for reliable click detection
     (this.hitLayer ?? this.layer).addChild(sourceHandle, targetHandle);
 
-    // Protocol label
+    // Protocol / aggregate label. Created if either a known protocol or an aggregate count exists.
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const protocol = edgeData?.protocol as string | undefined;
+    const aggregateCount = typeof edgeData?._aggregateCount === 'number' ? edgeData._aggregateCount : 1;
+    const labelText = formatEdgeLabel(protocol, aggregateCount);
     let label: Text | null = null;
 
-    if (protocol && PROTOCOL_LABELS[protocol]) {
+    if (labelText) {
       label = new Text({
-        text: PROTOCOL_LABELS[protocol],
+        text: labelText,
         style: new TextStyle({
           fontSize: 8,
-          fill: PROTOCOL_COLORS[protocol] ?? 0x888888,
+          fill: PROTOCOL_COLORS[protocol ?? ''] ?? 0x888888,
           fontFamily: '"SF Mono", "Fira Code", monospace',
           fontWeight: '600',
           letterSpacing: 0.5,
@@ -240,7 +373,7 @@ export class EdgeRenderer {
       this.layer.addChild(label);
     }
 
-    return { line, hitArea, arrow, label, sourceHandle, targetHandle, edgeId: edge.id };
+    return { line, hitArea, arrow, label, sourceHandle, targetHandle, edgeId: edge.id, edge, targetAlpha: 1 };
   }
 
   private updateEdgeVisual(
@@ -251,17 +384,55 @@ export class EdgeRenderer {
     isSelected: boolean,
     allNodes: GraphNode[],
     routingMode: EdgeRoutingMode,
+    anchors: AnchorMap,
+    groups: ParallelGroups,
+    focusContext?: EdgeFocusContext,
   ): void {
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const protocol = edgeData?.protocol as string | undefined;
     const customColor = edgeData?.color as string | undefined;
     const customColorNum = customColor ? parseInt(customColor.replace('#', ''), 16) : undefined;
     const customWidth = edgeData?.strokeWidth as number | undefined;
-    const baseColor = customColorNum ?? PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor;
-    const baseWidth = customWidth ?? PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH;
+
+    // Plugin overrides (edgeStyleRegistry.resolveHints) — appliqués si l'edge n'a pas
+    // déjà un override explicite de l'utilisateur (customColor/customWidth conservent la priorité).
+    let pluginColorNum: number | undefined;
+    let pluginWidth: number | undefined;
+    if (edgeStyleRegistry.hasProviders()) {
+      const projectMeta = useArchitectureStore.getState().projectMeta;
+      const hints = edgeStyleRegistry.resolveHints(edge, {
+        projectMeta,
+        sourceNode: source,
+        targetNode: target,
+      });
+      if (hints?.color && hints.color.startsWith('#')) {
+        const parsed = parseInt(hints.color.replace('#', ''), 16);
+        if (!Number.isNaN(parsed)) pluginColorNum = parsed;
+      }
+      if (typeof hints?.strokeWidth === 'number') pluginWidth = hints.strokeWidth;
+    }
+
+    const baseColor = customColorNum ?? pluginColorNum ?? PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor;
+    const baseWidth = customWidth ?? pluginWidth ?? PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH;
     const color = isSelected ? EDGE_SELECTED_COLOR : baseColor;
     const width = isSelected ? baseWidth + 1 : baseWidth;
     const alpha = isSelected ? 1 : canvasTheme().edgeAlpha;
+    const alphaMul = this.computeAlphaMultiplier(edge, isSelected, focusContext);
+    // Apply focus/filter via sprite-level alpha so hover can temporarily boost through it.
+    // Stroke alpha stays at the baseline; sprite alpha = alphaMul carries focus/filter state.
+    visual.targetAlpha = alphaMul;
+    visual.line.alpha = alphaMul;
+    visual.arrow.alpha = alphaMul;
+    if (visual.label) {
+      // Refresh label text — aggregate counts can change between renders when underlying
+      // edges are added or removed under a collapsed container.
+      const aggregateCount = typeof edgeData?._aggregateCount === 'number' ? edgeData._aggregateCount : 1;
+      const desired = formatEdgeLabel(protocol, aggregateCount);
+      if (visual.label.text !== desired) visual.label.text = desired;
+      visual.label.alpha = alphaMul;
+    }
+    // Filtered-out edges should not capture clicks/hovers
+    visual.hitArea.eventMode = alphaMul === 0 ? 'none' : 'static';
 
     // Compute absolute positions
     const sourceAbs = this.getAbsolutePosition(source);
@@ -272,20 +443,25 @@ export class EdgeRenderer {
     const tw = target.width ?? NODE_WIDTH;
     const th = target.height ?? getNodeHeight(target.type);
 
+    // Anchor lookup (with fallback to centre-of-side via borderIntersection if missing).
+    const anchor = anchors.get(edge.id) ?? this.fallbackAnchor(sourceAbs, targetAbs, sw, sh, tw, th);
+
+    // Parallel-group info drives both the perpendicular offset and the label staggering.
+    const groupInfo = groups.groupOf.get(edge.id);
+    const offset = parallelOffset(groupInfo);
+
     if (routingMode === 'orthogonal') {
-      this.drawOrthogonal(visual, edge, source, target, allNodes, sourceAbs, targetAbs, sw, sh, tw, th, color, width, alpha, isSelected);
+      // Étape 2's distributed anchors already produce parallel orthogonal corridors;
+      // no extra lateral offset is applied to A* exit points.
+      this.drawOrthogonal(visual, edge, source, target, allNodes, anchor, groupInfo, color, width, alpha, isSelected);
     } else {
-      this.drawBezier(visual, sourceAbs, targetAbs, sw, sh, tw, th, color, width, alpha, isSelected);
+      this.drawBezier(visual, anchor, offset, groupInfo, color, width, alpha, isSelected);
     }
 
     // ── Endpoint handles for reconnection (edit mode + selected or hovered) ──
     const showEndpoints = this.editMode && isSelected;
-    const scx = sourceAbs.x + sw / 2;
-    const scy = sourceAbs.y + sh / 2;
-    const tcx = targetAbs.x + tw / 2;
-    const tcy = targetAbs.y + th / 2;
-    const sp = this.borderIntersection(scx, scy, sw, sh, tcx, tcy);
-    const tp = this.borderIntersection(tcx, tcy, tw, th, scx, scy);
+    const sp = anchor.source;
+    const tp = anchor.target;
 
     for (const [handle, pos] of [[visual.sourceHandle, sp], [visual.targetHandle, tp]] as const) {
       handle.visible = showEndpoints;
@@ -302,47 +478,36 @@ export class EdgeRenderer {
     }
   }
 
-  // ── Bezier drawing ──
-  private drawBezier(
-    visual: EdgeVisual,
+  /** Build an anchor synthesised from the existing border-intersection logic — used as a fallback when the anchor map has no entry (e.g. self-referent edges). */
+  private fallbackAnchor(
     sourceAbs: { x: number; y: number }, targetAbs: { x: number; y: number },
     sw: number, sh: number, tw: number, th: number,
-    color: number, width: number, alpha: number, isSelected: boolean,
-  ): void {
+  ): { source: { x: number; y: number }; target: { x: number; y: number }; sourceSide: 'top' | 'right' | 'bottom' | 'left'; targetSide: 'top' | 'right' | 'bottom' | 'left' } {
     const scx = sourceAbs.x + sw / 2;
     const scy = sourceAbs.y + sh / 2;
     const tcx = targetAbs.x + tw / 2;
     const tcy = targetAbs.y + th / 2;
-
     const sp = this.borderIntersection(scx, scy, sw, sh, tcx, tcy);
     const tp = this.borderIntersection(tcx, tcy, tw, th, scx, scy);
+    return { source: sp, target: tp, sourceSide: 'right', targetSide: 'left' };
+  }
 
-    const dx = tp.x - sp.x;
-    const dy = tp.y - sp.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const curvature = Math.min(dist * 0.35, 80);
-
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    let cx1: number, cy1: number, cx2: number, cy2: number;
-
-    if (absDx > absDy) {
-      cx1 = sp.x + Math.sign(dx) * curvature;
-      cy1 = sp.y;
-      cx2 = tp.x - Math.sign(dx) * curvature;
-      cy2 = tp.y;
-    } else {
-      cx1 = sp.x;
-      cy1 = sp.y + Math.sign(dy) * curvature;
-      cx2 = tp.x;
-      cy2 = tp.y - Math.sign(dy) * curvature;
-    }
+  // ── Bezier drawing ──
+  private drawBezier(
+    visual: EdgeVisual,
+    anchor: { source: { x: number; y: number }; target: { x: number; y: number } },
+    parallelOffset: number,
+    groupInfo: ParallelGroupInfo | undefined,
+    color: number, width: number, alpha: number, isSelected: boolean,
+  ): void {
+    const params = computeBezierParams(anchor.source, anchor.target, parallelOffset);
+    const { source: sp, target: tp, cp1, cp2 } = params;
 
     // Hit area
     visual.hitArea.clear();
     visual.hitArea.setStrokeStyle({ width: 16, color: 0xffffff, alpha: 1 });
     visual.hitArea.moveTo(sp.x, sp.y);
-    visual.hitArea.bezierCurveTo(cx1, cy1, cx2, cy2, tp.x, tp.y);
+    visual.hitArea.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, tp.x, tp.y);
     visual.hitArea.stroke();
     visual.hitArea.alpha = 0;
 
@@ -351,24 +516,23 @@ export class EdgeRenderer {
     if (isSelected) {
       visual.line.setStrokeStyle({ width: width + 4, color, alpha: 0.2 });
       visual.line.moveTo(sp.x, sp.y);
-      visual.line.bezierCurveTo(cx1, cy1, cx2, cy2, tp.x, tp.y);
+      visual.line.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, tp.x, tp.y);
       visual.line.stroke();
     }
     visual.line.setStrokeStyle({ width, color, alpha });
     visual.line.moveTo(sp.x, sp.y);
-    visual.line.bezierCurveTo(cx1, cy1, cx2, cy2, tp.x, tp.y);
+    visual.line.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, tp.x, tp.y);
     visual.line.stroke();
 
     // Arrow
-    const arrowAngle = Math.atan2(tp.y - cy2, tp.x - cx2);
+    const arrowAngle = Math.atan2(tp.y - cp2.y, tp.x - cp2.x);
     this.drawArrow(visual, tp.x, tp.y, arrowAngle, color, alpha, isSelected);
 
-    // Label
+    // Label staggered along the curve so badges in a parallel group don't overlap.
     if (visual.label) {
-      const t = 0.5, mt = 0.5;
-      const mx = mt * mt * mt * sp.x + 3 * mt * mt * t * cx1 + 3 * mt * t * t * cx2 + t * t * t * tp.x;
-      const my = mt * mt * mt * sp.y + 3 * mt * mt * t * cy1 + 3 * mt * t * t * cy2 + t * t * t * tp.y;
-      visual.label.position.set(mx - visual.label.width / 2, my - visual.label.height - 4);
+      const t = staggeredLabelT(groupInfo);
+      const m = bezierPoint(params, t);
+      visual.label.position.set(m.x - visual.label.width / 2, m.y - visual.label.height - 4);
     }
   }
 
@@ -378,8 +542,8 @@ export class EdgeRenderer {
     edge: GraphEdge,
     source: GraphNode, target: GraphNode,
     allNodes: GraphNode[],
-    sourceAbs: { x: number; y: number }, targetAbs: { x: number; y: number },
-    sw: number, sh: number, tw: number, th: number,
+    anchor: { source: { x: number; y: number }; target: { x: number; y: number }; sourceSide: 'top' | 'right' | 'bottom' | 'left'; targetSide: 'top' | 'right' | 'bottom' | 'left' },
+    groupInfo: ParallelGroupInfo | undefined,
     color: number, width: number, alpha: number, isSelected: boolean,
   ): void {
     // Build obstacles from all nodes
@@ -390,28 +554,31 @@ export class EdgeRenderer {
         return { id: n.id, x: abs.x, y: abs.y, width: n.width ?? NODE_WIDTH, height: n.height ?? getNodeHeight(n.type) };
       });
 
-    const srcSide = parseHandleSide(edge.sourceHandle);
-    const tgtSide = parseHandleSide(edge.targetHandle);
+    const sourcePoint = anchor.source;
+    const targetPoint = anchor.target;
 
-    const srcObs = { x: sourceAbs.x, y: sourceAbs.y, width: sw, height: sh };
-    const tgtObs = { x: targetAbs.x, y: targetAbs.y, width: tw, height: th };
+    // Prefer waypoints from a recent ELK auto-layout when they are still consistent with
+    // the current node positions; otherwise fall back to the local A* router.
+    const elkWaypoints = readWaypoints(edge);
+    let allPoints: { x: number; y: number }[];
+    if (elkWaypoints && waypointsAreFresh(elkWaypoints, sourcePoint, targetPoint)) {
+      // Replace ELK's start/end with the live anchor positions so the path always lands
+      // exactly on the rendered node sides (anchors may have been redistributed by the
+      // dynamic-anchors module since layout time).
+      allPoints = [sourcePoint, ...elkWaypoints.slice(1, -1), targetPoint];
+    } else {
+      const excludeIds = new Set([edge.source, edge.target]);
+      if (source.parentId) excludeIds.add(source.parentId);
+      if (target.parentId) excludeIds.add(target.parentId);
 
-    const sourcePoint = this.getHandlePoint(srcObs, srcSide);
-    const targetPoint = this.getHandlePoint(tgtObs, tgtSide);
-
-    const excludeIds = new Set([edge.source, edge.target]);
-    if (source.parentId) excludeIds.add(source.parentId);
-    if (target.parentId) excludeIds.add(target.parentId);
-
-    const route = computeOrthogonalRoute(
-      { ...sourcePoint, side: srcSide },
-      { ...targetPoint, side: tgtSide },
-      obstacles,
-      excludeIds,
-    );
-
-    const waypoints = route.waypoints;
-    const allPoints = [sourcePoint, ...waypoints, targetPoint];
+      const route = computeOrthogonalRoute(
+        { ...sourcePoint, side: anchor.sourceSide },
+        { ...targetPoint, side: anchor.targetSide },
+        obstacles,
+        excludeIds,
+      );
+      allPoints = [sourcePoint, ...route.waypoints, targetPoint];
+    }
 
     // Hit area
     visual.hitArea.clear();
@@ -446,15 +613,11 @@ export class EdgeRenderer {
     const arrowAngle = Math.atan2(last.y - prev.y, last.x - prev.x);
     this.drawArrow(visual, last.x, last.y, arrowAngle, color, alpha, isSelected);
 
-    // Label at midpoint of the path
+    // Label staggered along the polyline by total arc length.
     if (visual.label) {
-      const midIdx = Math.floor(allPoints.length / 2);
-      const p0 = allPoints[midIdx - 1] ?? allPoints[0];
-      const p1 = allPoints[midIdx];
-      visual.label.position.set(
-        (p0.x + p1.x) / 2 - visual.label.width / 2,
-        (p0.y + p1.y) / 2 - visual.label.height - 4,
-      );
+      const t = staggeredLabelT(groupInfo);
+      const pos = pointAlongPolyline(allPoints, t);
+      visual.label.position.set(pos.x - visual.label.width / 2, pos.y - visual.label.height - 4);
     }
   }
 
@@ -479,19 +642,6 @@ export class EdgeRenderer {
     visual.arrow.lineTo(ax2, ay2);
     visual.arrow.closePath();
     visual.arrow.fill({ color, alpha });
-  }
-
-  // ── Handle point helper ──
-  private getHandlePoint(
-    obs: { x: number; y: number; width: number; height: number },
-    side: 'top' | 'right' | 'bottom' | 'left',
-  ): { x: number; y: number } {
-    switch (side) {
-      case 'right': return { x: obs.x + obs.width, y: obs.y + obs.height / 2 };
-      case 'left': return { x: obs.x, y: obs.y + obs.height / 2 };
-      case 'top': return { x: obs.x + obs.width / 2, y: obs.y };
-      case 'bottom': return { x: obs.x + obs.width / 2, y: obs.y + obs.height };
-    }
   }
 
   /**
@@ -607,7 +757,7 @@ export class EdgeRenderer {
     let targetNode: GraphNode | null = null;
 
     for (const node of nodes) {
-      if (CONTAINER_COMPONENT_TYPES.has(node.type)) continue;
+      if (CONTAINER_COMPONENT_TYPES.has(node.type as ComponentType)) continue;
       const abs = this.getAbsolutePosition(node);
       const w = node.width ?? NODE_WIDTH;
       const h = node.height ?? getNodeHeight(node.type);

@@ -1,6 +1,9 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import { NODE_WIDTH, NODE_HEIGHT, CONTAINER_COMPONENT_TYPES } from './constants';
-import { computeOrthogonalRoute, parseHandleSide } from '@/lib/orthogonal-router';
+import { NODE_WIDTH, NODE_HEIGHT } from './constants';
+import { computeOrthogonalRoute } from '@/lib/orthogonal-router';
+import { computeEdgeAnchors, type EdgeAnchor, type NodeBounds } from '@/lib/edge-anchors';
+import { computeParallelGroups, parallelOffset } from '@/lib/edge-grouping';
+import { computeBezierParams, bezierTangentAngle, readWaypoints, waypointsAreFresh } from '@/lib/edge-paths';
 import type { EdgeRoutingMode } from '@/store/app-store';
 
 interface PathPoint {
@@ -33,6 +36,11 @@ export class EdgePathCache {
       nodeMap.set(node.id, node);
     }
 
+    // Anchor map and parallel groups mirror EdgeRenderer so particles travel the exact same path.
+    const boundsMap = this.buildBoundsMap(nodes, nodeMap);
+    const anchors = computeEdgeAnchors(edges, boundsMap, { honorHandles: routingMode === 'orthogonal' });
+    const groups = computeParallelGroups(edges);
+
     this.cache.clear();
 
     for (const edge of edges) {
@@ -40,11 +48,47 @@ export class EdgePathCache {
       const target = nodeMap.get(edge.target);
       if (!source || !target) continue;
 
+      const anchor = anchors.get(edge.id) ?? this.fallbackAnchor(source, target, nodeMap);
+      const offset = parallelOffset(groups.groupOf.get(edge.id));
+
       const path = routingMode === 'orthogonal'
-        ? this.computeOrthogonalPath(edge, source, target, nodes, nodeMap)
-        : this.computePath(source, target, nodeMap);
+        ? this.computeOrthogonalPath(edge, source, target, nodes, nodeMap, anchor)
+        : this.computePath(anchor, offset);
       this.cache.set(edge.id, path);
     }
+  }
+
+  private buildBoundsMap(nodes: GraphNode[], nodeMap: Map<string, GraphNode>): Map<string, NodeBounds> {
+    const map = new Map<string, NodeBounds>();
+    for (const node of nodes) {
+      const abs = this.getAbsolutePosition(node, nodeMap);
+      map.set(node.id, {
+        x: abs.x,
+        y: abs.y,
+        width: node.width ?? NODE_WIDTH,
+        height: node.height ?? NODE_HEIGHT,
+      });
+    }
+    return map;
+  }
+
+  private fallbackAnchor(source: GraphNode, target: GraphNode, nodeMap: Map<string, GraphNode>): EdgeAnchor {
+    const sourceAbs = this.getAbsolutePosition(source, nodeMap);
+    const targetAbs = this.getAbsolutePosition(target, nodeMap);
+    const sw = source.width ?? NODE_WIDTH;
+    const sh = source.height ?? NODE_HEIGHT;
+    const tw = target.width ?? NODE_WIDTH;
+    const th = target.height ?? NODE_HEIGHT;
+    const scx = sourceAbs.x + sw / 2;
+    const scy = sourceAbs.y + sh / 2;
+    const tcx = targetAbs.x + tw / 2;
+    const tcy = targetAbs.y + th / 2;
+    return {
+      source: this.borderIntersection(scx, scy, sw, sh, tcx, tcy),
+      target: this.borderIntersection(tcx, tcy, tw, th, scx, scy),
+      sourceSide: 'right',
+      targetSide: 'left',
+    };
   }
 
   /**
@@ -96,51 +140,14 @@ export class EdgePathCache {
   }
 
   /**
-   * Compute a sampled bezier path between two nodes.
+   * Compute a sampled bezier path between two anchor points.
+   * Shares the bezier formula with EdgeRenderer via `computeBezierParams` so particles
+   * follow the exact curve drawn on screen, including parallel-edge offsets.
    */
-  private computePath(
-    source: GraphNode,
-    target: GraphNode,
-    nodeMap: Map<string, GraphNode>,
-  ): CachedPath {
-    const sourceAbs = this.getAbsolutePosition(source, nodeMap);
-    const targetAbs = this.getAbsolutePosition(target, nodeMap);
+  private computePath(anchor: EdgeAnchor, parallelOffset = 0): CachedPath {
+    const params = computeBezierParams(anchor.source, anchor.target, parallelOffset);
+    const { source: sp, target: tp, cp1, cp2 } = params;
 
-    const sw = source.width ?? NODE_WIDTH;
-    const sh = source.height ?? NODE_HEIGHT;
-    const tw = target.width ?? NODE_WIDTH;
-    const th = target.height ?? NODE_HEIGHT;
-
-    const scx = sourceAbs.x + sw / 2;
-    const scy = sourceAbs.y + sh / 2;
-    const tcx = targetAbs.x + tw / 2;
-    const tcy = targetAbs.y + th / 2;
-
-    const sp = this.borderIntersection(scx, scy, sw, sh, tcx, tcy);
-    const tp = this.borderIntersection(tcx, tcy, tw, th, scx, scy);
-
-    // Bezier control points (same logic as EdgeRenderer)
-    const dx = tp.x - sp.x;
-    const dy = tp.y - sp.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const curvature = Math.min(dist * 0.35, 80);
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-
-    let cx1: number, cy1: number, cx2: number, cy2: number;
-    if (absDx > absDy) {
-      cx1 = sp.x + Math.sign(dx) * curvature;
-      cy1 = sp.y;
-      cx2 = tp.x - Math.sign(dx) * curvature;
-      cy2 = tp.y;
-    } else {
-      cx1 = sp.x;
-      cy1 = sp.y + Math.sign(dy) * curvature;
-      cx2 = tp.x;
-      cy2 = tp.y - Math.sign(dy) * curvature;
-    }
-
-    // Sample the bezier curve
     const points: PathPoint[] = [];
     const lengths: number[] = [];
     let totalLength = 0;
@@ -148,14 +155,9 @@ export class EdgePathCache {
     for (let i = 0; i <= SAMPLES_PER_EDGE; i++) {
       const t = i / SAMPLES_PER_EDGE;
       const mt = 1 - t;
-
-      const x = mt * mt * mt * sp.x + 3 * mt * mt * t * cx1 + 3 * mt * t * t * cx2 + t * t * t * tp.x;
-      const y = mt * mt * mt * sp.y + 3 * mt * mt * t * cy1 + 3 * mt * t * t * cy2 + t * t * t * tp.y;
-
-      // Tangent (derivative of cubic bezier)
-      const dtx = 3 * mt * mt * (cx1 - sp.x) + 6 * mt * t * (cx2 - cx1) + 3 * t * t * (tp.x - cx2);
-      const dty = 3 * mt * mt * (cy1 - sp.y) + 6 * mt * t * (cy2 - cy1) + 3 * t * t * (tp.y - cy2);
-      const angle = Math.atan2(dty, dtx);
+      const x = mt * mt * mt * sp.x + 3 * mt * mt * t * cp1.x + 3 * mt * t * t * cp2.x + t * t * t * tp.x;
+      const y = mt * mt * mt * sp.y + 3 * mt * mt * t * cp1.y + 3 * mt * t * t * cp2.y + t * t * t * tp.y;
+      const angle = bezierTangentAngle(params, t);
 
       if (i > 0) {
         const prev = points[i - 1];
@@ -172,7 +174,7 @@ export class EdgePathCache {
   }
 
   /**
-   * Compute a sampled orthogonal path between two nodes.
+   * Compute a sampled orthogonal path between two anchor points.
    */
   private computeOrthogonalPath(
     edge: GraphEdge,
@@ -180,15 +182,8 @@ export class EdgePathCache {
     target: GraphNode,
     allNodes: GraphNode[],
     nodeMap: Map<string, GraphNode>,
+    anchor: EdgeAnchor,
   ): CachedPath {
-    const sourceAbs = this.getAbsolutePosition(source, nodeMap);
-    const targetAbs = this.getAbsolutePosition(target, nodeMap);
-
-    const sw = source.width ?? NODE_WIDTH;
-    const sh = source.height ?? NODE_HEIGHT;
-    const tw = target.width ?? NODE_WIDTH;
-    const th = target.height ?? NODE_HEIGHT;
-
     // Build obstacles
     const obstacles = allNodes
       .filter((n) => n.type !== 'network-zone')
@@ -197,28 +192,27 @@ export class EdgePathCache {
         return { id: n.id, x: abs.x, y: abs.y, width: n.width ?? NODE_WIDTH, height: n.height ?? NODE_HEIGHT };
       });
 
-    const srcSide = parseHandleSide(edge.sourceHandle);
-    const tgtSide = parseHandleSide(edge.targetHandle);
+    const sourcePoint = anchor.source;
+    const targetPoint = anchor.target;
 
-    const srcObs = { x: sourceAbs.x, y: sourceAbs.y, width: sw, height: sh };
-    const tgtObs = { x: targetAbs.x, y: targetAbs.y, width: tw, height: th };
+    // Mirror EdgeRenderer: prefer ELK waypoints when they are still consistent with anchors.
+    const elkWaypoints = readWaypoints(edge);
+    let allPoints: { x: number; y: number }[];
+    if (elkWaypoints && waypointsAreFresh(elkWaypoints, sourcePoint, targetPoint)) {
+      allPoints = [sourcePoint, ...elkWaypoints.slice(1, -1), targetPoint];
+    } else {
+      const excludeIds = new Set([edge.source, edge.target]);
+      if (source.parentId) excludeIds.add(source.parentId);
+      if (target.parentId) excludeIds.add(target.parentId);
 
-    const sourcePoint = this.getHandlePoint(srcObs, srcSide);
-    const targetPoint = this.getHandlePoint(tgtObs, tgtSide);
-
-    const excludeIds = new Set([edge.source, edge.target]);
-    if (source.parentId) excludeIds.add(source.parentId);
-    if (target.parentId) excludeIds.add(target.parentId);
-
-    const route = computeOrthogonalRoute(
-      { ...sourcePoint, side: srcSide },
-      { ...targetPoint, side: tgtSide },
-      obstacles,
-      excludeIds,
-    );
-
-    // Build sampled path from waypoints (straight line segments)
-    const allPoints = [sourcePoint, ...route.waypoints, targetPoint];
+      const route = computeOrthogonalRoute(
+        { ...sourcePoint, side: anchor.sourceSide },
+        { ...targetPoint, side: anchor.targetSide },
+        obstacles,
+        excludeIds,
+      );
+      allPoints = [sourcePoint, ...route.waypoints, targetPoint];
+    }
 
     const points: PathPoint[] = [];
     const lengths: number[] = [];
@@ -258,18 +252,6 @@ export class EdgePathCache {
     }
 
     return { points, totalLength, lengths };
-  }
-
-  private getHandlePoint(
-    obs: { x: number; y: number; width: number; height: number },
-    side: 'top' | 'right' | 'bottom' | 'left',
-  ): { x: number; y: number } {
-    switch (side) {
-      case 'right': return { x: obs.x + obs.width, y: obs.y + obs.height / 2 };
-      case 'left': return { x: obs.x, y: obs.y + obs.height / 2 };
-      case 'top': return { x: obs.x + obs.width / 2, y: obs.y };
-      case 'bottom': return { x: obs.x + obs.width / 2, y: obs.y + obs.height };
-    }
   }
 
   private getAbsolutePosition(node: GraphNode, nodeMap: Map<string, GraphNode>): { x: number; y: number } {

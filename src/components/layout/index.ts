@@ -3,3 +3,4 @@ export { ComponentsPanel } from './ComponentsPanel';
 export { PropertiesPanel } from './PropertiesPanel';
 export { DiagramTabs } from './DiagramTabs';
 export { ProjectSelector } from './ProjectSelector';
+export { NewProjectDialog } from './NewProjectDialog';

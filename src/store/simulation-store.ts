@@ -43,6 +43,8 @@ export interface SimulationReport {
   messageQueueStats?: Record<string, MessageQueueUtilization>;
   cacheStats?: Record<string, CacheUtilization>;
   databaseStats?: Record<string, DatabaseUtilization>;
+  /** Seed du PRNG utilise par le run (B2.1 - Reproductibilite). Permet de relancer le meme run. */
+  seed?: number | string;
 }
 
 /**
@@ -57,6 +59,15 @@ interface SimulationStore {
   // Simulation duration (null = unlimited)
   duration: number | null; // in seconds
   elapsedTime: number; // in ms
+
+  /**
+   * Seed configure par l'utilisateur pour rendre les simulations reproductibles
+   * (B2.1). null = entropie systeme (seed entropique genere par le moteur au start).
+   * Accepte string (hashee) ou number.
+   */
+  seed: number | string | null;
+  /** Seed effectivement utilise par le dernier run (renvoye par le moteur). */
+  lastRunSeed: number | string | null;
 
   // Particles for animation (indexed by id and by edge for O(1) lookups)
   particles: Map<string, Particle>;
@@ -114,6 +125,7 @@ interface SimulationStore {
     messageQueueStats: Record<string, MessageQueueUtilization>;
     cacheStats: Record<string, CacheUtilization>;
     databaseStats: Record<string, DatabaseUtilization>;
+    seed?: number | string;
   }) | null;
   registerEngineReportDataProvider: (provider: SimulationStore['_engineReportDataProvider']) => void;
 
@@ -125,6 +137,8 @@ interface SimulationStore {
   setSpeed: (speed: number) => void;
   setDuration: (duration: number | null) => void;
   updateElapsedTime: (elapsed: number) => void;
+  setSeed: (seed: number | string | null) => void;
+  setLastRunSeed: (seed: number | string | null) => void;
 
   // Actions - Report & Analysis
   setShowReport: (show: boolean) => void;
@@ -257,6 +271,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   speed: 1,
   duration: null,
   elapsedTime: 0,
+  seed: null,
+  lastRunSeed: null,
   particles: new Map(),
   particlesByEdge: new Map(),
   particleProgressTick: 0,
@@ -345,6 +361,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
       messageQueueStats: reportData?.messageQueueStats ?? {},
       cacheStats: reportData?.cacheStats ?? {},
       databaseStats: reportData?.databaseStats ?? {},
+      seed: reportData?.seed ?? state.lastRunSeed ?? undefined,
     };
 
     // Persist report to localStorage for recovery after page refresh
@@ -389,6 +406,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
   updateElapsedTime: (elapsed) => set({ elapsedTime: elapsed }),
 
+  setSeed: (seed) => set({ seed }),
+  setLastRunSeed: (lastRunSeed) => set({ lastRunSeed }),
+
   // Report & analysis actions
   setShowReport: (show) => set({ showReport: show }),
   setAnalysisMode: (active) => set({ analysisMode: active }),
@@ -427,6 +447,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
       messageQueueStats: reportData?.messageQueueStats ?? {},
       cacheStats: reportData?.cacheStats ?? {},
       databaseStats: reportData?.databaseStats ?? {},
+      seed: reportData?.seed ?? state.lastRunSeed ?? undefined,
     };
   },
 

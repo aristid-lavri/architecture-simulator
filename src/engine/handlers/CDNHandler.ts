@@ -52,7 +52,8 @@ export class CDNHandler implements NodeRequestHandler {
     }
 
     // Simulate cache hit/miss based on adjusted ratio
-    const isHit = Math.random() * 100 < effectiveHitRatio;
+    const rng = context.rng ?? Math.random;
+    const isHit = rng() * 100 < effectiveHitRatio;
 
     if (isHit) {
       return {
