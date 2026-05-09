@@ -17,7 +17,14 @@ function createTemplateFromYaml(
     console.warn(`[Template] Failed to parse "${id}":`, result.error);
     return null;
   }
-  return { id, nameKey, descriptionKey, nodes: result.nodes, edges: result.edges };
+  return {
+    id,
+    nameKey,
+    descriptionKey,
+    nodes: result.nodes,
+    edges: result.edges,
+    projectMeta: result.projectMeta,
+  };
 }
 
 // ============================================
@@ -2495,6 +2502,1315 @@ connections:
 `;
 
 // ============================================
+// Template : Groupe Bancaire Multi-Pôles (C4 multi-niveaux + refinement)
+// ============================================
+// Variante C4 du multi-pôles avec containment ET refinement explicites :
+//
+//   L1 (Context)
+//     - 4 acteurs émetteurs (`generatesTraffic: true`, RPS 1-2) :
+//         client-particulier, client-entreprise, conseiller-banque, conseiller-assurance
+//     - 3 c4-software-system distincts (un par pôle) :
+//         systeme-banque, systeme-assurance, systeme-comptabilite
+//     - 4 systèmes externes : ext-reseau-paiement, ext-bureau-credit, ext-regulateur, ext-notification
+//     - Edges inter-pôles (banque→compta, assurance→compta) pour les écritures
+//
+//   L2 (Containers) — `parentSystemId` rattache chaque container à son pôle
+//     - Pôle Banque : ct-banque, ct-transactions, svc-comptes-part, svc-virements,
+//         cb-paiement-ext, db-clients, db-comptes, cache-clients,
+//         + réplicas ON/BC (cache + DB + svc-comptes-on/bc)
+//     - Pôle Assurance : ct-assurance, svc-assur-part, db-contrats
+//     - Pôle Comptabilité : svc-grand-livre, db-compta
+//     - Infra mutualisée (sans parentSystemId) : waf-principal, cdn-portail, gw-central,
+//         gw-interne, lb-geo, idp-sso, sd-central, mq-interpoles, clients-web, clients-mobile
+//     - Edges raffinés depuis les c4-person : `parentEdgeId` pointe sur l'edge L1
+//         correspondant. Permet la cascade simulation : l'émission L1 (1-2 RPS par person)
+//         passe sur l'edge L2 raffiné, atteint le WAF/Gateway, descend la chaîne.
+//
+//   L3 (Components) — drill-down dans 4 services applicatifs
+//     - svc-comptes-part / svc-virements / svc-assur-part / svc-grand-livre activent
+//         `simulateAtComponentLevel: true` + `entryComponentId` → cascade L2→L3 via
+//         L2DelegationWrapper. Chaque edge L3 porte `parentEdgeId: edge-lb-geo-svc-*`
+//         pour le drill par double-clic d'edge L2.
+//     - Architecture hexagonale : controller → service → (cache adapter, repository, domain).
+//
+//   Deployment — projection multi-AZ ca-central-1a/b + ON + BC (inchangé).
+//
+// Démo recommandée :
+//   1. Charger le template, vue L1 par défaut.
+//   2. Lancer la simulation : observer les particules émises par les 4 c4-person.
+//   3. Double-clic sur c4-software-system "Pôle Banque" → drill L2 filtré par parentSystemId.
+//   4. Double-clic sur l'edge L1 client-particulier→Pôle Banque → sous-canvas refinement
+//      (montre l'edge L2 raffiné jusqu'au WAF).
+//   5. Double-clic sur container "API Comptes Particuliers" → drill L3 (composants).
+//   6. Double-clic sur edge L2 lb-geo→svc-comptes-part → sous-canvas refinement L3.
+// ============================================
+const bankingC4Yaml = `
+version: 1
+name: "Banque Multi-Pôles (C4)"
+
+metadata:
+  kind: c4
+  c4:
+    activeLevel: context
+
+zones:
+  edge:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 50, y: 30 }
+    size: { width: 1300, height: 280 }
+  qc:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 50, y: 360 }
+    size: { width: 1300, height: 800 }
+  ontario:
+    type: backend
+    interZoneLatency: 5
+    position: { x: 50, y: 1210 }
+    size: { width: 620, height: 360 }
+  bc:
+    type: backend
+    interZoneLatency: 8
+    position: { x: 720, y: 1210 }
+    size: { width: 620, height: 360 }
+  data-centrale:
+    type: data
+    interZoneLatency: 1
+    position: { x: 50, y: 1620 }
+    size: { width: 1300, height: 460 }
+
+hosts:
+  host-banque-qc:
+    zone: qc
+    ipAddress: "10.1.1.10"
+    hostname: "banque-qc-01"
+    position: { x: 30, y: 60 }
+    size: { width: 600, height: 380 }
+    config:
+      label: "Pôle Banque QC"
+      parentSystemId: systeme-banque
+  host-assurance-qc:
+    zone: qc
+    ipAddress: "10.1.2.10"
+    hostname: "assurance-qc-01"
+    position: { x: 670, y: 60 }
+    size: { width: 560, height: 270 }
+    config:
+      label: "Pôle Assurance QC"
+      parentSystemId: systeme-assurance
+  host-compta-qc:
+    zone: qc
+    ipAddress: "10.1.3.10"
+    hostname: "compta-qc-01"
+    position: { x: 670, y: 370 }
+    size: { width: 560, height: 230 }
+    config:
+      label: "Pôle Comptabilité QC"
+      parentSystemId: systeme-comptabilite
+  host-on:
+    zone: ontario
+    ipAddress: "10.2.1.10"
+    hostname: "services-on-01"
+    position: { x: 30, y: 60 }
+    size: { width: 560, height: 250 }
+    config:
+      label: "Services Ontario"
+      parentSystemId: systeme-banque
+  host-bc:
+    zone: bc
+    ipAddress: "10.3.1.10"
+    hostname: "services-bc-01"
+    position: { x: 30, y: 60 }
+    size: { width: 560, height: 250 }
+    config:
+      label: "Services C.-B."
+      parentSystemId: systeme-banque
+  host-data:
+    zone: data-centrale
+    ipAddress: "10.10.1.10"
+    hostname: "data-master-01"
+    position: { x: 30, y: 60 }
+    size: { width: 1240, height: 360 }
+    config:
+      label: "Data Primaire"
+
+components:
+  # ============================================
+  # L1 — Context (acteurs et écosystème externe)
+  # ============================================
+  client-particulier:
+    type: c4-person
+    level: context
+    positionsByLevel:
+      context: { x: 80, y: 80 }
+    config:
+      label: "Client Particulier"
+      description: "Détenteur d'un compte courant ou d'un produit d'épargne / d'assurance."
+      generatesTraffic: true
+      requestsPerSecond: 2
+  client-entreprise:
+    type: c4-person
+    level: context
+    positionsByLevel:
+      context: { x: 80, y: 240 }
+    config:
+      label: "Client Entreprise"
+      description: "PME ou grande entreprise utilisant les comptes pro et services de virement."
+      generatesTraffic: true
+      requestsPerSecond: 1
+  conseiller-banque:
+    type: c4-person
+    level: context
+    positionsByLevel:
+      context: { x: 80, y: 400 }
+    config:
+      label: "Conseiller Banque"
+      description: "Utilisateur interne du CRM Banque (ouverture compte, prêt, virement assisté)."
+      generatesTraffic: true
+      requestsPerSecond: 1
+  conseiller-assurance:
+    type: c4-person
+    level: context
+    positionsByLevel:
+      context: { x: 80, y: 560 }
+    config:
+      label: "Conseiller Assurance"
+      description: "Utilisateur interne du CRM Assurance (souscription, sinistre, patrimoine)."
+      generatesTraffic: true
+      requestsPerSecond: 1
+
+  # 3 systèmes distincts — un par pôle métier. Chacun regroupe ses propres containers
+  # via parentSystemId, ce qui permet le drill L1→L2 filtré par pôle.
+  systeme-banque:
+    type: c4-software-system
+    level: context
+    positionsByLevel:
+      context: { x: 600, y: 120 }
+    config:
+      label: "Pôle Banque"
+      description: "Comptes courants, virements interbancaires, prêts particuliers/entreprises. Cœur du SI bancaire."
+  systeme-assurance:
+    type: c4-software-system
+    level: context
+    positionsByLevel:
+      context: { x: 600, y: 320 }
+    config:
+      label: "Pôle Assurance"
+      description: "Polices auto/habitation/vie, gestion des sinistres, patrimoine et placements."
+  systeme-comptabilite:
+    type: c4-software-system
+    level: context
+    positionsByLevel:
+      context: { x: 600, y: 520 }
+    config:
+      label: "Pôle Comptabilité"
+      description: "Grand livre, balances, reporting réglementaire BSIF/AMF. Consolidation inter-pôles."
+  ext-reseau-paiement:
+    type: c4-external-system
+    level: context
+    positionsByLevel:
+      context: { x: 1100, y: 80 }
+    config:
+      label: "Réseau de Paiement"
+      description: "Interbancaire (SWIFT / Interac / RTGS) pour les virements externes."
+  ext-bureau-credit:
+    type: c4-external-system
+    level: context
+    positionsByLevel:
+      context: { x: 1100, y: 240 }
+    config:
+      label: "Bureau de Crédit"
+      description: "Equifax / TransUnion : score de crédit pour la validation des prêts."
+  ext-regulateur:
+    type: c4-external-system
+    level: context
+    positionsByLevel:
+      context: { x: 1100, y: 400 }
+    config:
+      label: "Régulateur Financier"
+      description: "BSIF / AMF : reporting compliance et envoi des rapports comptables."
+  ext-notification:
+    type: c4-external-system
+    level: context
+    positionsByLevel:
+      context: { x: 1100, y: 560 }
+    config:
+      label: "Service Email / SMS"
+      description: "SendGrid / Twilio : notifications transactionnelles et marketing."
+
+  # ============================================
+  # L2 — Containers (architecture applicative)
+  # ============================================
+  clients-web:
+    type: client-group
+    config:
+      label: "Clients Web"
+      virtualClients: 500
+      requestMode: parallel
+      concurrentRequests: 25
+      baseInterval: 400
+      intervalVariance: 30
+      distribution: burst
+      burstSize: 40
+      burstInterval: 5000
+      rampUpEnabled: true
+      rampUpDuration: 60000
+      rampUpCurve: exponential
+      method: GET
+      requestDistribution:
+        - method: GET
+          path: "/api/comptes/solde"
+          weight: 40
+        - method: POST
+          path: "/api/virements"
+          weight: 25
+        - method: GET
+          path: "/api/assurance/polices"
+          weight: 20
+        - method: POST
+          path: "/api/auth/login"
+          weight: 15
+
+  clients-mobile:
+    type: client-group
+    config:
+      label: "Clients Mobile"
+      virtualClients: 300
+      requestMode: parallel
+      concurrentRequests: 15
+      baseInterval: 600
+      intervalVariance: 40
+      distribution: burst
+      burstSize: 30
+      burstInterval: 8000
+      rampUpEnabled: true
+      rampUpDuration: 45000
+      rampUpCurve: linear
+      method: GET
+      requestDistribution:
+        - method: GET
+          path: "/api/comptes/solde"
+          weight: 55
+        - method: POST
+          path: "/api/virements"
+          weight: 25
+        - method: GET
+          path: "/api/notifications"
+          weight: 20
+
+  app-crm-banque:
+    type: client-group
+    config:
+      label: "CRM Banque (interne)"
+      virtualClients: 80
+      requestMode: parallel
+      concurrentRequests: 8
+      baseInterval: 1000
+      intervalVariance: 25
+      distribution: uniform
+      rampUpEnabled: false
+      method: GET
+      requestDistribution:
+        - method: GET
+          path: "/internal/clients/recherche"
+          weight: 40
+        - method: GET
+          path: "/internal/comptes/detail"
+          weight: 30
+        - method: POST
+          path: "/internal/prets/demande"
+          weight: 30
+
+  app-crm-assurance:
+    type: client-group
+    config:
+      label: "CRM Assurance (interne)"
+      virtualClients: 60
+      requestMode: parallel
+      concurrentRequests: 6
+      baseInterval: 1500
+      distribution: uniform
+      method: GET
+      requestDistribution:
+        - method: GET
+          path: "/internal/clients/recherche"
+          weight: 35
+        - method: POST
+          path: "/internal/assurance/souscription"
+          weight: 35
+        - method: GET
+          path: "/internal/patrimoine/portefeuille"
+          weight: 30
+
+  waf-principal:
+    type: waf
+    zone: edge
+    config:
+      label: "WAF Bancaire"
+      provider: aws-waf
+      inspectionLatencyMs: 3
+      blockRate: 4
+      requestsPerSecond: 15000
+
+  cdn-portail:
+    type: cdn
+    zone: edge
+    config:
+      label: "CDN Portail"
+      provider: cloudfront
+      cacheHitRatio: 80
+      edgeLatencyMs: 5
+      originLatencyMs: 40
+      bandwidthMbps: 10000
+
+  gw-central:
+    type: api-gateway
+    zone: edge
+    config:
+      label: "API Gateway Central"
+      authType: jwt
+      authFailureRate: 2
+      rateLimiting:
+        enabled: true
+        requestsPerSecond: 800
+        burstSize: 150
+        windowMs: 1000
+      routeRules:
+        - id: route-comptes
+          pathPattern: "/comptes/*"
+          targetServiceName: "comptes-particuliers"
+          priority: 1
+        - id: route-virements
+          pathPattern: "/virements/*"
+          targetServiceName: "virements-api"
+          priority: 2
+        - id: route-assurance
+          pathPattern: "/assurance/*"
+          targetServiceName: "assurance-particulier"
+          priority: 3
+        - id: route-comptabilite
+          pathPattern: "/comptabilite/*"
+          targetServiceName: "grand-livre-api"
+          priority: 4
+      baseLatencyMs: 5
+
+  gw-interne:
+    type: api-gateway
+    zone: edge
+    config:
+      label: "GW Interne (CRM)"
+      authType: oauth2
+      authFailureRate: 1
+      rateLimiting:
+        enabled: true
+        requestsPerSecond: 2000
+        burstSize: 500
+      baseLatencyMs: 3
+
+  lb-geo:
+    type: load-balancer
+    zone: edge
+    config:
+      label: "LB Géo-Routage"
+      algorithm: least-connections
+      stickySessions: true
+
+  ct-banque:
+    type: container
+    host: host-banque-qc
+    parentSystemId: systeme-banque
+    config:
+      label: "Container Banque"
+      image: "banque:latest"
+      replicas: 3
+      cpuLimitCores: 4
+      memoryLimitMB: 2048
+      autoScaling:
+        enabled: true
+        minReplicas: 3
+        maxReplicas: 8
+        targetCPU: 70
+
+  ct-transactions:
+    type: container
+    host: host-banque-qc
+    parentSystemId: systeme-banque
+    config:
+      label: "Container Transactions"
+      image: "transactions:latest"
+      replicas: 2
+      cpuLimitCores: 2
+      memoryLimitMB: 1024
+
+  ct-assurance:
+    type: container
+    host: host-assurance-qc
+    parentSystemId: systeme-assurance
+    config:
+      label: "Container Assurance"
+      image: "assurance:latest"
+      replicas: 2
+      cpuLimitCores: 3
+      memoryLimitMB: 1536
+
+  svc-comptes-part:
+    type: api-service
+    container: ct-banque
+    parentSystemId: systeme-banque
+    config:
+      label: "API Comptes Particuliers"
+      serviceName: "comptes-particuliers"
+      authType: jwt
+      responseTime: 40
+      errorRate: 1
+      maxConcurrentRequests: 300
+      simulateAtComponentLevel: true
+      entryComponentId: comp-cp-controller
+
+  svc-virements:
+    type: api-service
+    container: ct-transactions
+    parentSystemId: systeme-banque
+    config:
+      label: "API Virements"
+      serviceName: "virements-api"
+      authType: jwt
+      responseTime: 120
+      errorRate: 2
+      simulateAtComponentLevel: true
+      entryComponentId: comp-vir-controller
+      maxConcurrentRequests: 100
+
+  svc-assur-part:
+    type: api-service
+    container: ct-assurance
+    parentSystemId: systeme-assurance
+    config:
+      label: "API Assurance Particulier"
+      serviceName: "assurance-particulier"
+      authType: jwt
+      responseTime: 80
+      errorRate: 1
+      maxConcurrentRequests: 120
+      simulateAtComponentLevel: true
+      entryComponentId: comp-as-controller
+
+  svc-grand-livre:
+    type: api-service
+    host: host-compta-qc
+    parentSystemId: systeme-comptabilite
+    config:
+      label: "API Grand Livre"
+      serviceName: "grand-livre-api"
+      authType: oauth2
+      responseTime: 100
+      errorRate: 1
+      maxConcurrentRequests: 60
+      simulateAtComponentLevel: true
+      entryComponentId: comp-gl-controller
+
+  cb-paiement-ext:
+    type: circuit-breaker
+    container: ct-transactions
+    parentSystemId: systeme-banque
+    config:
+      label: "CB Paiement Ext."
+      failureThreshold: 5
+      successThreshold: 3
+      timeout: 30000
+
+  ct-replica-on:
+    type: container
+    host: host-on
+    parentSystemId: systeme-banque
+    config:
+      label: "Réplica ON"
+      image: "services-replica:latest"
+      replicas: 2
+
+  svc-comptes-on:
+    type: api-service
+    container: ct-replica-on
+    parentSystemId: systeme-banque
+    config:
+      label: "API Comptes (ON)"
+      serviceName: "comptes-on"
+      responseTime: 45
+      maxConcurrentRequests: 150
+
+  cache-on:
+    type: cache
+    host: host-on
+    parentSystemId: systeme-banque
+    config:
+      label: "Cache ON"
+      cacheType: redis
+
+  db-replica-on:
+    type: database
+    host: host-on
+    parentSystemId: systeme-banque
+    config:
+      label: "DB Replica ON"
+      databaseType: postgresql
+      performance:
+        readLatencyMs: 4
+        writeLatencyMs: 50
+
+  ct-replica-bc:
+    type: container
+    host: host-bc
+    parentSystemId: systeme-banque
+    config:
+      label: "Réplica BC"
+      image: "services-replica:latest"
+      replicas: 2
+
+  svc-comptes-bc:
+    type: api-service
+    container: ct-replica-bc
+    parentSystemId: systeme-banque
+    config:
+      label: "API Comptes (BC)"
+      serviceName: "comptes-bc"
+      responseTime: 50
+      maxConcurrentRequests: 120
+
+  cache-bc:
+    type: cache
+    host: host-bc
+    parentSystemId: systeme-banque
+    config:
+      label: "Cache BC"
+      cacheType: redis
+
+  db-replica-bc:
+    type: database
+    host: host-bc
+    parentSystemId: systeme-banque
+    config:
+      label: "DB Replica BC"
+      databaseType: postgresql
+      performance:
+        readLatencyMs: 5
+        writeLatencyMs: 60
+
+  db-clients:
+    type: database
+    host: host-data
+    parentSystemId: systeme-banque
+    config:
+      label: "DB Clients Centrale"
+      databaseType: postgresql
+      performance:
+        readLatencyMs: 3
+        writeLatencyMs: 12
+
+  db-comptes:
+    type: database
+    host: host-data
+    parentSystemId: systeme-banque
+    config:
+      label: "DB Comptes/Transactions"
+      databaseType: postgresql
+      performance:
+        readLatencyMs: 4
+        writeLatencyMs: 15
+
+  db-contrats:
+    type: database
+    host: host-data
+    parentSystemId: systeme-assurance
+    config:
+      label: "DB Contrats Assurance"
+      databaseType: postgresql
+      performance:
+        readLatencyMs: 4
+        writeLatencyMs: 18
+
+  db-compta:
+    type: database
+    host: host-data
+    parentSystemId: systeme-comptabilite
+    config:
+      label: "DB Comptabilité"
+      databaseType: postgresql
+
+  cache-clients:
+    type: cache
+    host: host-data
+    parentSystemId: systeme-banque
+    config:
+      label: "Cache Clients"
+      cacheType: redis
+      initialHitRatio: 80
+
+  mq-interpoles:
+    type: message-queue
+    zone: data-centrale
+    config:
+      label: "MQ Inter-Pôles"
+      queueType: kafka
+      mode: pubsub
+      topics:
+        - name: inter-pole-events
+          partitions: 6
+
+  idp-sso:
+    type: identity-provider
+    zone: data-centrale
+    config:
+      label: "SSO Groupe"
+      providerType: keycloak
+      protocol: oidc
+      tokenFormat: jwt
+
+  sd-central:
+    type: service-discovery
+    zone: data-centrale
+    config:
+      label: "Service Discovery"
+      provider: consul
+
+  # ============================================
+  # L3 — Components (drill-down svc-comptes-part)
+  # Architecture hexagonale : controller → service → (cache adapter, repository)
+  # ============================================
+  comp-cp-controller:
+    type: c4-component
+    level: components
+    parentContainerId: svc-comptes-part
+    componentKind: controller
+    positionsByLevel:
+      components: { x: 100, y: 80 }
+    config:
+      label: "CompteController"
+      technology: "Spring REST"
+      description: "Endpoints HTTP /comptes/*. Validation requête, mapping JWT → user."
+  comp-cp-service:
+    type: c4-component
+    level: components
+    parentContainerId: svc-comptes-part
+    componentKind: service
+    positionsByLevel:
+      components: { x: 360, y: 80 }
+    config:
+      label: "CompteService"
+      technology: "Spring Service"
+      description: "Logique métier : agrégation soldes, autorisations, calcul historique."
+      processingDelayMs: 8
+  comp-cp-cache-adapter:
+    type: c4-component
+    level: components
+    parentContainerId: svc-comptes-part
+    componentKind: adapter
+    positionsByLevel:
+      components: { x: 620, y: 30 }
+    config:
+      label: "CacheAdapter"
+      technology: "Lettuce / Redis"
+      description: "Lecture/écriture cache aside. TTL 30s sur les soldes."
+      processingDelayMs: 3
+  comp-cp-repository:
+    type: c4-component
+    level: components
+    parentContainerId: svc-comptes-part
+    componentKind: repository
+    positionsByLevel:
+      components: { x: 620, y: 160 }
+    config:
+      label: "CompteRepository"
+      technology: "JPA + Hibernate"
+      description: "Persistence comptes / soldes / mouvements."
+      processingDelayMs: 5
+  comp-cp-solde-calc:
+    type: c4-component
+    level: components
+    parentContainerId: svc-comptes-part
+    componentKind: domain
+    positionsByLevel:
+      components: { x: 360, y: 240 }
+    config:
+      label: "SoldeCalculator"
+      technology: "Domain Pure"
+      description: "Calcul disponible / réservé / hors-bilan. Logique financière isolée."
+      processingDelayMs: 4
+
+  # ============================================
+  # L3 — Components (drill-down svc-virements)
+  # Pattern fan-out + circuit breaker pour le réseau externe
+  # ============================================
+  comp-vir-controller:
+    type: c4-component
+    level: components
+    parentContainerId: svc-virements
+    componentKind: controller
+    positionsByLevel:
+      components: { x: 900, y: 80 }
+    config:
+      label: "VirementController"
+      technology: "Spring REST"
+      description: "POST /virements. Idempotence par requestId."
+  comp-vir-service:
+    type: c4-component
+    level: components
+    parentContainerId: svc-virements
+    componentKind: service
+    positionsByLevel:
+      components: { x: 1160, y: 80 }
+    config:
+      label: "VirementService"
+      technology: "Spring Service"
+      description: "Orchestration : validation → fraud check → débit → crédit → notification."
+      processingDelayMs: 15
+  comp-vir-fraud:
+    type: c4-component
+    level: components
+    parentContainerId: svc-virements
+    componentKind: domain
+    positionsByLevel:
+      components: { x: 1420, y: 30 }
+    config:
+      label: "FraudDetector"
+      technology: "ML Inference"
+      description: "Score de risque : vélocité, géoloc, montant. Reject si score > 80."
+      processingDelayMs: 25
+  comp-vir-payment-gw:
+    type: c4-component
+    level: components
+    parentContainerId: svc-virements
+    componentKind: gateway
+    positionsByLevel:
+      components: { x: 1420, y: 160 }
+    config:
+      label: "PaiementGateway"
+      technology: "OkHttp + Resilience4j"
+      description: "Adaptateur réseau interbancaire. Retry exponentiel + CB."
+      processingDelayMs: 20
+      errorRate: 0.05
+  comp-vir-repo:
+    type: c4-component
+    level: components
+    parentContainerId: svc-virements
+    componentKind: repository
+    positionsByLevel:
+      components: { x: 1160, y: 240 }
+    config:
+      label: "VirementRepository"
+      technology: "JPA + Hibernate"
+      description: "Persistence virements + journal d'audit append-only."
+      processingDelayMs: 6
+
+  # ============================================
+  # L3 — Components (drill-down svc-assur-part)
+  # ============================================
+  comp-as-controller:
+    type: c4-component
+    level: components
+    parentContainerId: svc-assur-part
+    componentKind: controller
+    positionsByLevel:
+      components: { x: 100, y: 460 }
+    config:
+      label: "AssuranceController"
+      technology: "Spring REST"
+      description: "Endpoints /assurance/polices, /sinistres, /devis."
+  comp-as-police-svc:
+    type: c4-component
+    level: components
+    parentContainerId: svc-assur-part
+    componentKind: service
+    positionsByLevel:
+      components: { x: 360, y: 420 }
+    config:
+      label: "PoliceService"
+      technology: "Spring Service"
+      description: "Gestion des polices auto/habitation/vie : souscription, modification, résiliation."
+      processingDelayMs: 12
+  comp-as-sinistre-svc:
+    type: c4-component
+    level: components
+    parentContainerId: svc-assur-part
+    componentKind: service
+    positionsByLevel:
+      components: { x: 360, y: 540 }
+    config:
+      label: "SinistreService"
+      technology: "Spring Service"
+      description: "Workflow déclaration sinistre, expertise, indemnisation."
+      processingDelayMs: 18
+  comp-as-repo:
+    type: c4-component
+    level: components
+    parentContainerId: svc-assur-part
+    componentKind: repository
+    positionsByLevel:
+      components: { x: 620, y: 480 }
+    config:
+      label: "AssuranceRepository"
+      technology: "JPA + Hibernate"
+      description: "Persistence contrats + sinistres + bénéficiaires."
+      processingDelayMs: 6
+
+  # ============================================
+  # L3 — Components (drill-down svc-grand-livre)
+  # Architecture event-sourcing : posting → journal append-only → projection
+  # ============================================
+  comp-gl-controller:
+    type: c4-component
+    level: components
+    parentContainerId: svc-grand-livre
+    componentKind: controller
+    positionsByLevel:
+      components: { x: 900, y: 460 }
+    config:
+      label: "GrandLivreController"
+      technology: "Spring REST"
+      description: "Endpoints /ecritures, /comptes, /balances. Auth OAuth2."
+  comp-gl-posting-svc:
+    type: c4-component
+    level: components
+    parentContainerId: svc-grand-livre
+    componentKind: service
+    positionsByLevel:
+      components: { x: 1160, y: 420 }
+    config:
+      label: "PostingService"
+      technology: "Spring Service"
+      description: "Orchestre la passation d'écritures comptables (debit/credit balance)."
+      processingDelayMs: 14
+  comp-gl-projector:
+    type: c4-component
+    level: components
+    parentContainerId: svc-grand-livre
+    componentKind: domain
+    positionsByLevel:
+      components: { x: 1160, y: 540 }
+    config:
+      label: "LedgerProjector"
+      technology: "Domain Pure"
+      description: "Projette le journal append-only en soldes par compte."
+      processingDelayMs: 9
+  comp-gl-journal-repo:
+    type: c4-component
+    level: components
+    parentContainerId: svc-grand-livre
+    componentKind: repository
+    positionsByLevel:
+      components: { x: 1420, y: 420 }
+    config:
+      label: "JournalRepository"
+      technology: "JPA + PostgreSQL"
+      description: "Journal append-only des écritures (immutable, indexé par date+compte)."
+      processingDelayMs: 7
+  comp-gl-audit-adapter:
+    type: c4-component
+    level: components
+    parentContainerId: svc-grand-livre
+    componentKind: adapter
+    positionsByLevel:
+      components: { x: 1420, y: 540 }
+    config:
+      label: "AuditAdapter"
+      technology: "Kafka Producer"
+      description: "Publie les écritures sur le topic compliance-audit (rétention 7 ans)."
+      processingDelayMs: 4
+
+  # ============================================
+  # Deployment — Container Instances nichées dans les hosts L2
+  # Au Deployment, les zones et hosts L2 servent de cadre physique :
+  #   zone qc (DMZ/backend) ⊃ host-banque-qc (machine physique) ⊃ inst-cp-1a (pod K8s)
+  # Les positions sont relatives à l'hôte parent et auto-calculées par le YAML parser.
+  # ============================================
+
+  # 3 instances de l'API Comptes Particuliers déployées sur le pôle Banque QC.
+  inst-cp-1a:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-comptes-part
+    host: host-banque-qc
+    config:
+      label: "comptes-part-#1"
+      description: "Pod K8s · AZ ca-central-1a · CPU 33% · MEM 45%"
+  inst-cp-1b:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-comptes-part
+    host: host-banque-qc
+    config:
+      label: "comptes-part-#2"
+      description: "Pod K8s · AZ ca-central-1b · CPU 31% · MEM 44%"
+  inst-cp-1c:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-comptes-part
+    host: host-banque-qc
+    config:
+      label: "comptes-part-#3"
+      description: "Pod K8s · AZ ca-central-1c · CPU 30% · MEM 43%"
+
+  # 2 instances de l'API Virements (charge plus lourde, moins d'instances).
+  inst-vir-1a:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-virements
+    host: host-banque-qc
+    config:
+      label: "virements-#1"
+      description: "Pod K8s · AZ ca-central-1a · CPU 50% · MEM 60%"
+  inst-vir-1b:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-virements
+    host: host-banque-qc
+    config:
+      label: "virements-#2"
+      description: "Pod K8s · AZ ca-central-1b · CPU 48% · MEM 58%"
+
+  # 2 instances de l'API Assurance déployées sur le pôle Assurance QC.
+  inst-as-1a:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-assur-part
+    host: host-assurance-qc
+    config:
+      label: "assur-part-#1"
+      description: "Pod K8s · AZ ca-central-1a · CPU 40% · MEM 55%"
+  inst-as-1b:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-assur-part
+    host: host-assurance-qc
+    config:
+      label: "assur-part-#2"
+      description: "Pod K8s · AZ ca-central-1b · CPU 41% · MEM 56%"
+
+  # 1 instance Grand Livre sur le pôle Compta QC.
+  inst-gl-1a:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-grand-livre
+    host: host-compta-qc
+    config:
+      label: "grand-livre-#1"
+      description: "Pod K8s · AZ ca-central-1a · CPU 25% · MEM 35%"
+
+  # Réplicas Ontario (lecture seule, sync Kafka).
+  inst-cp-on:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-comptes-on
+    host: host-on
+    config:
+      label: "comptes-on-#1"
+      description: "Pod K8s · réplica lecture-seule · sync via Kafka."
+
+  # Réplicas Colombie-Britannique.
+  inst-cp-bc:
+    type: c4-container-instance
+    level: deployment
+    containerRef: svc-comptes-bc
+    host: host-bc
+    config:
+      label: "comptes-bc-#1"
+      description: "Pod K8s · réplica lecture-seule · sync via Kafka."
+
+connections:
+  # ============================================
+  # L1 — relationships (langue naturelle, multi-pôles)
+  # Chaque acteur peut consommer un ou plusieurs pôles. Les flux inter-pôles
+  # capturent les dépendances internes (ex: Banque → Compta pour les écritures).
+  # ============================================
+  # Client particulier : utilise Banque (compte courant, virements) et Assurance (polices)
+  - from: client-particulier
+    to: systeme-banque
+    level: context
+    edgeKind: relationship
+  - from: client-particulier
+    to: systeme-assurance
+    level: context
+    edgeKind: relationship
+  # Client entreprise : Banque (comptes pro) et Comptabilité (consolidation)
+  - from: client-entreprise
+    to: systeme-banque
+    level: context
+    edgeKind: relationship
+  - from: client-entreprise
+    to: systeme-comptabilite
+    level: context
+    edgeKind: relationship
+  # Conseillers : chacun son pôle métier
+  - from: conseiller-banque
+    to: systeme-banque
+    level: context
+    edgeKind: relationship
+  - from: conseiller-assurance
+    to: systeme-assurance
+    level: context
+    edgeKind: relationship
+  # Inter-pôles : Banque envoie ses écritures à la Compta, Assurance idem
+  - from: systeme-banque
+    to: systeme-comptabilite
+    level: context
+    edgeKind: relationship
+  - from: systeme-assurance
+    to: systeme-comptabilite
+    level: context
+    edgeKind: relationship
+  # Systèmes externes : chaque pôle a ses propres dépendances
+  - from: systeme-banque
+    to: ext-reseau-paiement
+    level: context
+    edgeKind: relationship
+  - from: systeme-banque
+    to: ext-bureau-credit
+    level: context
+    edgeKind: relationship
+  - from: systeme-banque
+    to: ext-notification
+    level: context
+    edgeKind: relationship
+  - from: systeme-assurance
+    to: ext-notification
+    level: context
+    edgeKind: relationship
+  - from: systeme-comptabilite
+    to: ext-regulateur
+    level: context
+    edgeKind: relationship
+
+  # ============================================
+  # L2 — refinements des edges L1 (cascade simulation)
+  # Chaque c4-person avec generatesTraffic émet sur l'un de ces edges raffinés au tick.
+  # Les IDs auto-générés des edges L1 (edge-{from}-{to}) servent de parentEdgeId.
+  # ============================================
+  - from: client-particulier
+    to: waf-principal
+    level: containers
+    edgeKind: request
+    parentEdgeId: edge-client-particulier-systeme-banque
+    refinementWeight: 2
+  - from: client-entreprise
+    to: waf-principal
+    level: containers
+    edgeKind: request
+    parentEdgeId: edge-client-entreprise-systeme-banque
+    refinementWeight: 1
+  - from: conseiller-banque
+    to: gw-interne
+    level: containers
+    edgeKind: request
+    parentEdgeId: edge-conseiller-banque-systeme-banque
+  - from: conseiller-assurance
+    to: gw-interne
+    level: containers
+    edgeKind: request
+    parentEdgeId: edge-conseiller-assurance-systeme-assurance
+
+  # ============================================
+  # L2 — flux de requête (existant + simulé)
+  # ============================================
+  - from: clients-web
+    to: waf-principal
+  - from: clients-mobile
+    to: waf-principal
+  - from: app-crm-banque
+    to: gw-interne
+  - from: app-crm-assurance
+    to: gw-interne
+  - from: waf-principal
+    to: cdn-portail
+  - from: cdn-portail
+    to: gw-central
+  - from: waf-principal
+    to: gw-central
+  - from: gw-central
+    to: lb-geo
+  - from: gw-interne
+    to: lb-geo
+  - from: gw-central
+    to: idp-sso
+  - from: gw-interne
+    to: idp-sso
+  - from: lb-geo
+    to: svc-comptes-part
+  - from: lb-geo
+    to: svc-virements
+  - from: lb-geo
+    to: svc-assur-part
+  - from: lb-geo
+    to: svc-grand-livre
+  - from: lb-geo
+    to: svc-comptes-on
+  - from: lb-geo
+    to: svc-comptes-bc
+  - from: svc-comptes-part
+    to: cache-clients
+  - from: cache-clients
+    to: db-clients
+  - from: svc-comptes-part
+    to: db-comptes
+  - from: svc-comptes-part
+    to: mq-interpoles
+    topic: inter-pole-events
+  - from: svc-virements
+    to: db-comptes
+  - from: svc-virements
+    to: cb-paiement-ext
+  - from: svc-virements
+    to: mq-interpoles
+    topic: inter-pole-events
+  - from: svc-assur-part
+    to: db-contrats
+  - from: svc-assur-part
+    to: db-clients
+  - from: svc-grand-livre
+    to: db-compta
+  - from: svc-grand-livre
+    to: db-comptes
+  - from: svc-comptes-on
+    to: cache-on
+  - from: svc-comptes-on
+    to: db-replica-on
+  - from: svc-comptes-bc
+    to: cache-bc
+  - from: svc-comptes-bc
+    to: db-replica-bc
+  - from: mq-interpoles
+    to: svc-grand-livre
+    topic: inter-pole-events
+  - from: svc-comptes-part
+    to: sd-central
+
+  # ============================================
+  # L3 — function-call (intra-process, pas de protocol/rate)
+  # parentEdgeId pointe sur l'edge L2 lb-geo → svc-* qui délivre la requête
+  # au container — permet le drill L2→L3 via double-clic sur cet edge L2.
+  # ============================================
+  # svc-comptes-part components — raffinent edge-lb-geo-svc-comptes-part
+  - from: comp-cp-controller
+    to: comp-cp-service
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-comptes-part
+  - from: comp-cp-service
+    to: comp-cp-cache-adapter
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-comptes-part
+  - from: comp-cp-service
+    to: comp-cp-solde-calc
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-comptes-part
+  - from: comp-cp-cache-adapter
+    to: comp-cp-repository
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-comptes-part
+  - from: comp-cp-service
+    to: comp-cp-repository
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-comptes-part
+
+  # svc-virements components — raffinent edge-lb-geo-svc-virements
+  - from: comp-vir-controller
+    to: comp-vir-service
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-virements
+  - from: comp-vir-service
+    to: comp-vir-fraud
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-virements
+  - from: comp-vir-service
+    to: comp-vir-payment-gw
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-virements
+  - from: comp-vir-service
+    to: comp-vir-repo
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-virements
+
+  # svc-assur-part components — raffinent edge-lb-geo-svc-assur-part
+  - from: comp-as-controller
+    to: comp-as-police-svc
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-assur-part
+  - from: comp-as-controller
+    to: comp-as-sinistre-svc
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-assur-part
+  - from: comp-as-police-svc
+    to: comp-as-repo
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-assur-part
+  - from: comp-as-sinistre-svc
+    to: comp-as-repo
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-assur-part
+
+  # svc-grand-livre components — raffinent edge-lb-geo-svc-grand-livre
+  - from: comp-gl-controller
+    to: comp-gl-posting-svc
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-grand-livre
+  - from: comp-gl-posting-svc
+    to: comp-gl-journal-repo
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-grand-livre
+  - from: comp-gl-posting-svc
+    to: comp-gl-projector
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-grand-livre
+  - from: comp-gl-projector
+    to: comp-gl-journal-repo
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-grand-livre
+  - from: comp-gl-posting-svc
+    to: comp-gl-audit-adapter
+    level: components
+    edgeKind: function-call
+    parentEdgeId: edge-lb-geo-svc-grand-livre
+
+  # ============================================
+  # Deployment — network-link (réplication multi-région + peering)
+  # ============================================
+  # Réplication async via Kafka : QC primary → ON et BC en lecture seule.
+  - from: inst-cp-1a
+    to: inst-cp-on
+    level: deployment
+    edgeKind: network-link
+  - from: inst-cp-1a
+    to: inst-cp-bc
+    level: deployment
+    edgeKind: network-link
+  # Failover des virements entre AZ a/b sur QC.
+  - from: inst-vir-1a
+    to: inst-vir-1b
+    level: deployment
+    edgeKind: network-link
+  # Sync assurance entre les 2 instances QC.
+  - from: inst-as-1a
+    to: inst-as-1b
+    level: deployment
+    edgeKind: network-link
+`;
+
+// ============================================
 // Construction des templates
 // ============================================
 export const advancedTemplates: ArchitectureTemplate[] = [
@@ -2515,6 +3831,12 @@ export const advancedTemplates: ArchitectureTemplate[] = [
     'templates.bankingMultipole.name',
     'templates.bankingMultipole.description',
     bankingYaml
+  ),
+  createTemplateFromYaml(
+    'banking-multipole-c4',
+    'templates.bankingMultipoleC4.name',
+    'templates.bankingMultipoleC4.description',
+    bankingC4Yaml
   ),
   createTemplateFromYaml(
     'banking-online',

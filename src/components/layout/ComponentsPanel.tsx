@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
 import {
   ChevronRight,
   ChevronLeft,
@@ -24,11 +25,16 @@ import {
   Box,
   Layers,
   KeyRound,
+  Search,
+  X,
 } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { cn } from '@/lib/utils';
 import type { ComponentType } from '@/types';
 import { pluginRegistry } from '@/plugins';
+import { UISlotHost, paletteVisibilityRegistry } from '@/plugins/extensions';
+import { useArchitectureStore } from '@/store/architecture-store';
+import { searchComponents, highlightMatch, getAliases } from '@/lib/component-search';
 
 interface ComponentItem {
   type: ComponentType;
@@ -240,12 +246,29 @@ interface CategoryConfig {
   items: ComponentItem[];
 }
 
-function DraggableComponent({ component, t, disabled, categoryColor }: { component: ComponentItem; t: (key: string) => string; disabled?: boolean; categoryColor: string }) {
+function DraggableComponent({
+  component,
+  t,
+  disabled,
+  categoryColor,
+  highlightQuery,
+  aliasHint,
+}: {
+  component: ComponentItem;
+  t: (key: string) => string;
+  disabled?: boolean;
+  categoryColor: string;
+  highlightQuery?: string;
+  aliasHint?: string;
+}) {
   const onDragStart = (event: React.DragEvent) => {
     if (disabled) { event.preventDefault(); return; }
     event.dataTransfer.setData('application/reactflow', component.type);
     event.dataTransfer.effectAllowed = 'move';
   };
+
+  const label = t(component.nameKey);
+  const highlight = highlightQuery ? highlightMatch(label, highlightQuery) : null;
 
   return (
     <div
@@ -259,7 +282,7 @@ function DraggableComponent({ component, t, disabled, categoryColor }: { compone
       )}
       style={{ borderRadius: '3px' }}
       role="option"
-      aria-label={`${t(component.nameKey)} — ${t(component.descriptionKey)}`}
+      aria-label={`${label} — ${t(component.descriptionKey)}`}
       aria-disabled={disabled}
       data-tour={`component-${component.type}`}
     >
@@ -273,8 +296,21 @@ function DraggableComponent({ component, t, disabled, categoryColor }: { compone
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-instrument text-[10px] text-muted-foreground group-hover:text-foreground transition-colors truncate">
-          {t(component.nameKey)}
+          {highlight ? (
+            <>
+              {highlight.before}
+              <mark className="bg-transparent text-foreground font-semibold">{highlight.match}</mark>
+              {highlight.after}
+            </>
+          ) : (
+            label
+          )}
         </p>
+        {aliasHint && (
+          <p className="text-instrument text-[9px] text-muted-foreground/60 truncate">
+            ≈ {aliasHint}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -333,15 +369,19 @@ function CategoryAccordion({
   );
 }
 
+// Hue map (no collisions with EE elevation 50° / govern 265°):
+//   25° resilience · 50° EE elevation · 75° infra · 95° security
+//   110° zones · 155° data · 200° cloud · 220° simulation
+//   265° EE govern · 290° compute (aligns with --signal-server canvas)
 const CATEGORY_SIGNAL_COLORS: Record<string, string> = {
-  simulation: 'oklch(0.70 0.15 220)',
-  infrastructure: 'oklch(0.75 0.18 75)',
-  data: 'oklch(0.72 0.19 155)',
-  resilience: 'oklch(0.70 0.18 330)',
-  compute: 'oklch(0.68 0.18 50)',
-  cloud: 'oklch(0.70 0.18 260)',
-  zone: 'oklch(0.65 0.10 0)',
-  security: 'oklch(0.72 0.18 280)',
+  simulation:     'oklch(0.70 0.15 220)',  // bleu (inchangé)
+  infrastructure: 'oklch(0.75 0.18 75)',   // ambre (inchangé)
+  data:           'oklch(0.72 0.19 155)',  // vert (inchangé)
+  resilience:     'oklch(0.70 0.18 25)',   // orange-rouge (libère 330°)
+  compute:        'oklch(0.68 0.18 290)',  // violet — aligné canvas --signal-server
+  cloud:          'oklch(0.70 0.12 200)',  // cyan (libère 260° / govern)
+  zone:           'oklch(0.65 0.10 110)',  // olive (libère 0°)
+  security:       'oklch(0.72 0.18 95)',   // citron (libère 280° / govern)
 };
 
 const CATEGORY_ORDER: { key: ComponentItem['category']; label: string }[] = [
@@ -357,12 +397,17 @@ const CATEGORY_ORDER: { key: ComponentItem['category']; label: string }[] = [
 
 export function ComponentsPanel() {
   const { isComponentsPanelOpen, toggleComponentsPanel, mode } = useAppStore();
+  const projectMeta = useArchitectureStore((s) => s.projectMeta);
   const { t } = useTranslation();
   const isSimMode = mode === 'simulation';
 
   const [openCategories, setOpenCategories] = useState<Set<string>>(
     () => new Set(CATEGORY_ORDER.map((c) => c.key))
   );
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const trimmedQuery = searchQuery.trim();
+  const isSearching = trimmedQuery.length > 0;
 
   const toggleCategory = useCallback((key: string) => {
     setOpenCategories((prev) => {
@@ -380,6 +425,15 @@ export function ComponentsPanel() {
   const pluginSnapshot = useSyncExternalStore(
     (cb) => pluginRegistry.subscribe(cb),
     () => pluginRegistry.getRegisteredPlugins().length,
+    () => 0,
+  );
+
+  // Réagir aux changements de filtres de visibilité de palette (ex: niveau C4 actif).
+  // Le snapshot lui-même est volatile : on incrémente juste un compteur côté registre
+  // pour invalider le useMemo. On utilise un proxy via un counter local maintenu par useState.
+  const paletteVisibilitySnapshot = useSyncExternalStore(
+    (cb) => paletteVisibilityRegistry.subscribe(cb),
+    () => paletteVisibilityRegistry.hasFilters() ? 1 : 0,
     () => 0,
   );
 
@@ -411,14 +465,41 @@ export function ComponentsPanel() {
       })),
     ];
 
-    return allCategoryOrder.map(({ key, label }) => ({
-      key,
-      label,
-      signalColor: CATEGORY_SIGNAL_COLORS[key] || 'oklch(0.65 0.15 180)',
-      items: allComponents.filter((c) => c.category === key),
-    })).filter(c => c.items.length > 0);
+    // Contexte commun aux filtres de visibilité.
+    const paletteCtx = { projectMeta };
+
+    // Filtre item-level (par défaut tout passe) appliqué une seule fois sur tous les composants.
+    const visibleComponents = allComponents.filter((c) =>
+      paletteVisibilityRegistry.shouldShowItem({ type: c.type, category: c.category }, paletteCtx),
+    );
+
+    return allCategoryOrder
+      .filter(({ key, label }) => paletteVisibilityRegistry.shouldShowCategory({ key, label }, paletteCtx))
+      .map(({ key, label }) => ({
+        key,
+        label,
+        signalColor: CATEGORY_SIGNAL_COLORS[key] || 'oklch(0.65 0.15 180)',
+        items: visibleComponents.filter((c) => c.category === key),
+      }))
+      .filter(c => c.items.length > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pluginSnapshot]);
+  }, [pluginSnapshot, paletteVisibilitySnapshot, projectMeta]);
+
+  // Flat list with category color + display name resolved through i18n,
+  // ready to be fed to the fuzzy search.
+  const searchResults = useMemo(() => {
+    if (!isSearching) return [];
+    const flat = categories.flatMap((cat) =>
+      cat.items.map((item) => ({
+        item,
+        type: item.type as string,
+        displayName: t(item.nameKey),
+        aliases: getAliases(item.type),
+        categoryColor: cat.signalColor,
+      })),
+    );
+    return searchComponents(flat, trimmedQuery);
+  }, [isSearching, trimmedQuery, categories, t]);
 
   return (
     <div
@@ -445,11 +526,39 @@ export function ComponentsPanel() {
         </button>
       </div>
 
+      {/* Search bar */}
+      {isComponentsPanelOpen && (
+        <div className="px-2 py-2 border-b border-border shrink-0">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('components.searchPlaceholder')}
+              aria-label={t('components.searchPlaceholder')}
+              data-tour="components-search"
+              className="h-7 pl-7 pr-7 text-[11px] rounded-sm"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label={t('components.searchClear')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Components List */}
       {isComponentsPanelOpen && (
         <ScrollArea className="flex-1 overflow-hidden">
           <div className="py-1">
-            {categories.map((category) => (
+            {!isSearching && categories.map((category) => (
               <CategoryAccordion
                 key={category.key}
                 category={category}
@@ -459,6 +568,33 @@ export function ComponentsPanel() {
                 t={t}
               />
             ))}
+
+            {isSearching && searchResults.length > 0 && (
+              <div className="space-y-0.5 px-1">
+                {searchResults.map(({ item: searchItem, matchedOn, matchedAlias }) => (
+                  <DraggableComponent
+                    key={searchItem.item.type}
+                    component={searchItem.item}
+                    t={t}
+                    disabled={isSimMode}
+                    categoryColor={searchItem.categoryColor}
+                    highlightQuery={trimmedQuery}
+                    aliasHint={matchedOn === 'alias' ? matchedAlias : undefined}
+                  />
+                ))}
+              </div>
+            )}
+
+            {isSearching && searchResults.length === 0 && (
+              <div className="px-3 py-4 text-instrument text-[10px] text-muted-foreground/70 leading-relaxed">
+                {t('components.searchNoResults')}
+              </div>
+            )}
+
+            {/* Plugin slot: contenu additionnel apporté par un plugin (ex: palette restreinte par niveau). */}
+            {!isSearching && (
+              <UISlotHost slotId="palette-extra" projectMeta={projectMeta} hideWhenEmpty />
+            )}
           </div>
         </ScrollArea>
       )}

@@ -32,7 +32,8 @@ export class WAFHandler implements NodeRequestHandler {
     }
 
     // Simulate blocking based on block rate
-    const isBlocked = Math.random() * 100 < data.blockRate;
+    const rng = context.rng ?? Math.random;
+    const isBlocked = rng() * 100 < data.blockRate;
 
     if (isBlocked) {
       return { action: 'reject', reason: 'waf-blocked' };

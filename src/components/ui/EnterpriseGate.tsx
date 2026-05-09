@@ -1,12 +1,13 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
 import { useLicenseStore } from '@/lib/license';
 import { useTranslation } from '@/i18n';
 import { Badge } from '@/components/ui/badge';
+import { featureGateRegistry } from '@/plugins/extensions';
 
 /** Set des features reservees Enterprise, miroir de license.ts. */
-const enterpriseFeatures = new Set<string>([
+const builtinEnterpriseFeatures = new Set<string>([
   'team-collaboration',
   'sso-auth',
   'advanced-export',
@@ -28,7 +29,16 @@ export function EnterpriseGate({ feature, children, message }: EnterpriseGatePro
   const tier = useLicenseStore((s) => s.tier);
   const { t } = useTranslation();
 
-  const enabled = !enterpriseFeatures.has(feature) || tier === 'enterprise';
+  // Consulte le registre étendu (plugins) pour savoir si la feature est gated.
+  // Le useSyncExternalStore force un re-render si un plugin (dés)enregistre une feature.
+  useSyncExternalStore(
+    (cb) => featureGateRegistry.subscribe(cb),
+    () => featureGateRegistry.list().length,
+    () => 0,
+  );
+
+  const isGated = builtinEnterpriseFeatures.has(feature) || featureGateRegistry.has(feature);
+  const enabled = !isGated || tier === 'enterprise';
 
   if (enabled) {
     return <>{children}</>;

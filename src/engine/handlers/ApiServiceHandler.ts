@@ -80,7 +80,8 @@ export class ApiServiceHandler implements NodeRequestHandler {
         return { action: 'reject', reason: 'token-expired' };
       }
       const authFailureRate = data.authFailureRate ?? 0;
-      if (authFailureRate > 0 && Math.random() * 100 < authFailureRate) {
+      const rng = context.rng ?? Math.random;
+      if (authFailureRate > 0 && rng() * 100 < authFailureRate) {
         return { action: 'reject', reason: 'auth-failure' };
       }
     }
@@ -122,7 +123,8 @@ export class ApiServiceHandler implements NodeRequestHandler {
       ? state.activeRequests / data.maxConcurrentRequests
       : 0;
     const dynamicErrorRate = data.errorRate + (loadFactor > 0.8 ? (loadFactor - 0.8) * 50 : 0);
-    const isError = Math.random() * 100 < dynamicErrorRate;
+    const errRng = context.rng ?? Math.random;
+    const isError = errRng() * 100 < dynamicErrorRate;
 
     // Si erreur ou pas d'edges sortants, repondre directement
     if (isError || outgoingEdges.length === 0) {

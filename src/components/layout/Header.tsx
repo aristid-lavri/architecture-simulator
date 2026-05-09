@@ -55,6 +55,7 @@ import { validateArchitecture } from '@/lib/simulation-validator';
 import { OfflineIndicator } from '@/components/layout/OfflineIndicator';
 import { ProjectSelector } from '@/components/layout/ProjectSelector';
 import { OwaspValidationButton } from '@/components/simulation/OwaspValidationButton';
+import { UISlotHost, DEFAULT_PROJECT_KIND } from '@/plugins/extensions';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -77,8 +78,11 @@ export function Header() {
     updateElapsedTime,
     metrics,
     clearReport,
+    seed,
+    setSeed,
+    lastRunSeed,
   } = useSimulationStore();
-  const { nodes, edges, setNodes, setEdges, clear, undo, redo, canUndo, canRedo, saveSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot } = useArchitectureStore();
+  const { nodes, edges, setNodes, setEdges, clear, undo, redo, canUndo, canRedo, saveSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot, projectMeta, setProjectMeta } = useArchitectureStore();
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -109,6 +113,11 @@ export function Header() {
   const applyTemplate = (template: ArchitectureTemplate) => {
     setNodes(template.nodes);
     setEdges(template.edges);
+    // Si le template porte un projectMeta (ex: kind C4), l'appliquer au store.
+    // Sinon le projectMeta courant est conservé (rétro-compat templates "free").
+    if (template.projectMeta) {
+      setProjectMeta(template.projectMeta);
+    }
     setPendingTemplate(null);
   };
 
@@ -167,6 +176,20 @@ export function Header() {
     } else {
       setDuration(parseInt(value, 10));
     }
+  };
+
+  /**
+   * Seed input handler (B2.1 - Reproductibilite).
+   * Vide -> null (entropie systeme). Numerique -> number. Sinon string (hashee).
+   */
+  const handleSeedChange = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      setSeed(null);
+      return;
+    }
+    const asNum = Number(trimmed);
+    setSeed(Number.isFinite(asNum) && /^-?\d+$/.test(trimmed) ? asNum : trimmed);
   };
 
   const durationOptions = [
@@ -282,6 +305,30 @@ export function Header() {
 
             <span className="text-border">|</span>
 
+            {/* Seed input (B2.1 - Reproductibilite) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground">SEED:</span>
+                  <input
+                    type="text"
+                    value={seed === null ? '' : String(seed)}
+                    onChange={(e) => handleSeedChange(e.target.value)}
+                    disabled={simulationState !== 'idle'}
+                    placeholder="auto"
+                    aria-label="Seed pour PRNG (vide = aleatoire)"
+                    className="w-20 bg-transparent border border-border rounded px-1 font-mono text-xs focus:outline-none focus:border-foreground disabled:opacity-50"
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Seed du PRNG (vide = entropie systeme).
+                {lastRunSeed !== null && <><br />Dernier run : {String(lastRunSeed)}</>}
+              </TooltipContent>
+            </Tooltip>
+
+            <span className="text-border">|</span>
+
             {/* Timer */}
             {simulationState !== 'idle' && (
               <>
@@ -391,6 +438,8 @@ export function Header() {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-3" data-tour="header-tools">
+        {/* Plugin slot: actions additionnelles à gauche des contrôles standards. */}
+        <UISlotHost slotId="header-extra" projectMeta={projectMeta} hideWhenEmpty />
         {/* Undo/Redo — edit mode only */}
         {mode === 'edit' && (
           <>
@@ -459,7 +508,7 @@ export function Header() {
                 </TooltipTrigger>
                 <TooltipContent side="bottom">{t('snapshots.history')}</TooltipContent>
               </Tooltip>
-              <DropdownMenuContent align="end" className="min-w-52 max-h-64 overflow-y-auto">
+              <DropdownMenuContent align="end" className="min-w-52 max-h-112 overflow-y-auto">
                 {getSnapshots().map((snap) => (
                   <DropdownMenuItem
                     key={snap.id}
@@ -486,6 +535,9 @@ export function Header() {
                     </button>
                   </DropdownMenuItem>
                 ))}
+                {/* Plugin slot: outils additionnels au bas de la popover snapshots
+                    (visual-diff EE-3 ajoute le picker "Comparer 2 snapshots"). */}
+                <UISlotHost slotId="snapshots-popover" projectMeta={projectMeta} hideWhenEmpty />
               </DropdownMenuContent>
             </DropdownMenu>
             <span className="text-border">|</span>
@@ -504,40 +556,54 @@ export function Header() {
             <TooltipContent side="bottom">Templates d&apos;architecture</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end" className="min-w-48 max-h-[70vh] overflow-y-auto">
-            {architectureTemplates.map((template) => {
-              const isFirstAdvanced = template.id === 'tax-system';
-              return (
-                <div key={template.id}>
-                  {isFirstAdvanced && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <div className="px-2 py-1">
-                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Avancés</span>
-                      </div>
-                    </>
-                  )}
-                  <DropdownMenuItem
-                    onClick={() => handleTemplateSelect(template)}
-                    className="flex items-center gap-2"
-                  >
-                    <div className="flex-1 flex flex-col items-start gap-0.5">
-                      <span className="font-medium text-xs">{t(template.nameKey)}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {t(template.descriptionKey)}
-                      </span>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleViewTemplateYaml(template); }}
-                      className="p-1 text-muted-foreground hover:text-signal-infra transition-colors shrink-0"
-                      aria-label={`Voir le YAML de ${t(template.nameKey)}`}
-                      title="Voir YAML"
+            {(() => {
+              const currentKind = projectMeta?.kind ?? DEFAULT_PROJECT_KIND;
+              const compatible = architectureTemplates.filter((tpl) => {
+                const tplKind = tpl.projectMeta?.kind ?? DEFAULT_PROJECT_KIND;
+                return tplKind === currentKind;
+              });
+              if (compatible.length === 0) {
+                return (
+                  <div className="px-3 py-2 text-[11px] text-muted-foreground">
+                    Aucun template disponible pour ce type de projet.
+                  </div>
+                );
+              }
+              return compatible.map((template) => {
+                const isFirstAdvanced = template.id === 'tax-system';
+                return (
+                  <div key={template.id}>
+                    {isFirstAdvanced && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <div className="px-2 py-1">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Avancés</span>
+                        </div>
+                      </>
+                    )}
+                    <DropdownMenuItem
+                      onClick={() => handleTemplateSelect(template)}
+                      className="flex items-center gap-2"
                     >
-                      <Code className="w-3 h-3" />
-                    </button>
-                  </DropdownMenuItem>
-                </div>
-              );
-            })}
+                      <div className="flex-1 flex flex-col items-start gap-0.5">
+                        <span className="font-medium text-xs">{t(template.nameKey)}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {t(template.descriptionKey)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleViewTemplateYaml(template); }}
+                        className="p-1 text-muted-foreground hover:text-signal-infra transition-colors shrink-0"
+                        aria-label={`Voir le YAML de ${t(template.nameKey)}`}
+                        title="Voir YAML"
+                      >
+                        <Code className="w-3 h-3" />
+                      </button>
+                    </DropdownMenuItem>
+                  </div>
+                );
+              });
+            })()}
           </DropdownMenuContent>
         </DropdownMenu>
 

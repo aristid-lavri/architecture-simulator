@@ -5,6 +5,7 @@
  */
 import type { GraphNode, GraphEdge } from '@/types/graph';
 import { parseYamlArchitecture } from '@/lib/yaml-parser';
+import type { ProjectKindMeta } from '@/plugins/extensions';
 
 export interface ArchitectureTemplate {
   id: string;
@@ -12,6 +13,12 @@ export interface ArchitectureTemplate {
   descriptionKey: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /**
+   * ProjectMeta apporté par le YAML du template (kind + extensions plugins).
+   * Présent uniquement quand le YAML contient `metadata.kind` non-default,
+   * sinon laissé `undefined` (le store gardera son `projectMeta` courant).
+   */
+  projectMeta?: ProjectKindMeta;
 }
 
 function createTemplateFromYaml(
@@ -25,7 +32,14 @@ function createTemplateFromYaml(
     console.warn(`[Template] Failed to parse "${id}":`, result.error);
     return null;
   }
-  return { id, nameKey, descriptionKey, nodes: result.nodes, edges: result.edges };
+  return {
+    id,
+    nameKey,
+    descriptionKey,
+    nodes: result.nodes,
+    edges: result.edges,
+    projectMeta: result.projectMeta,
+  };
 }
 
 // ============================================

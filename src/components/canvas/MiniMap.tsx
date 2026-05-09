@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import type { GraphNode } from '@/types/graph';
+import type { ComponentType } from '@/types';
 import type { Viewport } from 'pixi-viewport';
 import { NODE_COLORS, NODE_WIDTH, NODE_HEIGHT, CONTAINER_COMPONENT_TYPES } from './constants';
 
@@ -72,8 +73,8 @@ export function MiniMap({ nodes, viewport }: MiniMapProps) {
       const nw = w * scale;
       const nh = h * scale;
 
-      const colors = NODE_COLORS[node.type];
-      const isZone = CONTAINER_COMPONENT_TYPES.has(node.type);
+      const colors = NODE_COLORS[node.type as ComponentType];
+      const isZone = CONTAINER_COMPONENT_TYPES.has(node.type as ComponentType);
 
       if (isZone) {
         ctx.strokeStyle = `#${colors?.border.toString(16).padStart(6, '0') ?? '475569'}`;

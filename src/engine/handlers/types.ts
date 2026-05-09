@@ -1,4 +1,5 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
+import type { SimulationRNG } from '../SimulationRNG';
 
 /**
  * Context immutable passé à chaque handler lors du traitement d'une requête
@@ -47,6 +48,15 @@ export interface RequestContext {
   // Marque la chain comme requête d'acquisition de token (Task 22)
   // L'IdP génère un token et l'enrichit dans la response decision
   isAuthRequest?: boolean;
+
+  /**
+   * PRNG seedable injecte par le moteur (B2.1 - Reproductibilite).
+   * Les handlers DOIVENT utiliser `context.rng()` (ou `Math.random` en fallback)
+   * a la place de `Math.random()` pour rendre les simulations reproductibles
+   * quand un seed est fourni. Optionnel pour la backward compat des plugins
+   * tiers : si absent, le handler peut tomber sur `Math.random`.
+   */
+  rng?: SimulationRNG;
 }
 
 /**

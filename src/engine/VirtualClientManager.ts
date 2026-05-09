@@ -1,4 +1,5 @@
 import type { ClientGroupNodeData, RampUpCurve } from '@/types';
+import type { SimulationRNG } from './SimulationRNG';
 
 /** Etat d'un client virtuel individuel dans un groupe. */
 export interface VirtualClient {
@@ -25,6 +26,13 @@ export class VirtualClientManager {
   private clients: Map<string, VirtualClient[]> = new Map();
   private rampUpTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
   private burstStates: Map<string, BurstState> = new Map();
+
+  /** PRNG injecte pour le bruit d'intervalle (B2.1). Defaut Math.random pour back-compat. */
+  private readonly rng: SimulationRNG;
+
+  constructor(rng?: SimulationRNG) {
+    this.rng = rng ?? (() => Math.random());
+  }
 
   /**
    * Initialise un groupe de clients virtuels
@@ -191,7 +199,7 @@ export class VirtualClientManager {
 
       case 'random':
         const variance = data.baseInterval * (data.intervalVariance / 100);
-        return data.baseInterval + (Math.random() * 2 - 1) * variance;
+        return data.baseInterval + (this.rng() * 2 - 1) * variance;
 
       case 'burst':
         return 0;

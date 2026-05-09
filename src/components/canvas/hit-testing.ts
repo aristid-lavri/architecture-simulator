@@ -1,4 +1,4 @@
-import type { GraphNode } from '@/types/graph';
+import type { GraphNode, NodeType } from '@/types/graph';
 import type { ComponentType } from '@/types';
 import { CONTAINER_TYPES, canBeChildOf } from '@/types';
 
@@ -8,7 +8,7 @@ import { CONTAINER_TYPES, canBeChildOf } from '@/types';
 export function findContainerAtPosition(
   nodes: GraphNode[],
   position: { x: number; y: number },
-  droppedType: ComponentType,
+  droppedType: NodeType,
 ): GraphNode | null {
   function getDepth(node: GraphNode): number {
     let depth = 0;
@@ -37,14 +37,14 @@ export function findContainerAtPosition(
   }
 
   const containerNodes = nodes.filter(
-    (n) => CONTAINER_TYPES.includes(n.type)
+    (n) => CONTAINER_TYPES.includes(n.type as ComponentType)
   );
 
   let bestMatch: GraphNode | null = null;
   let bestDepth = -1;
 
   for (const container of containerNodes) {
-    if (!canBeChildOf(droppedType, container.type)) continue;
+    if (!canBeChildOf(droppedType as ComponentType, container.type as ComponentType)) continue;
 
     const absPos = getAbsolutePosition(container);
     const width = container.width ?? 400;

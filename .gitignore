@@ -42,3 +42,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# superpowers brainstorm artifacts
+.superpowers/
+
+# playwright
+/playwright-report/
+/test-results/
+/playwright.config.ts
+/tests/
+
+# project docs / design assets (kept local)
+/Dossiers-projet/

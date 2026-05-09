@@ -1,14 +1,17 @@
 import YAML from 'yaml';
 import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { NetworkZoneNodeData, HostServerNodeData } from '@/types';
+import { yamlSchemaRegistry, type ProjectKindMeta } from '@/plugins/extensions';
 
 interface YamlArchitecture {
   version: number;
   name: string;
+  /** Métadonnées extensibles : kind du projet + champs additionnels apportés par les plugins. */
+  metadata?: Record<string, unknown>;
   zones?: Record<string, Record<string, unknown>>;
   hosts?: Record<string, Record<string, unknown>>;
   components: Record<string, Record<string, unknown>>;
-  connections: { from: string; to: string; protocol?: string; targetPort?: number; topic?: string }[];
+  connections: { from: string; to: string; protocol?: string; targetPort?: number; topic?: string; [key: string]: unknown }[];
 }
 
 const statusKeys = ['status', 'utilization', 'circuitState', 'failureCount', 'successCount', 'currentInstances'];
@@ -18,19 +21,39 @@ function cleanData(data: Record<string, unknown>): Record<string, unknown> {
   for (const [key, value] of Object.entries(data)) {
     if (statusKeys.includes(key)) continue;
     if (key === 'label') continue;
+    // Underscore-prefixed keys are transient runtime state (e.g. _waypoints from auto-layout)
+    // and must never be serialised.
+    if (key.startsWith('_')) continue;
     if (value === undefined || value === null) continue;
     cleaned[key] = value;
   }
   return cleaned;
 }
 
-export function exportToYaml(nodes: GraphNode[], edges: GraphEdge[], name = 'Architecture'): string {
+export function exportToYaml(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  name = 'Architecture',
+  projectMeta?: ProjectKindMeta,
+): string {
   const arch: YamlArchitecture = {
     version: 1,
     name,
     components: {},
     connections: [],
   };
+
+  // Metadata : kind + extensions des plugins.
+  // Pour la rétrocompatibilité, on omet la metadata si kind === 'free' et qu'aucun plugin
+  // n'ajoute de champ. Un YAML produit par un projet "libre" reste donc identique au format historique.
+  if (projectMeta) {
+    const pluginMeta = yamlSchemaRegistry.serializeMetadata(projectMeta);
+    const kindMeta = projectMeta.kind && projectMeta.kind !== 'free' ? { kind: projectMeta.kind } : {};
+    const merged = { ...kindMeta, ...pluginMeta };
+    if (Object.keys(merged).length > 0) {
+      arch.metadata = merged;
+    }
+  }
 
   // Export zones
   const zoneNodes = nodes.filter(n => n.type === 'network-zone');
@@ -86,12 +109,14 @@ export function exportToYaml(nodes: GraphNode[], edges: GraphEdge[], name = 'Arc
     const parentHost = parentIsHost ? node.parentId : undefined;
     const parentContainer = parentIsContainer ? node.parentId : undefined;
 
+    const pluginNodeFields = yamlSchemaRegistry.serializeNode(node);
     arch.components[node.id] = {
       type: node.type as string,
       ...(parentZone ? { zone: parentZone } : {}),
       ...(parentHost ? { host: parentHost } : {}),
       ...(parentContainer ? { container: parentContainer } : {}),
       ...(!node.parentId ? { position: { x: Math.round(node.position.x), y: Math.round(node.position.y) } } : {}),
+      ...pluginNodeFields,
       config: {
         label: (node.data as Record<string, unknown>).label,
         ...cleanData(node.data as Record<string, unknown>),
@@ -105,12 +130,14 @@ export function exportToYaml(nodes: GraphNode[], edges: GraphEdge[], name = 'Arc
     const targetPort = edgeData?.targetPort as number | undefined;
     const protocol = edgeData?.protocol as string | undefined;
     const topic = edgeData?.topic as string | undefined;
+    const pluginEdgeFields = yamlSchemaRegistry.serializeEdge(e);
     return {
       from: e.source,
       to: e.target,
       ...(protocol ? { protocol } : {}),
       ...(targetPort ? { targetPort } : {}),
       ...(topic ? { topic } : {}),
+      ...pluginEdgeFields,
     };
   });
 

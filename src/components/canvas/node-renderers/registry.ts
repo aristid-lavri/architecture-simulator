@@ -1,4 +1,5 @@
 import type { ComponentContentRenderer } from './types';
+import { pluginRegistry } from '@/plugins/plugin-registry';
 
 // ── Simulation ──
 import { httpClientRenderer, httpServerRenderer, clientGroupRenderer } from './simulation';
@@ -60,9 +61,34 @@ const fallbackRenderer: ComponentContentRenderer = {
 };
 
 /**
+ * Construit un content renderer minimal à partir des hints `visual` d'un plugin.
+ * - Variant `strict` : icône absente (glyph vide ' '), pas de content lines (le rendu est entièrement
+ *   pris en charge par les hints de NodeRenderer pour la notation C4).
+ * - Variant `instance` : glyph `↗` indique la référence vers un autre nœud.
+ * - Variant `instrument` (default) : retombe sur le glyph fallback.
+ */
+function pluginVisualToRenderer(
+  visual: NonNullable<ReturnType<typeof pluginRegistry.getNodeVisual>>,
+): ComponentContentRenderer {
+  const variant = visual.variant ?? 'instrument';
+  const icon = variant === 'strict' ? ' ' : variant === 'instance' ? '↗' : '●';
+  return {
+    icon,
+    getContentLines() { return []; },
+  };
+}
+
+/**
  * Get the content renderer for a given component type.
- * Falls back to a no-op renderer for unknown types.
+ * Order:
+ * 1. Hardcoded RENDERER_MAP (21 types CE natifs).
+ * 2. Plugin-registered visual hints (any plugin type).
+ * 3. Fallback no-op renderer.
  */
 export function getComponentRenderer(type: string): ComponentContentRenderer {
-  return RENDERER_MAP[type] ?? fallbackRenderer;
+  const native = RENDERER_MAP[type];
+  if (native) return native;
+  const pluginVisual = pluginRegistry.getNodeVisual(type);
+  if (pluginVisual) return pluginVisualToRenderer(pluginVisual);
+  return fallbackRenderer;
 }

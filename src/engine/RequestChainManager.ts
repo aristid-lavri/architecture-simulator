@@ -12,6 +12,7 @@ import {
 import type { NodeRequestHandler } from './handlers/types';
 import type { RequestContext } from './handlers/types';
 import { getParticleChainId } from '@/types';
+import type { SimulationRNG } from './SimulationRNG';
 
 /**
  * Suivi d'une chaine de requete a travers la topologie.
@@ -94,6 +95,7 @@ export class RequestChainManager {
   private getParticleCount: () => number;
   private clientTimersSize: () => number;
   private clientGroupTimersSize: () => number;
+  private rng: SimulationRNG;
 
   constructor(
     metrics: MetricsCollector,
@@ -107,6 +109,7 @@ export class RequestChainManager {
     getParticleCount: () => number,
     clientTimersSize: () => number,
     clientGroupTimersSize: () => number,
+    rng?: SimulationRNG,
   ) {
     this.metrics = metrics;
     this.callbacks = callbacks;
@@ -119,6 +122,7 @@ export class RequestChainManager {
     this.getParticleCount = getParticleCount;
     this.clientTimersSize = clientTimersSize;
     this.clientGroupTimersSize = clientGroupTimersSize;
+    this.rng = rng ?? (() => Math.random());
   }
 
   /** Met a jour le graphe et la vitesse. */
@@ -157,7 +161,7 @@ export class RequestChainManager {
   /** Verifie si un noeud doit retourner une erreur (en fonction de son errorRate). */
   shouldNodeError(node: GraphNode): boolean {
     const data = node.data as { errorRate?: number };
-    return data.errorRate ? Math.random() * 100 < data.errorRate : false;
+    return data.errorRate ? this.rng() * 100 < data.errorRate : false;
   }
 
   /**

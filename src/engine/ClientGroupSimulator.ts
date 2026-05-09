@@ -1,5 +1,6 @@
 import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { Particle, ClientGroupNodeData } from '@/types';
+import type { SimulationRNG } from './SimulationRNG';
 import type { MetricsCollector } from './metrics';
 import { ParticleManager } from './ParticleManager';
 import { VirtualClientManager } from './VirtualClientManager';
@@ -43,13 +44,13 @@ function estimatePayloadSize(method?: string): number {
 }
 
 /** Generate a pseudo-random IP for a virtual client. */
-function generateSourceIP(virtualClientId?: number): string {
+function generateSourceIP(virtualClientId: number | undefined, rng: SimulationRNG): string {
   if (virtualClientId != null) {
     const octet3 = Math.floor(virtualClientId / 256) % 256;
     const octet4 = virtualClientId % 256;
     return `10.0.${octet3}.${octet4 || 1}`;
   }
-  return `10.0.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 255) + 1}`;
+  return `10.0.${Math.floor(rng() * 256)}.${Math.floor(rng() * 255) + 1}`;
 }
 
 /**
@@ -135,6 +136,7 @@ export class ClientGroupSimulator {
   private getNodeFault: (nodeId: string) => 'down' | 'degraded' | null;
   private isNodeIsolated: (nodeId: string) => boolean;
   private isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null;
+  private rng: SimulationRNG;
 
   constructor(
     metrics: MetricsCollector,
@@ -172,6 +174,7 @@ export class ClientGroupSimulator {
     getNodeFault: (nodeId: string) => 'down' | 'degraded' | null,
     isNodeIsolated: (nodeId: string) => boolean,
     isParentFaulted: (nodeId: string) => 'down' | 'degraded' | null,
+    rng?: SimulationRNG,
   ) {
     this.metrics = metrics;
     this.callbacks = callbacks;
@@ -190,6 +193,7 @@ export class ClientGroupSimulator {
     this.getNodeFault = getNodeFault;
     this.isNodeIsolated = isNodeIsolated;
     this.isParentFaulted = isParentFaulted;
+    this.rng = rng ?? (() => Math.random());
   }
 
   setNodesAndEdges(nodes: GraphNode[], edges: GraphEdge[], nodeMap?: Map<string, GraphNode>): void {
@@ -262,7 +266,7 @@ export class ClientGroupSimulator {
    */
   private selectRandomPath(data: ClientGroupNodeData): string {
     if (data.paths && data.paths.length > 0) {
-      const randomIndex = Math.floor(Math.random() * data.paths.length);
+      const randomIndex = Math.floor(this.rng() * data.paths.length);
       return data.paths[randomIndex];
     }
     return data.path;
@@ -274,7 +278,7 @@ export class ClientGroupSimulator {
   private selectRequestType(data: ClientGroupNodeData): { method: import('@/types').HttpMethod; path: string; body?: string } {
     if (data.requestDistribution && data.requestDistribution.length > 0) {
       const totalWeight = data.requestDistribution.reduce((sum, d) => sum + d.weight, 0);
-      let random = Math.random() * totalWeight;
+      let random = this.rng() * totalWeight;
       for (const dist of data.requestDistribution) {
         random -= dist.weight;
         if (random <= 0) {
@@ -407,7 +411,7 @@ export class ClientGroupSimulator {
         queryType: deriveQueryType(reqType.method),
         contentType: inferContentType(reqType.path),
         payloadSizeBytes: estimatePayloadSize(reqType.method),
-        sourceIP: generateSourceIP(virtualClientId),
+        sourceIP: generateSourceIP(virtualClientId, this.rng),
         virtualClientId,
         authToken: preAcquiredToken ? {
           tokenId: preAcquiredToken.tokenId,
@@ -430,7 +434,7 @@ export class ClientGroupSimulator {
       queryType: deriveQueryType(reqType.method),
       contentType: inferContentType(reqType.path),
       payloadSizeBytes: estimatePayloadSize(reqType.method),
-      sourceIP: generateSourceIP(virtualClientId),
+      sourceIP: generateSourceIP(virtualClientId, this.rng),
     };
     if (preAcquiredToken) {
       chain.authToken = {
@@ -550,6 +554,7 @@ export class ClientGroupSimulator {
       payloadSizeBytes: chain?.payloadSizeBytes,
       sourceIP: chain?.sourceIP,
       authToken: chain?.authToken,
+      rng: this.rng,
     };
 
     let processingDelay = this.getNodeProcessingDelay(server, context);

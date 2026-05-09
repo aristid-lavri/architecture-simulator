@@ -2,6 +2,12 @@ import YAML from 'yaml';
 import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { ComponentType, NetworkZoneType } from '@/types';
 import {
+  yamlSchemaRegistry,
+  createProjectMeta,
+  DEFAULT_PROJECT_KIND,
+  type ProjectKindMeta,
+} from '@/plugins/extensions';
+import {
   defaultNetworkZoneData,
   defaultCircuitBreakerData,
   defaultCDNNodeData,
@@ -32,6 +38,8 @@ interface YamlArchitecture {
   version: number;
   name: string;
   description?: string;
+  /** Métadonnées extensibles : kind du projet + extensions des plugins. */
+  metadata?: Record<string, unknown>;
   zones?: Record<string, YamlZone>;
   hosts?: Record<string, YamlHost>;
   components: Record<string, YamlComponent>;
@@ -117,7 +125,9 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
   return result;
 }
 
-export function parseYamlArchitecture(yamlString: string): { nodes: GraphNode[]; edges: GraphEdge[] } | { error: string } {
+export function parseYamlArchitecture(
+  yamlString: string,
+): { nodes: GraphNode[]; edges: GraphEdge[]; projectMeta: ProjectKindMeta } | { error: string } {
   try {
     const arch = YAML.parse(yamlString) as YamlArchitecture;
 
@@ -127,6 +137,17 @@ export function parseYamlArchitecture(yamlString: string): { nodes: GraphNode[];
 
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
+
+    // Parse projectMeta : kind par défaut + champs apportés par les plugins.
+    // Rétrocompatibilité : un YAML sans metadata reste un projet "free".
+    const rawMetadata = (arch.metadata ?? {}) as Record<string, unknown>;
+    const kindFromYaml = typeof rawMetadata.kind === 'string' ? rawMetadata.kind : DEFAULT_PROJECT_KIND;
+    const pluginMeta = yamlSchemaRegistry.parseMetadata(rawMetadata);
+    const projectMeta: ProjectKindMeta = {
+      ...createProjectMeta(kindFromYaml),
+      ...pluginMeta,
+      kind: kindFromYaml,
+    };
 
     // Zone layout tracking
     const zonePositions: Record<string, { x: number; y: number; width: number; height: number }> = {};
@@ -267,12 +288,18 @@ export function parseYamlArchitecture(yamlString: string): { nodes: GraphNode[];
         if (freeX > 1000) { freeX = 100; freeY += 150; }
       }
 
+      // Patches fournis par les extensions de schéma.
+      const rawComp = comp as unknown as Record<string, unknown>;
+      const nodePatch = yamlSchemaRegistry.parseNode(rawComp);
+      const nodeDataPatch = yamlSchemaRegistry.parseNodeData(rawComp);
+
       nodes.push({
         id: compId,
         type: comp.type,
         position,
-        data: mergedData,
+        data: { ...mergedData, ...nodeDataPatch },
         ...(parentId ? { parentId } : {}),
+        ...nodePatch,
       });
     }
 
@@ -284,16 +311,19 @@ export function parseYamlArchitecture(yamlString: string): { nodes: GraphNode[];
         if (conn.targetPort) edgeData.targetPort = conn.targetPort;
         if (conn.topic) edgeData.topic = conn.topic;
 
+        const edgePatch = yamlSchemaRegistry.parseEdge(conn as unknown as Record<string, unknown>);
+
         edges.push({
           id: `edge-${conn.from}-${conn.to}`,
           source: conn.from,
           target: conn.to,
           ...(Object.keys(edgeData).length > 0 ? { data: edgeData } : {}),
+          ...edgePatch,
         });
       }
     }
 
-    return { nodes, edges };
+    return { nodes, edges, projectMeta };
   } catch (e) {
     return { error: `Erreur de parsing YAML : ${e instanceof Error ? e.message : String(e)}` };
   }

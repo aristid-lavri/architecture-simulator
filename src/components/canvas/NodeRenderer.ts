@@ -1,5 +1,8 @@
 import { Container, Graphics, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 import { getIconTexture } from './IconRegistry';
+import { nodeRendererRegistry } from '@/plugins/extensions';
+import { pluginRegistry } from '@/plugins/plugin-registry';
+import { useArchitectureStore } from '@/store/architecture-store';
 import type { GraphNode } from '@/types/graph';
 import type { ComponentType, NodeStatus, ResourceUtilization } from '@/types';
 import {
@@ -15,6 +18,24 @@ import type { NodeFooterMetrics } from './node-renderers/types';
 
 // Zone icon (not delegated to component renderers)
 const ZONE_ICON = '⬡';
+
+/**
+ * Résout un `typeTag` plugin (string statique OU fonction qui lit `node.data`)
+ * en string. Utilisé par le variant `strict` pour afficher `[Person]`,
+ * `Component: Repository`, etc.
+ */
+function resolveTypeTag(
+  tag: string | ((data: Record<string, unknown>) => string) | undefined,
+  data: Record<string, unknown>,
+): string {
+  if (!tag) return '';
+  if (typeof tag === 'string') return tag;
+  try {
+    return tag(data);
+  } catch {
+    return '';
+  }
+}
 
 
 // ============================================
@@ -42,6 +63,7 @@ interface NodeVisual {
   chaosIcon: Text;
   cogIcon: Text;
   trashIcon: Text;
+  collapseIcon: Text;
   gauges: Graphics;
   // Footer
   footerSeparator: Graphics;
@@ -51,9 +73,12 @@ interface NodeVisual {
   footerSuccessText: Text;
   footerErrorText: Text;
   selectionGlow: Graphics;
+  // Corner tag (apporté par les hints de plugin via nodeRendererRegistry, ex: "EXT", "L1", "L3").
+  cornerTagBg: Graphics;
+  cornerTagText: Text;
   resizeHandles: ResizeHandle[];
   nodeId: string;
-  nodeType: ComponentType;
+  nodeType: GraphNode['type'];
   nodeWidth: number;
   isZone: boolean;
   currentStatus: NodeStatus;
@@ -84,13 +109,20 @@ export class NodeRenderer {
   onNodePointerMove: ((event: PointerEvent) => void) | null = null;
   onNodePointerUp: ((event: PointerEvent) => void) | null = null;
   onNodeRightClick: ((nodeId: string, event: PointerEvent) => void) | null = null;
+  onNodeDoubleClick: ((nodeId: string) => void) | null = null;
   onNodeHover: ((nodeId: string | null) => void) | null = null;
   onCogClick: ((nodeId: string) => void) | null = null;
   onChaosClick: ((nodeId: string, screenX: number, screenY: number) => void) | null = null;
   onDeleteClick: ((nodeId: string) => void) | null = null;
+  onCollapseClick: ((nodeId: string) => void) | null = null;
   onResizeStart: ((nodeId: string, corner: string, event: PointerEvent) => void) | null = null;
   onResizeMove: ((event: PointerEvent) => void) | null = null;
   onResizeEnd: ((event: PointerEvent) => void) | null = null;
+
+  // Détection de double-clic : on stocke le timestamp du dernier tap par nœud.
+  private lastTapPerNode: Map<string, number> = new Map();
+  /** Délai max (ms) entre deux taps pour déclencher un double-clic. */
+  static readonly DOUBLE_CLICK_DELAY_MS = 350;
 
   // Resize state
   private resizing = false;
@@ -159,7 +191,7 @@ export class NodeRenderer {
 
     // Create or update visuals for each node
     for (const node of nodes) {
-      const isZone = CONTAINER_COMPONENT_TYPES.has(node.type);
+      const isZone = CONTAINER_COMPONENT_TYPES.has(node.type as ComponentType);
       let visual = this.visuals.get(node.id);
 
       if (!visual) {
@@ -339,8 +371,53 @@ export class NodeRenderer {
     trashIcon.on('pointerover', () => { trashIcon.style.fill = 0xff4444; });
     trashIcon.on('pointerout', () => { trashIcon.style.fill = 0xcc3333; });
 
-    toolbar.addChild(toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon);
-    container.addChild(selectionGlow, bg, signalBar, separator, headerIcon, headerStatusIcon, headerLabel, contentLine1, contentLine2, gauges, footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText, footerSuccessText, footerErrorText, toolbar);
+    // Collapse / expand toggle for container types (zone / host-server / container).
+    // The glyph and visibility are set in updateNodeVisual based on `data.collapsed`.
+    const collapseIcon = new Text({
+      text: '−',
+      style: new TextStyle({
+        fontSize: 14,
+        fill: 0x6b7280,
+        fontFamily: 'system-ui, sans-serif',
+        fontWeight: '700',
+      }),
+    });
+    collapseIcon.eventMode = 'static';
+    collapseIcon.cursor = 'pointer';
+    collapseIcon.hitArea = { contains: (x: number, y: number) => x >= -2 && x <= 14 && y >= -2 && y <= 16 };
+    collapseIcon.on('pointerdown', (e) => {
+      e.stopPropagation();
+      this.onCollapseClick?.(node.id);
+    });
+    collapseIcon.on('pointerover', () => { collapseIcon.style.fill = 0x111827; });
+    collapseIcon.on('pointerout', () => { collapseIcon.style.fill = 0x6b7280; });
+
+    // Corner tag (apporté par les hints de plugin via nodeRendererRegistry).
+    // Reste invisible tant qu'aucun hint ne le requiert.
+    const cornerTagBg = new Graphics();
+    cornerTagBg.visible = false;
+    const cornerTagText = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: 8,
+        fill: 0xffffff,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '700',
+        letterSpacing: 1,
+      }),
+    });
+    cornerTagText.visible = false;
+
+    toolbar.addChild(toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon, collapseIcon);
+    container.addChild(
+      selectionGlow, bg, signalBar, separator,
+      headerIcon, headerStatusIcon, headerLabel,
+      contentLine1, contentLine2, gauges,
+      footerSeparator, footerGauges, footerGaugeLabel,
+      footerMetricsText, footerSuccessText, footerErrorText,
+      cornerTagBg, cornerTagText,
+      toolbar,
+    );
 
     // Create resize handles for all node types (functional resize for zones, visual indicator for others)
     const resizeHandles: ResizeHandle[] = [];
@@ -391,6 +468,20 @@ export class NodeRenderer {
       this.onNodeRightClick?.(node.id, e.nativeEvent as PointerEvent);
     });
 
+    // Détection de double-clic : deux taps consécutifs sur le même nœud,
+    // dans un intervalle court.
+    container.on('pointertap', () => {
+      if (!this.onNodeDoubleClick) return;
+      const now = performance.now();
+      const last = this.lastTapPerNode.get(node.id) ?? 0;
+      if (now - last <= NodeRenderer.DOUBLE_CLICK_DELAY_MS) {
+        this.lastTapPerNode.delete(node.id);
+        this.onNodeDoubleClick(node.id);
+      } else {
+        this.lastTapPerNode.set(node.id, now);
+      }
+    });
+
     // Hover effect
     container.on('pointerover', () => {
       if (!isZone) {
@@ -405,10 +496,11 @@ export class NodeRenderer {
 
     return {
       container, bg, signalBar, separator, headerIcon, headerStatusIcon, headerLabel, contentLine1,
-      contentLine2, toolbar, toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon, gauges,
+      contentLine2, toolbar, toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon, collapseIcon, gauges,
       footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText,
       footerSuccessText, footerErrorText,
-      selectionGlow, resizeHandles, nodeId: node.id, nodeType: node.type,
+      selectionGlow, cornerTagBg, cornerTagText,
+      resizeHandles, nodeId: node.id, nodeType: node.type,
       nodeWidth: node.width ?? NODE_WIDTH, isZone,
       currentStatus: 'idle', animationPhase: 0,
     };
@@ -416,7 +508,11 @@ export class NodeRenderer {
 
   private updateNodeVisual(visual: NodeVisual, node: GraphNode, isSelected: boolean, absPos?: { x: number; y: number }): void {
     const theme = canvasTheme();
-    const colors = theme.nodeColors[node.type] ?? { bg: 0xffffff, border: 0x555555, text: 0x333333 };
+    // Couleurs : 1) theme natif CE, 2) plugin visual.colors, 3) fallback white/gray.
+    const pluginColors = pluginRegistry.getNodeVisual(node.type)?.colors;
+    const colors = theme.nodeColors[node.type as ComponentType]
+      ?? pluginColors
+      ?? { bg: 0xffffff, border: 0x555555, text: 0x333333 };
     const w = node.width ?? NODE_WIDTH;
     const h = node.height ?? (visual.isZone ? NODE_HEIGHT : getNodeHeight(node.type));
     const dataLabel = (node.data?.label as string) ?? node.type;
@@ -429,6 +525,15 @@ export class NodeRenderer {
     visual.nodeWidth = w;
     const displayPos = absPos ?? node.position;
     visual.container.position.set(displayPos.x, displayPos.y);
+
+    // ── Reset des styles non-standard (italique, gras, wordWrap) appliqués par les
+    //    variants `strict`/`instance`. Évite que les overrides de variant persistent
+    //    quand le rendu retombe en variant `instrument` standard.
+    visual.headerLabel.style.fontWeight = 'normal';
+    visual.headerLabel.style.fontStyle = 'normal';
+    visual.contentLine1.style.fontStyle = 'normal';
+    visual.contentLine2.style.fontStyle = 'normal';
+    visual.contentLine2.style.wordWrap = false;
 
     // ── Selection glow ──
     visual.selectionGlow.clear();
@@ -555,38 +660,72 @@ export class NodeRenderer {
     }
 
     // ── Toolbar (floating above node, right-aligned) ──
-    visual.toolbar.visible = !visual.isZone;
-    if (!visual.isZone) {
-      const showChaos = this.chaosEnabled;
-      const tbW = showChaos ? 68 : 52;
+    // Container types (zone / host-server / container) get a collapse toggle even though
+    // they hide the chaos/cog/trash actions. Other nodes keep the existing layout.
+    const isContainerType = node.type === 'network-zone' || node.type === 'host-server' || node.type === 'container';
+    const showCollapseToggle = isContainerType;
+    const showFullToolbar = !visual.isZone;
+    visual.toolbar.visible = showFullToolbar || showCollapseToggle;
+
+    if (visual.toolbar.visible) {
+      const showChaos = this.chaosEnabled && showFullToolbar;
+      // Layout slots, left → right: status, chaos, cog, trash, collapse.
+      // Each slot is 16 px wide. We omit chaos/cog/trash for zones.
+      let cursorX = 6; // running x for the next icon
+      const slotW = 16;
       const tbH = 16;
+      const SLOT_OFFSETS = {
+        statusDot: 0,
+        chaos:     0,
+        cog:       0,
+        trash:     0,
+        collapse:  0,
+      } as Record<string, number>;
+
+      if (showFullToolbar) {
+        SLOT_OFFSETS.statusDot = cursorX + 4; cursorX += slotW;
+        if (showChaos) { SLOT_OFFSETS.chaos = cursorX; cursorX += slotW; }
+        SLOT_OFFSETS.cog = cursorX; cursorX += slotW;
+        SLOT_OFFSETS.trash = cursorX; cursorX += slotW;
+      }
+      if (showCollapseToggle) {
+        SLOT_OFFSETS.collapse = cursorX; cursorX += slotW;
+      }
+      const tbW = cursorX + 4;
       const tbX = w - tbW;
       const tbY = -tbH - 3;
 
       visual.toolbar.position.set(tbX, tbY);
 
-      // Toolbar background pill
       visual.toolbarBg.clear();
       visual.toolbarBg.roundRect(0, 0, tbW, tbH, 3);
       visual.toolbarBg.fill({ color: theme.toolbarBg, alpha: 0.95 });
       visual.toolbarBg.roundRect(0, 0, tbW, tbH, 3);
       visual.toolbarBg.stroke({ width: 1, color: colors.border, alpha: 0.4 });
 
-      // Status dot (left side of toolbar)
-      const dotColor = STATUS_COLORS[status] ?? STATUS_COLORS.idle;
-      visual.statusDot.clear();
-      visual.statusDot.circle(10, tbH / 2, 3);
-      visual.statusDot.fill({ color: dotColor, alpha: status === 'idle' ? 0.4 : 1 });
+      visual.statusDot.visible = showFullToolbar;
+      if (showFullToolbar) {
+        const dotColor = STATUS_COLORS[status] ?? STATUS_COLORS.idle;
+        visual.statusDot.clear();
+        visual.statusDot.circle(SLOT_OFFSETS.statusDot, tbH / 2, 3);
+        visual.statusDot.fill({ color: dotColor, alpha: status === 'idle' ? 0.4 : 1 });
+      }
 
-      // Chaos icon (visible uniquement en mode simulation)
       visual.chaosIcon.visible = showChaos;
-      visual.chaosIcon.position.set(20, 1);
+      if (showChaos) visual.chaosIcon.position.set(SLOT_OFFSETS.chaos, 1);
 
-      // Cog icon (décalé si chaos visible)
-      visual.cogIcon.position.set(showChaos ? 36 : 20, 1);
+      visual.cogIcon.visible = showFullToolbar;
+      if (showFullToolbar) visual.cogIcon.position.set(SLOT_OFFSETS.cog, 1);
 
-      // Trash icon (décalé si chaos visible)
-      visual.trashIcon.position.set(showChaos ? 52 : 36, 1);
+      visual.trashIcon.visible = showFullToolbar;
+      if (showFullToolbar) visual.trashIcon.position.set(SLOT_OFFSETS.trash, 1);
+
+      visual.collapseIcon.visible = showCollapseToggle;
+      if (showCollapseToggle) {
+        const collapsed = (node.data as Record<string, unknown> | undefined)?.collapsed === true;
+        visual.collapseIcon.text = collapsed ? '+' : '−';
+        visual.collapseIcon.position.set(SLOT_OFFSETS.collapse, -1);
+      }
     }
 
     // ── Footer (separator + optional gauges + minimal metrics) ──
@@ -622,6 +761,210 @@ export class NodeRenderer {
         rh.graphics.fill({ color: 0x6366f1, alpha: 0.9 });
       }
     }
+
+    // ── Plugin hints (cornerTag, variant strict/instance, typeTag, description) ──
+    // Doit être appelé EN DERNIER : peut surcharger les graphiques rendus ci-dessus
+    // (cas des variants `strict` et `instance` qui modifient drastiquement le rendu).
+    this.applyPluginHints(visual, node, w, h, colors);
+  }
+
+  /**
+   * Applique les hints fournis par les plugins (`nodeRendererRegistry.resolveHints`)
+   * et les hints visuels du `pluginRegistry` (variant, typeTag, etc.).
+   *
+   * Trois variantes supportées :
+   *  - `instrument` (défaut) : style SIGNAL standard. Seul `cornerTag` peut être surchargé ici.
+   *  - `strict`              : notation C4 stricte. Surcharge bg, hide icon/signalBar/footer/gauges,
+   *                            réutilise contentLine1 pour le typeTag, contentLine2 pour la description.
+   *  - `instance`            : style instrument + badge `↗ refLabel` au-dessus du header.
+   *
+   * Le hint provient de DEUX sources, par priorité :
+   *  1. `nodeRendererRegistry.resolveHints(node, ctx)` — provider dynamique (peut dépendre du contexte
+   *     projet, du level, etc.). Utile pour la rétro-compat YAML legacy.
+   *  2. `pluginRegistry.getNodeVisual(type)` — déclaré statiquement dans `PluginNodeDefinition.visual`.
+   *     Source de vérité pour les types natifs plugin (`c4-person`, `c4-component`, …).
+   */
+  private applyPluginHints(
+    visual: NodeVisual,
+    node: GraphNode,
+    w: number,
+    h: number,
+    colors: { bg: number; border: number; text: number },
+  ): void {
+    const projectMeta = useArchitectureStore.getState().projectMeta;
+    const dynamicHints = nodeRendererRegistry.hasProviders()
+      ? nodeRendererRegistry.resolveHints(node, { projectMeta })
+      : null;
+    const staticVisual = pluginRegistry.getNodeVisual(node.type);
+
+    // Variant : priorité au dynamique, fallback au statique.
+    const variant = dynamicHints?.variant ?? staticVisual?.variant ?? 'instrument';
+    const cornerTag = dynamicHints?.cornerTag ?? staticVisual?.cornerTag;
+    const showDescription = dynamicHints?.showDescription ?? staticVisual?.showDescription ?? false;
+
+    // 1) Variant `strict` : surcharge le rendu standard pour la notation C4 stricte.
+    if (variant === 'strict' && !visual.isZone) {
+      this.applyStrictVariant(visual, node, w, h, colors, staticVisual, showDescription);
+    }
+    // 2) Variant `instance` : style instrument + badge `↗ ref` au-dessus du header.
+    else if (variant === 'instance' && !visual.isZone) {
+      this.applyInstanceVariant(visual, node, w, colors, staticVisual);
+    }
+
+    // 3) Corner tag : applicable à toutes les variantes.
+    this.applyCornerTag(visual, w, cornerTag);
+  }
+
+  /**
+   * Notation C4 stricte (variant `strict`) :
+   *  - Background parchment (ou couleur plugin) avec border net.
+   *  - Pas d'icône header, pas de signal-bar gauche, pas de séparateur, pas de gauges.
+   *  - Header : nom en font-display (cas mixte, gras, plus grand).
+   *  - contentLine1 réutilisée pour le typeTag (`[Person]`, `Component: Repository`, …).
+   *  - contentLine2 réutilisée pour la description (italique).
+   *  - Footer + toolbar conservés (toolbar pour les actions cog/trash).
+   */
+  private applyStrictVariant(
+    visual: NodeVisual,
+    node: GraphNode,
+    w: number,
+    h: number,
+    colors: { bg: number; border: number; text: number },
+    staticVisual: ReturnType<typeof pluginRegistry.getNodeVisual>,
+    showDescription: boolean,
+  ): void {
+    const dataLabel = (node.data?.label as string) ?? node.type;
+    const description = (node.data?.description as string | undefined) ?? '';
+
+    // ── Background parchment : surcharge le bg standard ──
+    visual.bg.clear();
+    visual.bg.roundRect(0, 0, w, h, NODE_RADIUS);
+    visual.bg.fill({ color: colors.bg, alpha: 1 });
+    visual.bg.roundRect(0, 0, w, h, NODE_RADIUS);
+    visual.bg.stroke({ width: 1.5, color: colors.border, alpha: 0.85 });
+
+    // ── Hide signal bar, icon, separator (notation C4 stricte = boîte uniforme) ──
+    visual.signalBar.clear();
+    visual.headerIcon.visible = false;
+    visual.headerStatusIcon.visible = false;
+    visual.separator.clear();
+    visual.gauges.clear();
+
+    // ── Header label : nom en cas mixte, font-display style, plus large ──
+    visual.headerLabel.text = dataLabel;
+    visual.headerLabel.style.fill = colors.text;
+    visual.headerLabel.style.fontSize = 12;
+    visual.headerLabel.style.fontWeight = '600';
+    visual.headerLabel.position.set(NODE_PADDING, 8);
+    visual.headerLabel.scale.x = 1;
+    const maxNameW = w - NODE_PADDING * 2;
+    if (visual.headerLabel.width > maxNameW) {
+      visual.headerLabel.scale.x = maxNameW / visual.headerLabel.width;
+    }
+
+    // ── Type tag : réutilise contentLine1 (mono, dim) ──
+    const typeTagText = resolveTypeTag(staticVisual?.typeTag, node.data ?? {});
+    if (typeTagText) {
+      visual.contentLine1.text = `[${typeTagText}]`;
+      visual.contentLine1.style.fill = colors.border;
+      visual.contentLine1.style.fontSize = 9;
+      visual.contentLine1.style.fontStyle = 'normal';
+      visual.contentLine1.position.set(NODE_PADDING, 26);
+      visual.contentLine1.scale.x = 1;
+      const maxTagW = w - NODE_PADDING * 2;
+      if (visual.contentLine1.width > maxTagW) {
+        visual.contentLine1.scale.x = maxTagW / visual.contentLine1.width;
+      }
+      visual.contentLine1.visible = true;
+    } else {
+      visual.contentLine1.visible = false;
+    }
+
+    // ── Description : réutilise contentLine2 (italique, font-sans) ──
+    if (showDescription && description) {
+      visual.contentLine2.text = description;
+      visual.contentLine2.style.fill = colors.text;
+      visual.contentLine2.style.fontSize = 10;
+      visual.contentLine2.style.fontStyle = 'italic';
+      visual.contentLine2.style.wordWrap = true;
+      visual.contentLine2.style.wordWrapWidth = w - NODE_PADDING * 2;
+      visual.contentLine2.position.set(NODE_PADDING, 42);
+      visual.contentLine2.scale.x = 1;
+      visual.contentLine2.visible = true;
+    } else {
+      visual.contentLine2.visible = false;
+    }
+
+    // ── Footer caché : strict = documentaire, pas de métriques ──
+    visual.footerSeparator.clear();
+    visual.footerGauges.clear();
+    visual.footerMetricsText.visible = false;
+    visual.footerSuccessText.visible = false;
+    visual.footerErrorText.visible = false;
+    visual.footerGaugeLabel.visible = false;
+  }
+
+  /**
+   * Variant `instance` : style instrument standard + badge `↗ refLabel` flotté au-dessus du header.
+   * Le `refLabel` est lu dans `node.data[visual.referenceField]` (typiquement `containerRef`).
+   * Pour l'instant on affiche l'ID brut ; un futur raffinement pourra résoudre le label du nœud référencé.
+   */
+  private applyInstanceVariant(
+    visual: NodeVisual,
+    node: GraphNode,
+    w: number,
+    colors: { bg: number; border: number; text: number },
+    staticVisual: ReturnType<typeof pluginRegistry.getNodeVisual>,
+  ): void {
+    const refField = staticVisual?.referenceField;
+    if (!refField) return;
+    const refValue = (node.data?.[refField] as string | undefined) ?? '';
+    if (!refValue) return;
+
+    // Le badge est dessiné dans contentLine1 (mono, amber, préfixe ↗).
+    visual.contentLine1.text = `↗ ${refValue}`;
+    visual.contentLine1.style.fill = colors.border;
+    visual.contentLine1.style.fontSize = 9;
+    visual.contentLine1.style.fontStyle = 'normal';
+    visual.contentLine1.position.set(NODE_PADDING + 4, 30);
+    visual.contentLine1.scale.x = 1;
+    const maxRefW = w - NODE_PADDING * 2 - 8;
+    if (visual.contentLine1.width > maxRefW) {
+      visual.contentLine1.scale.x = maxRefW / visual.contentLine1.width;
+    }
+    visual.contentLine1.visible = true;
+  }
+
+  /**
+   * Dessine le badge `cornerTag` (ex: "EXT", "L1", "L3") en haut-droite du nœud.
+   * Couleur déduite du tag (mapping conservateur).
+   */
+  private applyCornerTag(visual: NodeVisual, w: number, tag: string | undefined): void {
+    if (!tag) {
+      visual.cornerTagBg.visible = false;
+      visual.cornerTagText.visible = false;
+      return;
+    }
+
+    const isExternal = tag === 'EXT' || tag === 'EXTERNAL';
+    const tagColor = isExternal ? 0xc1483d : 0xd9a04e;
+
+    visual.cornerTagText.text = tag;
+    const textW = visual.cornerTagText.width;
+    const padX = 4;
+    const padY = 2;
+    const tagW = textW + padX * 2;
+    const tagH = 12;
+    const tagX = w - tagW + 1;
+    const tagY = -tagH / 2;
+
+    visual.cornerTagBg.clear();
+    visual.cornerTagBg.rect(tagX, tagY, tagW, tagH);
+    visual.cornerTagBg.fill({ color: tagColor, alpha: 1 });
+    visual.cornerTagBg.visible = true;
+
+    visual.cornerTagText.position.set(tagX + padX, tagY + padY);
+    visual.cornerTagText.visible = true;
   }
 
   private drawFooter(visual: NodeVisual, node: GraphNode | null, w: number): void {
@@ -840,6 +1183,24 @@ export class NodeRenderer {
 
   getNodePosition(nodeId: string): { x: number; y: number } | undefined {
     return this.positions.get(nodeId);
+  }
+
+  /**
+   * Bounds absolus du visuel d'un nœud — origine en haut-gauche, taille effective.
+   * Utilisé par les overlays plugin (ex: visual-diff) pour dessiner par-dessus.
+   * Renvoie `null` si le nœud n'est pas rendu actuellement.
+   */
+  getNodeBounds(nodeId: string): { x: number; y: number; width: number; height: number } | null {
+    const visual = this.visuals.get(nodeId);
+    const pos = this.positions.get(nodeId);
+    if (!visual || !pos) return null;
+    const bgBounds = visual.bg.getLocalBounds();
+    return {
+      x: pos.x,
+      y: pos.y,
+      width: Math.round(bgBounds.width),
+      height: Math.round(bgBounds.height),
+    };
   }
 
   /**

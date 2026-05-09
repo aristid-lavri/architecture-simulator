@@ -4,6 +4,7 @@ import type {
   LoadBalancerBackend,
   LoadBalancerUtilization,
 } from '@/types';
+import type { SimulationRNG } from './SimulationRNG';
 
 interface BackendState {
   nodeId: string;
@@ -31,6 +32,13 @@ interface LoadBalancerState {
  */
 export class LoadBalancerManager {
   private lbStates: Map<string, LoadBalancerState> = new Map();
+
+  /** PRNG injecte pour la selection ponderee (B2.1). Defaut Math.random pour back-compat. */
+  private readonly rng: SimulationRNG;
+
+  constructor(rng?: SimulationRNG) {
+    this.rng = rng ?? (() => Math.random());
+  }
 
   /**
    * Initialize a load balancer
@@ -155,7 +163,7 @@ export class LoadBalancerManager {
    */
   private selectWeighted(state: LoadBalancerState, healthyBackends: BackendState[]): string {
     const totalWeight = healthyBackends.reduce((sum, b) => sum + b.weight, 0);
-    let random = Math.random() * totalWeight;
+    let random = this.rng() * totalWeight;
 
     for (const backend of healthyBackends) {
       random -= backend.weight;
