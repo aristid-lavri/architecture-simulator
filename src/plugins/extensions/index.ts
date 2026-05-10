@@ -115,3 +115,15 @@ export {
   type CanvasOverlayContext,
   type OverlayHint,
 } from './canvas-overlay';
+
+export {
+  canvasHtmlOverlayRegistry,
+  type CanvasHtmlOverlayProps,
+  type CanvasHtmlOverlayRegistration,
+} from './html-overlay';
+
+export {
+  nodeContextMenuRegistry,
+  type NodeContextMenuItem,
+  type NodeContextMenuProvider,
+} from './node-context-menu';

@@ -32,6 +32,7 @@ import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry,
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { MiniMap } from './MiniMap';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
+import { CanvasOverlaySlot } from './CanvasOverlaySlot';
 import { Route } from 'lucide-react';
 
 export function PixiCanvas() {
@@ -1457,6 +1458,10 @@ export function PixiCanvas() {
 
       {/* MiniMap (bottom-right) */}
       <MiniMap nodes={storedNodes} viewport={viewportReady ? viewportRef.current : null} />
+
+      {/* Plugin slot: overlays HTML positionnés absolument au-dessus du canvas
+          (ports de boundary, ghost-edges, split-view, …). Cf. canvasHtmlOverlayRegistry. */}
+      <CanvasOverlaySlot />
 
       {/* Metrics panel (bottom) */}
       <MetricsPanel />
