@@ -29,6 +29,14 @@ export interface NodeRenderHints {
   textColor?: string;
   /** Texte de tag affiché dans le coin (ex: "EXT", "L1", "L3"). */
   cornerTag?: string;
+  /**
+   * Badge secondaire affiché en haut-GAUCHE (distinct du `cornerTag` haut-droit).
+   * Court texte/emoji (1-3 chars) — typiquement des indicateurs d'état runtime injectés
+   * par les plugins (cascade active, émetteur, instrumentation, etc.).
+   *
+   * Le rendu (couleur, taille) est imposé par NodeRenderer ; le hint ne fournit que le texte.
+   */
+  secondaryBadge?: string;
   /** Affiche la description en italique sous le nom (lue depuis node.data.description). */
   showDescription?: boolean;
   /** Champs additionnels libres pour les plugins (lus par leur propre extension renderer). */
