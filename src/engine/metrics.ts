@@ -29,6 +29,11 @@ export class MetricsCollector {
   // Per-server metrics tracking
   private perServerMetrics: Map<string, { requests: number; errors: number; totalLatency: number; lastRpsUpdate: number; rps: number }> = new Map();
 
+  // Phase 1E — Phase 1E : map nodeId → niveau (L1/L2/L3/Deployment/...). Posée par les
+  // plugins (ex. c4-multilevel) au start via setLevelMap(). Permet de filtrer les métriques
+  // per-server par niveau dans le MetricsPanel et les exports.
+  private levelByNodeId: Map<string, string> = new Map();
+
   // Per-hierarchy metrics tracking (aggregated by parent)
   private perHierarchyMetrics: Map<string, { cpu: number; memory: number; requests: number; errors: number }> = new Map();
 
@@ -250,6 +255,34 @@ export class MetricsCollector {
   }
 
   // Per-server metrics
+  /**
+   * Phase 1E — Pose la map de niveaux pour le tagging per-server. Appelée typiquement par
+   * les plugins (c4-multilevel) au boot de la simulation via un hook engine.
+   * Vide implique pas de tagging (compat CE pure).
+   */
+  setLevelMap(map: Map<string, string>): void {
+    this.levelByNodeId = map;
+  }
+
+  /**
+   * Phase 1E — Filtre les métriques per-server par niveau (depuis levelByNodeId).
+   * Si aucun niveau n'a été posé, retourne un Map vide (le caller fallback sur getAllServerMetrics).
+   */
+  getMetricsByLevel(level: string): Map<string, { requests: number; errors: number; totalLatency: number; rps: number }> {
+    const result = new Map<string, { requests: number; errors: number; totalLatency: number; rps: number }>();
+    for (const [nodeId, m] of this.perServerMetrics) {
+      if (this.levelByNodeId.get(nodeId) === level) {
+        result.set(nodeId, { requests: m.requests, errors: m.errors, totalLatency: m.totalLatency, rps: m.rps });
+      }
+    }
+    return result;
+  }
+
+  /** Phase 1E — Retourne le niveau associé à un node, ou undefined si non tagué. */
+  getNodeLevel(nodeId: string): string | undefined {
+    return this.levelByNodeId.get(nodeId);
+  }
+
   recordServerResponse(nodeId: string, success: boolean, latency: number): void {
     const existing = this.perServerMetrics.get(nodeId) || {
       requests: 0, errors: 0, totalLatency: 0, lastRpsUpdate: Date.now(), rps: 0

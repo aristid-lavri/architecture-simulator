@@ -51,6 +51,16 @@ function downsampleToSeconds(samples: { timestamp: number; cpu: number; memory: 
   return result.sort((a, b) => a.timestamp - b.timestamp).slice(-60);
 }
 
+type LevelFilter = 'all' | 'context' | 'containers' | 'components' | 'deployment';
+
+const LEVEL_FILTER_LABELS: Record<LevelFilter, string> = {
+  all: 'All',
+  context: 'L1',
+  containers: 'L2',
+  components: 'L3',
+  deployment: 'D',
+};
+
 function MetricsContent() {
   const metrics = useSimulationStore((s) => s.metrics);
   const extendedMetrics = useSimulationStore((s) => s.extendedMetrics);
@@ -61,7 +71,24 @@ function MetricsContent() {
   const clientGroupStats = useSimulationStore((s) => s.clientGroupStats);
   const metricsTimeSeries = useSimulationStore((s) => s.metricsTimeSeries);
   const nodes = useArchitectureStore((s) => s.nodes);
+  const projectMeta = useArchitectureStore((s) => s.projectMeta);
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all');
+
+  // Phase 1E — Map nodeId → niveau, dérivée de `node.data.level`. Free string côté CE pour
+  // découpler du C4Level enum côté EE. Si aucun node n'a de level, le filtre n'a pas d'effet.
+  const levelByNodeId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const node of nodes) {
+      const level = (node.data as { level?: unknown }).level;
+      if (typeof level === 'string') map.set(node.id, level);
+    }
+    return map;
+  }, [nodes]);
+
+  // True ssi au moins un node a un `data.level` posé (ie. on est en C4 ou similaire).
+  // Si false → on cache les chips de filtre (inutiles).
+  const hasLevels = levelByNodeId.size > 0 && projectMeta?.kind === 'c4';
 
   // Node label map (with type suffix for disambiguation)
   const labelMap = useMemo(() => {
@@ -135,8 +162,32 @@ function MetricsContent() {
       {/* Time Series & Per-Component Filter */}
       {(metricsTimeSeries.length > 0 || resourceUtilizations.size > 0) && (
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-instrument text-[9px] text-muted-foreground">METRICS PAR COMPOSANT</span>
+            {hasLevels && (
+              <div className="flex bg-background border border-border rounded-sm overflow-hidden" data-testid="metrics-level-filter">
+                {(['all', 'context', 'containers', 'components', 'deployment'] as LevelFilter[]).map((lvl) => {
+                  const active = levelFilter === lvl;
+                  return (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => { setLevelFilter(lvl); setSelectedServer(null); }}
+                      aria-pressed={active}
+                      data-testid={`metrics-level-chip-${lvl}`}
+                      className={cn(
+                        'px-1.5 py-0.5 text-[9px] font-mono transition-colors cursor-pointer',
+                        active
+                          ? 'bg-signal-active text-background font-semibold'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+                      )}
+                    >
+                      {LEVEL_FILTER_LABELS[lvl]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <select
               value={selectedServer || ''}
               onChange={(e) => setSelectedServer(e.target.value || null)}
@@ -144,11 +195,13 @@ function MetricsContent() {
               style={{ borderRadius: '2px' }}
             >
               <option value="">Tous (global)</option>
-              {Array.from(resourceUtilizations.keys()).map((nodeId) => (
-                <option key={nodeId} value={nodeId}>
-                  {labelMap.get(nodeId) || nodeId.split('-')[0]}
-                </option>
-              ))}
+              {Array.from(resourceUtilizations.keys())
+                .filter((nodeId) => levelFilter === 'all' || levelByNodeId.get(nodeId) === levelFilter)
+                .map((nodeId) => (
+                  <option key={nodeId} value={nodeId}>
+                    {labelMap.get(nodeId) || nodeId.split('-')[0]}
+                  </option>
+                ))}
             </select>
           </div>
 

@@ -132,6 +132,18 @@ export interface SimulationEngineAPI {
   getSpeed: () => number;
   /** Vrai si la simulation tourne (pas en pause / pas arrêtée). */
   isRunning: () => boolean;
+  /**
+   * Métriques per-server du run en cours (Phase 1E). Utilisé par les validateurs SLO et
+   * autres consommateurs de métriques agrégées. Disponible aussi dans `onSimulationStop`
+   * AVANT le reset des métriques (cf. SimulationEngine.stop).
+   */
+  getAllServerMetrics: () => ReadonlyMap<string, { requests: number; errors: number; totalLatency: number; rps: number }>;
+  /**
+   * Phase 1E — Pose une map nodeId → niveau (L1/L2/L3/Deployment/...) pour permettre le
+   * filtrage des métriques par niveau dans le MetricsPanel. Typiquement appelée dans
+   * `onSimulationStart` par les plugins qui ont la connaissance du niveau (c4-multilevel).
+   */
+  setMetricsLevelMap: (map: Map<string, string>) => void;
 }
 
 /**
@@ -140,8 +152,13 @@ export interface SimulationEngineAPI {
 export interface PluginEngineHooks {
   /** Appelé au démarrage de la simulation. Reçoit l'API moteur pour émettre des requêtes. */
   onSimulationStart?: (api: SimulationEngineAPI) => void;
-  /** Appelé à l'arrêt de la simulation */
-  onSimulationStop?: () => void;
+  /**
+   * Appelé à l'arrêt de la simulation. Reçoit l'API moteur (Phase 1E) pour permettre les
+   * validations post-sim (lecture des métriques per-server avant leur reset). L'api passée
+   * reste valide pour l'appel synchrone uniquement — toute référence conservée hors du
+   * callback devient inerte après reset interne.
+   */
+  onSimulationStop?: (api?: SimulationEngineAPI) => void;
   /** Appelé à chaque tick du moteur (attention: ~60fps) */
   onTick?: (deltaTime: number) => void;
 }
