@@ -1,54 +1,32 @@
 // ============================================
 // Documentation Data — Component Catalog, Edges, Metrics, Design Errors
 // ============================================
+//
+// Les types ont été extraits dans `./docs-types.ts` pour être partagés avec
+// le registre EE (`docsRegistry` du `_design-system`) et le rendu doc.
+// Les 23 entrées CE ci-dessous restent inchangées (strings inline FR) ; les
+// nouveaux champs optionnels (`screenshots`, `eeFeature`, `referenceDoc`,
+// clés i18n) peuvent être ajoutés au fil de l'eau.
 
-// ── Types ──
+export type {
+  DocProperty,
+  DocMetric,
+  DocSection,
+  DocComponent,
+  DocEntry,
+  DocEdgeProperty,
+  DocDesignError,
+  DocScreenshot,
+  DocScreenshotKind,
+  DocScreenshotContext,
+  DocPropertyType,
+  DocCategory,
+  DocCEComponentCategory,
+  DocExtendedCategory,
+  DocDesignErrorSeverity,
+} from './docs-types';
 
-export interface DocProperty {
-  name: string;
-  type: 'enum' | 'number' | 'string' | 'boolean' | 'object';
-  defaultValue: string;
-  description: string;
-}
-
-export interface DocMetric {
-  name: string;
-  description: string;
-  interpretation: string;
-}
-
-export interface DocSection {
-  name: string;
-  description: string;
-  properties: DocProperty[];
-}
-
-export interface DocComponent {
-  name: string;
-  type: string;
-  description: string;
-  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone' | 'security';
-  sections: DocSection[];
-  metrics: DocMetric[];
-  behavior: string;
-  connections: string;
-  protocols: string[];
-}
-
-export interface DocEdgeProperty {
-  name: string;
-  type: string;
-  defaultValue: string;
-  description: string;
-}
-
-export interface DocDesignError {
-  error: string;
-  severity: 'ERROR' | 'WARNING' | 'INFO';
-  description: string;
-  solution: string;
-  category: string;
-}
+import type { DocComponent, DocEdgeProperty, DocDesignError, DocMetric } from './docs-types';
 
 // ── Protocol Compatibility Matrix ──
 

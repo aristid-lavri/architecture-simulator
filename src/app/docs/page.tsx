@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { listDocEntries, subscribeDocs } from '@/_ds';
+import type { DocEntry } from '@/data/docs-types';
 import {
   ArrowLeft,
   ArrowRight,
@@ -439,6 +441,24 @@ export default function DocsPage() {
 
   // Group design errors by category
   const errorCategories = Array.from(new Set(designErrors.map(e => e.category)));
+
+  // Souscription au registre EE — vide en build community (tree-shaké), peuplé
+  // en build enterprise quand les plugins ont fini de s'enregistrer.
+  const eeEntries = useSyncExternalStore(
+    subscribeDocs,
+    listDocEntries,
+    listDocEntries, // server snapshot identique au client (registre vide ou peuplé deterministe)
+  );
+
+  // Sépare les entries EE en deux buckets :
+  //  - eeComponentExtras : entrées dont category matche un type CE — fusionnées dans la grille existante.
+  //  - eeFeatureEntries  : entrées category ∈ {feature, concept, tutorial} → nouvelle section.
+  const eeComponentExtras = eeEntries.filter(e =>
+    ['simulation', 'infrastructure', 'data', 'resilience', 'compute', 'cloud', 'zone', 'security'].includes(e.category),
+  );
+  const eeFeatureEntries = eeEntries.filter(e =>
+    ['feature', 'concept', 'tutorial'].includes(e.category),
+  );
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
@@ -895,13 +915,16 @@ connections:  # Requis — liens entre composants
           />
 
           {componentCategories.map(({ label, color, filter }) => {
-            const comps = componentDocs.filter(c => c.category === filter);
+            const comps: DocEntry[] = [
+              ...componentDocs.filter(c => c.category === filter),
+              ...eeComponentExtras.filter(c => c.category === filter),
+            ];
             if (comps.length === 0) return null;
             return (
               <CategoryAccordion key={filter} label={label} color={color} count={comps.length}>
                 {comps.map(comp => (
                   <ComponentCard
-                    key={comp.type}
+                    key={comp.id ?? comp.type}
                     icon={getComponentIcon(comp.type)}
                     name={comp.name}
                     description={comp.description}
@@ -911,11 +934,45 @@ connections:  # Requis — liens entre composants
                     behavior={comp.behavior}
                     connections={comp.connections}
                     protocols={comp.protocols}
+                    screenshots={comp.screenshots}
+                    referenceDoc={comp.referenceDoc}
                   />
                 ))}
               </CategoryAccordion>
             );
           })}
+
+          {/* ═══ Bonus : Features Enterprise (rendu uniquement si registre EE peuplé) ═══ */}
+          {eeFeatureEntries.length > 0 && (
+            <>
+              <div className="mt-16" />
+              <SectionHeader
+                id="features-enterprise"
+                label="Features Enterprise"
+                icon="03b"
+                color="oklch(0.68 0.18 290)"
+                description={`${eeFeatureEntries.length} features avancées disponibles avec une licence Enterprise active.`}
+              />
+              <CategoryAccordion label="Features EE" color="oklch(0.68 0.18 290)" count={eeFeatureEntries.length}>
+                {eeFeatureEntries.map(comp => (
+                  <ComponentCard
+                    key={comp.id ?? comp.type}
+                    icon={getComponentIcon(comp.type)}
+                    name={comp.name}
+                    description={comp.description}
+                    category={comp.category}
+                    sections={comp.sections}
+                    metrics={comp.metrics}
+                    behavior={comp.behavior}
+                    connections={comp.connections}
+                    protocols={comp.protocols}
+                    screenshots={comp.screenshots}
+                    referenceDoc={comp.referenceDoc}
+                  />
+                ))}
+              </CategoryAccordion>
+            </>
+          )}
 
           {/* ═══ SECTION 4: TEMPLATES ═══ */}
           <div className="mt-16" />

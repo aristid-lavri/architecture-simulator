@@ -121,6 +121,15 @@ declare module '@/_ds' {
   export function listWorkspaces(): Record<string, unknown>[];
   export function subscribeWorkspaces(cb: () => void): () => void;
 
+  // Docs registry (V2 user-facing doc enrichment)
+  // Le vrai type DocEntry est défini dans @/data/docs-types et partagé entre
+  // CE built-in et plugins EE.
+  export function registerDocEntry(entry: import('@/data/docs-types').DocEntry): void;
+  export function unregisterDocEntry(idOrType: string): void;
+  export function getDocEntry(idOrType: string): import('@/data/docs-types').DocEntry | undefined;
+  export function listDocEntries(): import('@/data/docs-types').DocEntry[];
+  export function subscribeDocs(cb: () => void): () => void;
+
   // Hooks
   export function useFeatureGate(feature: string): Record<string, unknown>;
   export function useGovernance(): Record<string, unknown>;
