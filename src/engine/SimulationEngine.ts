@@ -66,6 +66,7 @@ import { RequestChainManager, type RequestChain } from './RequestChainManager';
 import { RequestDispatcher } from './RequestDispatcher';
 import { ClientGroupSimulator } from './ClientGroupSimulator';
 import { createSeededRNG, randomSeed, type SimulationRNG } from './SimulationRNG';
+import type { SimulationScope } from '@/types/simulation-scope';
 
 /**
  * Callbacks fournis par la couche React pour recevoir les mises a jour du moteur.
@@ -212,6 +213,14 @@ export class SimulationEngine {
 
   // O(1) node lookup map — rebuilt on setNodesAndEdges
   private nodeMap: Map<string, GraphNode> = new Map();
+
+  // Phase 1E — Scoped simulation : restreint l'engine à un sous-arbre + injection synthétique
+  // au boundary. Null = simulation pleine (comportement par défaut, inchangé).
+  private simulationScope: SimulationScope | null = null;
+  private syntheticEmitterTimers: Map<string, ReturnType<typeof setInterval>> = new Map();
+  // Référence à l'API moteur exposée aux plugins, conservée pour la passer au hook
+  // `onSimulationStop` (validations post-sim côté plugins).
+  private engineApi: SimulationEngineAPI | null = null;
 
   // Sub-modules
   private serverStateManager: ServerStateManager;
@@ -962,6 +971,21 @@ export class SimulationEngine {
     this.clientGroupSimulator.setNodesAndEdges(nodes, edges, this.nodeMap);
   }
 
+  /**
+   * Phase 1E — Scoped simulation. Configure une simulation restreinte à un sous-arbre +
+   * injection synthétique au boundary. Passer `null` désactive le scope (sim normale).
+   *
+   * Ne déclenche PAS un (re)start — appeler `start()` après. Pendant qu'une simulation est
+   * en cours, changer le scope ne prend effet qu'au prochain start.
+   */
+  setSimulationScope(config: SimulationScope | null): void {
+    this.simulationScope = config;
+  }
+
+  getSimulationScope(): SimulationScope | null {
+    return this.simulationScope;
+  }
+
   /** Ajuste la vitesse de simulation. */
   setSpeed(speed: number): void {
     this.speed = Math.max(0.5, Math.min(4, speed));
@@ -1008,7 +1032,10 @@ export class SimulationEngine {
       getEdges: () => this.edges,
       getSpeed: () => this.speed,
       isRunning: () => this.state === 'running',
+      getAllServerMetrics: () => this.metrics.getAllServerMetrics(),
+      setMetricsLevelMap: (map) => this.metrics.setLevelMap(map),
     };
+    this.engineApi = engineApi;
     for (const hooks of pluginRegistry.getEngineHooks()) {
       hooks.onSimulationStart?.(engineApi);
     }
@@ -1016,6 +1043,7 @@ export class SimulationEngine {
     this.serverStateManager.initializeServerStates();
     this.startHttpClients();
     this.clientGroupSimulator.startClientGroups();
+    this.startSyntheticEmitters();
     this.serverStateManager.startResourceSampling(
       () => this.state,
       this.chainManager.activeChains,
@@ -1052,6 +1080,8 @@ export class SimulationEngine {
     this.clientTimers.forEach((timer) => clearInterval(timer));
     this.clientTimers.clear();
 
+    this.stopSyntheticEmitters();
+
     this.clientGroupSimulator.stop();
     this.virtualClientManager.cleanupAll();
 
@@ -1076,9 +1106,12 @@ export class SimulationEngine {
     const nodeIds = this.nodes.map((n) => n.id);
     this.handlerRegistry.cleanupAll(nodeIds);
 
+    // Passe l'API encore valide pour permettre aux plugins de lire les métriques per-server
+    // AVANT le reset (cf. validateur SLO, Phase 1E). Après ce loop, metrics.reset() vide tout.
     for (const hooks of pluginRegistry.getEngineHooks()) {
-      hooks.onSimulationStop?.();
+      hooks.onSimulationStop?.(this.engineApi ?? undefined);
     }
+    this.engineApi = null;
 
     this.particleManager.stopAnimationLoop();
     this.particleManager.clearAll();
@@ -1128,7 +1161,51 @@ export class SimulationEngine {
     });
   }
 
+  // ============================================================
+  // Phase 1E — Synthetic emitters & scope helpers
+  // ============================================================
+
+  /**
+   * Démarre les timers d'injection synthétique configurés dans `simulationScope`. Chaque
+   * `SyntheticEmitter` produit `requestsPerSecond` requêtes par seconde sur l'edge cible.
+   *
+   * Source du fake-emit = target du edge entering (le boundary crossing est purement
+   * logique, le node "externe" n'existe pas dans la sim). Le scope filter laisse passer
+   * car le target est dans subtreeNodeIds.
+   */
+  private startSyntheticEmitters(): void {
+    if (!this.simulationScope) return;
+    for (const emitter of this.simulationScope.syntheticEmitters) {
+      const edge = this.edges.find((e) => e.id === emitter.edgeId);
+      if (!edge) continue;
+      const targetNode = this.nodeMap.get(edge.target);
+      if (!targetNode) continue;
+
+      const intervalMs = Math.max(50, Math.round(1000 / (emitter.requestsPerSecond * this.speed)));
+
+      // Premier emit immédiat (cohérent avec http-client / c4-l1-emitter).
+      this.sendRequest(targetNode, edge);
+
+      const timer = setInterval(() => {
+        if (this.state !== 'running') return;
+        this.sendRequest(targetNode, edge);
+      }, intervalMs);
+      this.syntheticEmitterTimers.set(emitter.edgeId, timer);
+    }
+  }
+
+  private stopSyntheticEmitters(): void {
+    for (const t of this.syntheticEmitterTimers.values()) clearInterval(t);
+    this.syntheticEmitterTimers.clear();
+  }
+
   private sendRequest(client: GraphNode, edge: GraphEdge, preAcquiredToken?: SimulatedToken): void {
+    // Phase 1E scope filter : drop toute requête originée hors subtree.
+    // Les emitters synthétiques contournent ce filter en passant un `targetNode` interne
+    // comme client (cf. injectSynthetic).
+    if (this.simulationScope && !this.simulationScope.subtreeNodeIds.has(client.id)) {
+      return;
+    }
     const data = client.data as unknown as HttpClientNodeData;
     const targetNode = this.nodeMap.get(edge.target);
     if (!targetNode) return;
@@ -1229,6 +1306,38 @@ export class SimulationEngine {
 
       const chainId = getParticleChainId(requestParticle) || generateParticleId();
       let chain = this.chainManager.getChain(chainId);
+
+      // Phase 1E — Virtual sink : termine la chain à l'arrivée. Le node sink consomme le
+      // trafic et enregistre une réponse synthétique réussie. Cohérent avec "ce qui suit
+      // n'est pas simulé" (les edges sortantes du subtree sont ignorées).
+      // Note : si chain est null, on doit la créer avant de pouvoir enregistrer la réponse.
+      if (this.simulationScope?.sinks.has(server.id)) {
+        if (!chain) {
+          const clientData = client.data as unknown as HttpClientNodeData;
+          chain = {
+            id: chainId,
+            originNodeId: client.id,
+            currentPath: [client.id],
+            edgePath: [],
+            startTime: Date.now(),
+            requestPath: clientData.path,
+            httpMethod: clientData.method,
+            queryType: deriveQueryType(clientData.method),
+            contentType: inferContentType(clientData.path),
+            payloadSizeBytes: estimatePayloadSize(clientData.method),
+            sourceIP: generateSourceIP(this.rng),
+          };
+          this.chainManager.createChain(chain);
+        }
+        chain.currentPath.push(server.id);
+        chain.edgePath.push(edge.id);
+        const elapsed = Date.now() - chain.startTime;
+        this.metrics.recordResponse(true, elapsed);
+        this.pushMetricsUpdate();
+        this.callbacks.onNodeStatusChange(server.id, 'idle');
+        this.chainManager.sendChainResponse(chainId, server);
+        return;
+      }
 
       if (!chain) {
         const clientData = client.data as unknown as HttpClientNodeData;

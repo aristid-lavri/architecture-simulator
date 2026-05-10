@@ -105,6 +105,12 @@ interface SimulationStore {
   faultInjections: Map<string, 'down' | 'degraded'>;
   isolatedNodes: Set<string>;
 
+  // Phase 1E — Scoped simulation
+  /** ID du node racine du sous-arbre simulé en isolation. null = sim normale. */
+  scopedRoot: string | null;
+  /** Configuration des emitters synthétiques injectés au boundary du subtree. */
+  injectedTraffic: Array<{ edgeId: string; requestsPerSecond: number }>;
+
   // Report
   report: SimulationReport | null;
   showReport: boolean;
@@ -190,6 +196,16 @@ interface SimulationStore {
   clearAllFaults: () => void;
   isolateNode: (nodeId: string) => void;
   restoreNode: (nodeId: string) => void;
+
+  // Actions - Scoped simulation (Phase 1E)
+  /**
+   * Configure une simulation scopée. Le caller (typiquement ScopedSimulationDialog) calcule
+   * `subtreeNodeIds`/`sinks` via `findSubtreeNodes`/`findBoundaryEdges` et les passe au moteur
+   * via `engine.setSimulationScope`. Le store conserve seulement `scopedRoot` + `injectedTraffic`
+   * (ce que l'utilisateur a configuré ; le reste est dérivé du graph au moment du start).
+   */
+  setScopedSimulation: (root: string, traffic: Array<{ edgeId: string; requestsPerSecond: number }>) => void;
+  clearScope: () => void;
 }
 
 // localStorage key for persisting the last simulation report
@@ -287,6 +303,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   bottleneckAnalysis: null,
   faultInjections: new Map(),
   isolatedNodes: new Set(),
+  scopedRoot: null,
+  injectedTraffic: [],
   report: loadPersistedReport(),
   showReport: false,
   analysisMode: false,
@@ -667,6 +685,10 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     newNodeStates.set(nodeId, { nodeId, status: 'idle', lastUpdated: Date.now() });
     return { faultInjections: newFaults, isolatedNodes: newIsolated, nodeStates: newNodeStates };
   }),
+
+  // Phase 1E — Scoped simulation
+  setScopedSimulation: (root, traffic) => set({ scopedRoot: root, injectedTraffic: traffic }),
+  clearScope: () => set({ scopedRoot: null, injectedTraffic: [] }),
 }));
 
 /**

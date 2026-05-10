@@ -2,39 +2,28 @@
 
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ExternalLink } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { DocCategory, DocMetric, DocProperty, DocScreenshot, DocSection } from '@/data/docs-types';
+import { DocScreenshotGallery } from './DocScreenshot';
 
-interface PropertyInfo {
-  name: string;
-  type: string;
-  defaultValue: string;
-  description: string;
-}
-
-interface DocSection {
-  name: string;
-  description: string;
-  properties: PropertyInfo[];
-}
-
-interface DocMetric {
-  name: string;
-  description: string;
-  interpretation: string;
-}
+type PropertyInfo = DocProperty;
 
 interface ComponentCardProps {
   icon: ReactNode;
   name: string;
   description: string;
-  category: 'simulation' | 'infrastructure' | 'data' | 'resilience' | 'compute' | 'cloud' | 'zone' | 'security';
+  category: DocCategory;
   properties?: PropertyInfo[];
   sections?: DocSection[];
   metrics?: DocMetric[];
   behavior?: string;
   connections?: string;
   protocols?: string[];
+  /** Captures d'écran de niveau entrée (haut du contenu déplié). */
+  screenshots?: DocScreenshot[];
+  /** Lien vers la référence dev (REFERENCE-*.md) — affiché en footer. */
+  referenceDoc?: string;
 }
 
 const categoryColors: Record<string, { border: string; accent: string; text: string; hover: string }> = {
@@ -46,7 +35,12 @@ const categoryColors: Record<string, { border: string; accent: string; text: str
   cloud: { border: 'border-sky-500/20', accent: 'bg-sky-500', text: 'text-sky-400', hover: 'hover:border-sky-500/40' },
   security: { border: 'border-pink-500/20', accent: 'bg-pink-500', text: 'text-pink-400', hover: 'hover:border-pink-500/40' },
   zone: { border: 'border-slate-500/20', accent: 'bg-slate-500', text: 'text-slate-400', hover: 'hover:border-slate-500/40' },
+  feature: { border: 'border-violet-500/20', accent: 'bg-violet-500', text: 'text-violet-400', hover: 'hover:border-violet-500/40' },
+  concept: { border: 'border-indigo-500/20', accent: 'bg-indigo-500', text: 'text-indigo-400', hover: 'hover:border-indigo-500/40' },
+  tutorial: { border: 'border-teal-500/20', accent: 'bg-teal-500', text: 'text-teal-400', hover: 'hover:border-teal-500/40' },
 };
+
+const FALLBACK_COLORS = categoryColors.feature;
 
 const typeColors: Record<string, string> = {
   enum: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
@@ -87,15 +81,21 @@ function PropertiesTable({ properties }: { properties: PropertyInfo[] }) {
   );
 }
 
-export function ComponentCard({ icon, name, description, category, properties, sections, metrics, behavior, connections, protocols }: ComponentCardProps) {
+export function ComponentCard({ icon, name, description, category, properties, sections, metrics, behavior, connections, protocols, screenshots, referenceDoc }: ComponentCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const colors = categoryColors[category];
+  const colors = categoryColors[category] ?? FALLBACK_COLORS;
 
   const totalProps = sections
     ? sections.reduce((sum, s) => sum + s.properties.length, 0)
     : (properties?.length ?? 0);
 
-  const hasExpandedContent = totalProps > 0 || (metrics && metrics.length > 0) || behavior || connections;
+  const hasExpandedContent =
+    totalProps > 0
+    || (metrics && metrics.length > 0)
+    || !!behavior
+    || !!connections
+    || (screenshots && screenshots.length > 0)
+    || !!referenceDoc;
 
   return (
     <div
@@ -132,6 +132,13 @@ export function ComponentCard({ icon, name, description, category, properties, s
       {expanded && hasExpandedContent && (
         <div className="border-t border-border/50 px-4 pb-4">
 
+          {/* Top-level screenshots (entry preview) */}
+          {screenshots && screenshots.length > 0 && (
+            <div className="mt-3">
+              <DocScreenshotGallery screenshots={screenshots} />
+            </div>
+          )}
+
           {/* Sections mode */}
           {sections && sections.length > 0 && (
             <div className="mt-3 space-y-4">
@@ -149,6 +156,11 @@ export function ComponentCard({ icon, name, description, category, properties, s
                   {section.properties.length > 0 && (
                     <div className="ml-2.5">
                       <PropertiesTable properties={section.properties} />
+                    </div>
+                  )}
+                  {section.screenshots && section.screenshots.length > 0 && (
+                    <div className="ml-2.5 mt-2">
+                      <DocScreenshotGallery screenshots={section.screenshots} />
                     </div>
                   )}
                 </div>
@@ -226,6 +238,23 @@ export function ComponentCard({ icon, name, description, category, properties, s
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Reference doc footer link */}
+          {referenceDoc && (
+            <div className="mt-4 pt-3 border-t border-border/30">
+              <a
+                href={referenceDoc}
+                target="_blank"
+                rel="noreferrer"
+                className={cn(
+                  'inline-flex items-center gap-1 text-[10px] font-mono uppercase text-muted-foreground/70 hover:text-foreground transition-colors',
+                )}
+              >
+                Référence technique
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           )}
         </div>

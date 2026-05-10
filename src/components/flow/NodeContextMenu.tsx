@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { useSimulationStore } from '@/store/simulation-store';
+import { useArchitectureStore } from '@/store/architecture-store';
 import { useTranslation } from '@/i18n';
 import { Skull, AlertTriangle, RotateCcw, Unplug } from 'lucide-react';
+import { nodeContextMenuRegistry, type NodeContextMenuItem } from '@/plugins/extensions';
 
 interface ContextMenuPosition {
   x: number;
@@ -27,7 +29,20 @@ export function NodeContextMenu({ position, onClose }: NodeContextMenuProps) {
   const isolateNode = useSimulationStore((s) => s.isolateNode);
   const faultInjections = useSimulationStore((s) => s.faultInjections);
   const isolatedNodes = useSimulationStore((s) => s.isolatedNodes);
+  const allNodes = useArchitectureStore((s) => s.nodes);
+  const projectMeta = useArchitectureStore((s) => s.projectMeta);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Phase 1E — Items contextuels injectés par les plugins (ex : "Simulate subtree only" en C4).
+  const pluginItems = useMemo<NodeContextMenuItem[]>(() => {
+    if (!position) return [];
+    const node = allNodes.find((n) => n.id === position.nodeId);
+    if (!node) return [];
+    return nodeContextMenuRegistry.resolveItems(node, projectMeta).map((item) => ({
+      ...item,
+      onClick: () => { item.onClick(); onClose(); },
+    }));
+  }, [position, allNodes, projectMeta, onClose]);
 
   // Close on click outside or Escape
   useEffect(() => {
@@ -106,6 +121,21 @@ export function NodeContextMenu({ position, onClose }: NodeContextMenuProps) {
           {item.label}
         </button>
       ))}
+      {pluginItems.length > 0 && (
+        <>
+          <div className="my-1 border-t border-border" />
+          {pluginItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={item.onClick}
+              className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-sm cursor-pointer transition-colors ${item.className ?? 'text-foreground hover:bg-secondary'}`}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
+        </>
+      )}
     </div>
   );
 }

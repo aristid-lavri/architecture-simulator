@@ -18,7 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical } from 'lucide-react';
+import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical, HelpCircle } from 'lucide-react';
+import { PropertyHelpDrawer } from '@/components/properties/PropertyHelpDrawer';
 import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, AutoTokenMode, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution, HostServerNodeData, HostPortMapping } from '@/types';
 import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
 import type { ApiServiceNodeData, BackgroundJobNodeData, ApiServiceProtocol, BackgroundJobType, IdentityProviderNodeData, IdentityProviderType, IdPProtocol, IdPTokenFormat } from '@/types';
@@ -47,6 +48,10 @@ export function PropertiesPanel() {
   const { isPropertiesPanelOpen, setPropertiesPanelOpen, selectedNodeId, setSelectedNodeId, selectedEdgeId, setSelectedEdgeId } =
     useAppStore();
   const { nodes, edges, updateNode, removeNode, updateEdge, removeEdge } = useArchitectureStore();
+
+  // Drawer d'aide riche pour le composant sélectionné. Ouvre `PropertyHelpDrawer`
+  // alimenté par le registre EE + les entrées CE built-in.
+  const [helpDrawerOpen, setHelpDrawerOpen] = useState(false);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const projectMeta = useArchitectureStore((s) => s.projectMeta);
@@ -449,14 +454,32 @@ export function PropertiesPanel() {
           <Settings className="h-4 w-4 text-muted-foreground" />
           <span className="font-medium text-sm">Propriétés</span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setPropertiesPanelOpen(false)}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Aide sur ce composant"
+            title="Aide sur ce composant"
+            onClick={() => setHelpDrawerOpen(true)}
+          >
+            <HelpCircle className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setPropertiesPanelOpen(false)}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
+
+      {/* Help drawer (alimenté par registre EE + docs CE built-in). */}
+      <PropertyHelpDrawer
+        open={helpDrawerOpen}
+        onOpenChange={setHelpDrawerOpen}
+        entryId={selectedNode.type ?? ''}
+      />
 
       {/* Content */}
       <ScrollArea className="flex-1 overflow-auto">

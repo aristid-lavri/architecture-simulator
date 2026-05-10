@@ -141,4 +141,38 @@ describe('MetricsCollector', () => {
       expect(collector.getRejectionCount()).toBe(0);
     });
   });
+
+  describe('setLevelMap + getMetricsByLevel (Phase 1E)', () => {
+    it('returns empty map by default (no levels posed)', () => {
+      collector.recordServerResponse('a', true, 100);
+      expect(collector.getMetricsByLevel('containers').size).toBe(0);
+    });
+
+    it('filters per-server metrics by level', () => {
+      const map = new Map<string, string>([
+        ['a', 'containers'],
+        ['b', 'components'],
+        ['c', 'containers'],
+      ]);
+      collector.setLevelMap(map);
+      collector.recordServerResponse('a', true, 100);
+      collector.recordServerResponse('b', true, 50);
+      collector.recordServerResponse('c', true, 200);
+
+      const l2 = collector.getMetricsByLevel('containers');
+      expect(l2.size).toBe(2);
+      expect(l2.has('a')).toBe(true);
+      expect(l2.has('c')).toBe(true);
+
+      const l3 = collector.getMetricsByLevel('components');
+      expect(l3.size).toBe(1);
+      expect(l3.has('b')).toBe(true);
+    });
+
+    it('getNodeLevel returns the posed level or undefined', () => {
+      collector.setLevelMap(new Map([['a', 'context']]));
+      expect(collector.getNodeLevel('a')).toBe('context');
+      expect(collector.getNodeLevel('unknown')).toBeUndefined();
+    });
+  });
 });
