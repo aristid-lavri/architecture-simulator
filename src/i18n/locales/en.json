@@ -723,5 +723,94 @@
     "stable": "Stable",
     "noData": "Waiting for data…",
     "allNodes": "All components"
+  },
+  "rules": {
+    "toast": {
+      "blocked": "Connection not possible: {reason}"
+    },
+    "suppression": {
+      "dialog": {
+        "title": "Suppress rule {ruleId}",
+        "reason": "Justification (required)",
+        "reasonPlaceholder": "E.g. pre-prod debug DB, intentional for this sprint…",
+        "confirm": "Suppress",
+        "cancel": "Cancel",
+        "errorEmptyReason": "Justification is required."
+      },
+      "tooltip": "Suppressed on {date}: {reason}",
+      "menuLabel": "Suppress this rule"
+    },
+    "panel": {
+      "category": "Rules",
+      "suppressedSuffix": " (suppressed)"
+    },
+    "core-sanity": {
+      "physical": {
+        "db-cannot-initiate": {
+          "short": "DB cannot initiate",
+          "message": "A database cannot initiate outbound connections."
+        },
+        "cache-cannot-initiate": {
+          "short": "Cache cannot initiate",
+          "message": "A cache cannot initiate a connection."
+        },
+        "cdn-cannot-target-client": {
+          "short": "CDN → client forbidden",
+          "message": "A CDN cannot target a client: the client is the one calling the CDN."
+        },
+        "cache-cannot-target-client": {
+          "short": "Cache → client forbidden",
+          "message": "A cache cannot directly target a client."
+        },
+        "db-cannot-target-client": {
+          "short": "DB → client forbidden",
+          "message": "A database cannot directly target a client."
+        },
+        "client-cannot-target-client": {
+          "short": "Client → client forbidden",
+          "message": "Two clients cannot be directly connected to each other."
+        },
+        "firewall-cannot-initiate": {
+          "short": "Firewall/WAF cannot initiate",
+          "message": "A firewall or WAF cannot initiate traffic — it only filters."
+        },
+        "dns-cannot-be-target-of-data": {
+          "short": "DNS as data target forbidden",
+          "message": "A DNS cannot be the target of application traffic (resolution only)."
+        },
+        "identity-provider-cannot-initiate": {
+          "short": "IdP cannot initiate",
+          "message": "An identity provider cannot initiate a request to an application service."
+        }
+      },
+      "routing": {
+        "queue-direct-to-queue": {
+          "short": "Queue → queue direct forbidden",
+          "message": "A queue cannot be directly connected to another queue (a consumer is required between them)."
+        },
+        "client-direct-to-db": {
+          "short": "Client → DB direct (suspicious)",
+          "message": "Client connected directly to a database — no service in front. Security risk."
+        },
+        "client-direct-to-cache": {
+          "short": "Client → cache direct (suspicious)",
+          "message": "Client connected directly to a cache — unusual access path."
+        },
+        "lb-targets-lb": {
+          "short": "LB → LB (suspicious)",
+          "message": "A load balancer targets another load balancer — LB chain rare in production."
+        },
+        "serverless-targets-client": {
+          "short": "Serverless → client (suspicious)",
+          "message": "A serverless function targets a client — unusual push pattern, verify intent."
+        }
+      },
+      "topology": {
+        "orphan-circuit-breaker": {
+          "short": "Orphan circuit breaker",
+          "message": "Circuit breaker traversed by a single edge with no fan-out: it serves no purpose in this configuration."
+        }
+      }
+    }
   }
 }

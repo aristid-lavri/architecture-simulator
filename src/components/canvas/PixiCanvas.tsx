@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useCallback, useState, useSyncExternalStore } from 'react';
 import { Application, Container, Graphics } from 'pixi.js';
 import { Viewport } from 'pixi-viewport';
 import { useAppStore } from '@/store/app-store';
@@ -32,13 +32,39 @@ import { computeContainerSize, resizeAncestors, resizeContainerAndAncestors } fr
 import { applyCollapseView } from '@/lib/collapse-view';
 import { applyPluginCanvasView } from '@/lib/plugin-canvas-view';
 import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry, pseudoEdgeRegistry, viewportAnimatorRegistry, type ViewportAnimator } from '@/plugins/extensions';
+import { isEdgeRejection } from '@/plugins/extensions/edge-creation';
+import { useTranslation } from '@/i18n';
+import { addSuppression } from '@/lib/rules-engine';
+import { EdgeContextMenu } from './EdgeContextMenu';
+import { RuleSuppressionDialog } from './RuleSuppressionDialog';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { MiniMap } from './MiniMap';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
 import { CanvasOverlaySlot } from './CanvasOverlaySlot';
 import { Route } from 'lucide-react';
 
+interface EdgeRejectionToast {
+  messageKey: string;
+  params?: Record<string, string | number>;
+  /** ms timestamp; used to auto-dismiss + as a key to retrigger animation when same message fires twice */
+  shownAt: number;
+}
+
 export function PixiCanvas() {
+  const { t } = useTranslation();
+  const [edgeRejection, setEdgeRejection] = useState<EdgeRejectionToast | null>(null);
+
+  // Auto-dismiss the rejection banner after 4s.
+  useEffect(() => {
+    if (!edgeRejection) return;
+    const timer = setTimeout(() => setEdgeRejection(null), 4000);
+    return () => clearTimeout(timer);
+  }, [edgeRejection]);
+
+  // Rules-engine context menu (right-click on a violating edge) + suppression dialog.
+  const [edgeCtxMenu, setEdgeCtxMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
+  const [suppressionTarget, setSuppressionTarget] = useState<{ edgeId: string; ruleId: string } | null>(null);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
@@ -93,6 +119,21 @@ export function PixiCanvas() {
   const setSelectedNodeId = useAppStore((s) => s.setSelectedNodeId);
   const selectedEdgeId = useAppStore((s) => s.selectedEdgeId);
   const setSelectedEdgeId = useAppStore((s) => s.setSelectedEdgeId);
+  const validationResult = useAppStore((s) => s.validationResult);
+
+  // Map<edgeId, count of active rule warnings> — fed to EdgeRenderer for the midpoint badge.
+  // Updated whenever the user re-runs validation (the existing VALID button in Header).
+  const warningCountByEdgeId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!validationResult) return map;
+    for (const issue of validationResult.issues) {
+      if (issue.category !== 'rule' || issue.severity !== 'warning') continue;
+      for (const eid of issue.edgeIds ?? []) {
+        map.set(eid, (map.get(eid) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [validationResult]);
 
   // Architecture store
   const {
@@ -437,7 +478,7 @@ export function PixiCanvas() {
     edgeRendererRef.current.renderEdges(view.visibleEdges, view.visibleNodes, selectedEdgeId, edgeRoutingMode, {
       focusNodeId: selectedNodeId ?? hoveredNodeIdRef.current,
       protocolFilters: edgeProtocolFiltersRef.current,
-    });
+    }, warningCountByEdgeId);
 
     // Rebuild particle path cache against the visible edges and tell the renderer how
     // to translate underlying particle edge ids to their visible aggregate.
@@ -451,7 +492,7 @@ export function PixiCanvas() {
     prevSyncVersionRef.current = _syncVersion;
     // Hover and protocol-filter changes do NOT re-run this expensive sync — they go
     // through the dedicated focus effect below, which only touches alphas.
-  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady, projectMeta, _canvasFilterVersion, _pseudoEdgeVersion]);
+  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady, projectMeta, _canvasFilterVersion, _pseudoEdgeVersion, warningCountByEdgeId]);
 
   // ============================================
   // Plugin overlay layer (visual-diff EE-3, …)
@@ -591,6 +632,9 @@ export function PixiCanvas() {
     edgeRendererRef.current.onEdgeHover = (edgeId: string | null) => {
       useAppStore.getState().setHoveredEdgeId(edgeId);
     };
+    edgeRendererRef.current.onEdgeRightClick = (edgeId, x, y) => {
+      setEdgeCtxMenu({ edgeId, x, y });
+    };
 
     // Reconnection drag: pause viewport and listen for global move/up
     edgeRendererRef.current.onReconnectStart = () => {
@@ -649,12 +693,22 @@ export function PixiCanvas() {
         data: {} as Record<string, unknown>,
       };
       // Laisser les plugins enrichir/valider la création (ex: pose `parentEdgeId` côté C4
-      // sous drill, ou refus si source/target hors des conteneurs raffinés).
+      // sous drill, refus rules-engine sur connexion impossible, etc.).
       const decoratedData = edgeCreationDecoratorRegistry.apply(draftEdge, {
         projectMeta: useArchitectureStore.getState().projectMeta,
+        getNodes: () => useArchitectureStore.getState().nodes,
+        getEdges: () => useArchitectureStore.getState().edges,
       });
+      if (isEdgeRejection(decoratedData)) {
+        setEdgeRejection({
+          messageKey: decoratedData.messageKey,
+          params: decoratedData.params,
+          shownAt: Date.now(),
+        });
+        return;
+      }
       if (decoratedData === null) {
-        // Decorator a refusé la création — abandon silencieux (le plugin a déjà loggé/feedback).
+        // Legacy silent rejection (decorators retournant null sans message).
         return;
       }
       const newEdge: GraphEdge = {
@@ -1478,6 +1532,18 @@ export function PixiCanvas() {
         style={{ cursor: isDragging ? 'grabbing' : 'default' }}
       />
 
+      {/* Edge rejection toast (rules-engine block) */}
+      {edgeRejection && (
+        <div
+          key={edgeRejection.shownAt}
+          role="alert"
+          onClick={() => setEdgeRejection(null)}
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-md px-4 py-2 rounded-md border border-signal-critical/40 bg-signal-critical/10 backdrop-blur text-signal-critical text-xs font-mono shadow-lg cursor-pointer animate-in fade-in slide-in-from-top-2 duration-200"
+        >
+          ✕ {t(edgeRejection.messageKey)}
+        </div>
+      )}
+
       {/* Reopen components panel button */}
       {!isComponentsPanelOpen && isEditable && (
         <button
@@ -1554,6 +1620,42 @@ export function PixiCanvas() {
           onClose={() => setContextMenu(null)}
         />
       )}
+
+      {/* Rules-engine: right-click context menu on a violating edge */}
+      {edgeCtxMenu && (() => {
+        const edge = storedEdges.find((e) => e.id === edgeCtxMenu.edgeId);
+        if (!edge) return null;
+        const activeRuleIds = (validationResult?.issues ?? [])
+          .filter((i) => i.category === 'rule' && i.severity === 'warning'
+            && i.ruleId !== undefined
+            && (i.edgeIds ?? []).includes(edgeCtxMenu.edgeId))
+          .map((i) => i.ruleId as string);
+        return (
+          <EdgeContextMenu
+            x={edgeCtxMenu.x}
+            y={edgeCtxMenu.y}
+            edge={edge}
+            activeRuleIds={activeRuleIds}
+            onSuppressRule={(ruleId) => setSuppressionTarget({ edgeId: edgeCtxMenu.edgeId, ruleId })}
+            onClose={() => setEdgeCtxMenu(null)}
+          />
+        );
+      })()}
+
+      {/* Rules-engine: suppression dialog */}
+      <RuleSuppressionDialog
+        open={suppressionTarget !== null}
+        ruleId={suppressionTarget?.ruleId ?? null}
+        onCancel={() => setSuppressionTarget(null)}
+        onConfirm={(reason) => {
+          if (!suppressionTarget) return;
+          const edge = storedEdges.find((e) => e.id === suppressionTarget.edgeId);
+          if (!edge) { setSuppressionTarget(null); return; }
+          const updated = addSuppression(edge, suppressionTarget.ruleId, reason);
+          useArchitectureStore.getState().updateEdge(edge.id, updated.data ?? {});
+          setSuppressionTarget(null);
+        }}
+      />
 
       {/* MiniMap (bottom-right) */}
       <MiniMap nodes={storedNodes} viewport={viewportReady ? viewportRef.current : null} />

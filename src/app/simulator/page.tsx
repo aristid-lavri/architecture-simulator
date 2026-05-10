@@ -5,6 +5,7 @@ import { Header, ComponentsPanel, PropertiesPanel, DiagramTabs, NewProjectDialog
 import { PixiCanvas } from '@/components/canvas/PixiCanvas';
 import { UISlotHost, projectKindRegistry } from '@/plugins/extensions';
 import { bootstrapEnterprisePlugins } from '@/plugins/__enterprise-bootstrap';
+import { registerCoreRulesEngine } from '@/lib/rules-engine';
 import { SimulationReportDrawer } from '@/components/simulation/SimulationReportDrawer';
 import { OwaspValidationDrawer } from '@/components/simulation/OwaspValidationDrawer';
 import { AnalysisView } from '@/components/analysis/AnalysisView';
@@ -27,7 +28,7 @@ export default function SimulatorPage() {
 
   useEffect(() => {
     initialize();
-    // Charge les plugins EE si disponibles (no-op en mode community).
+    registerCoreRulesEngine();
     void bootstrapEnterprisePlugins();
   }, [initialize]);
 

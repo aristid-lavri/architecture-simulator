@@ -1,4 +1,4 @@
-import type { GraphEdge } from '@/types/graph';
+import type { GraphNode, GraphEdge } from '@/types/graph';
 import type { ProjectKindMeta } from './project-kind';
 
 /**
@@ -10,6 +10,32 @@ export type DraftEdge = Pick<GraphEdge, 'id' | 'source' | 'target' | 'sourceHand
 
 export interface EdgeCreationContext {
   projectMeta: ProjectKindMeta;
+  /** Lecture lazy de l'état courant du graphe — utilisée par les decorators contextuels (ex: rules-engine). */
+  getNodes?: () => GraphNode[];
+  getEdges?: () => GraphEdge[];
+}
+
+/**
+ * Refus explicite de création d'edge avec message i18n. Permet à un decorator
+ * (typiquement le rules-engine) de signaler à l'appelant qu'il doit afficher un toast
+ * et annuler la création — variante "loud" du `null` historique (qui reste un refus silencieux).
+ */
+export type EdgeRejection = {
+  reject: true;
+  messageKey: string;
+  params?: Record<string, string | number>;
+};
+
+/**
+ * Type guard pour distinguer un `EdgeRejection` d'un `data` enrichi.
+ */
+export function isEdgeRejection(v: unknown): v is EdgeRejection {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    (v as { reject?: unknown }).reject === true &&
+    typeof (v as { messageKey?: unknown }).messageKey === 'string'
+  );
 }
 
 /**
@@ -17,12 +43,13 @@ export interface EdgeCreationContext {
  *
  * Retours possibles :
  *  - `Record<string, unknown>` : nouveau `data` à merger.
- *  - `null` : bloque la création (validation échouée). Charge au plugin d'afficher un toast/feedback.
+ *  - `null` : bloque la création silencieusement (validation échouée).
+ *  - `EdgeRejection` : bloque la création AVEC message i18n à afficher (toast/feedback).
  */
 export type EdgeCreationDecorator = (
   draftEdge: DraftEdge,
   ctx: EdgeCreationContext,
-) => GraphEdge['data'] | null;
+) => GraphEdge['data'] | null | EdgeRejection;
 
 interface DecoratorEntry {
   id: string;
@@ -46,9 +73,11 @@ class EdgeCreationDecoratorRegistryImpl {
    *
    * Retour :
    *  - Le `data` final si tous les decorators ont accepté la création.
-   *  - `null` si un decorator a refusé (la création doit être annulée par l'appelant).
+   *  - `null` si un decorator a refusé silencieusement (la création doit être annulée par l'appelant).
+   *  - `EdgeRejection` si un decorator a refusé avec message à afficher (l'appelant utilise
+   *    `isEdgeRejection()` pour distinguer et surfacer un toast i18n).
    */
-  apply(draftEdge: DraftEdge, ctx: EdgeCreationContext): GraphEdge['data'] | null {
+  apply(draftEdge: DraftEdge, ctx: EdgeCreationContext): GraphEdge['data'] | null | EdgeRejection {
     if (this.decorators.size === 0) return draftEdge.data;
     const sorted = Array.from(this.decorators.values()).sort(
       (a, b) => a.sortOrder - b.sortOrder,
@@ -58,6 +87,7 @@ class EdgeCreationDecoratorRegistryImpl {
       try {
         const next = decorator({ ...draftEdge, data }, ctx);
         if (next === null) return null;
+        if (isEdgeRejection(next)) return next;
         if (next && next !== data) {
           data = { ...data, ...next };
         }

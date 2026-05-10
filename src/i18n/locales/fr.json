@@ -723,5 +723,94 @@
     "stable": "Stable",
     "noData": "En attente de données…",
     "allNodes": "Tous les composants"
+  },
+  "rules": {
+    "toast": {
+      "blocked": "Connexion impossible : {reason}"
+    },
+    "suppression": {
+      "dialog": {
+        "title": "Supprimer la règle {ruleId}",
+        "reason": "Justification (obligatoire)",
+        "reasonPlaceholder": "Ex : DB pre-prod debug, intentionnel pour ce sprint…",
+        "confirm": "Supprimer",
+        "cancel": "Annuler",
+        "errorEmptyReason": "La justification est obligatoire."
+      },
+      "tooltip": "Supprimée le {date} : {reason}",
+      "menuLabel": "Supprimer cette règle"
+    },
+    "panel": {
+      "category": "Règles",
+      "suppressedSuffix": " (supprimée)"
+    },
+    "core-sanity": {
+      "physical": {
+        "db-cannot-initiate": {
+          "short": "DB ne peut pas initier",
+          "message": "Une base de données ne peut pas initier une connexion sortante."
+        },
+        "cache-cannot-initiate": {
+          "short": "Cache ne peut pas initier",
+          "message": "Un cache ne peut pas initier une connexion."
+        },
+        "cdn-cannot-target-client": {
+          "short": "CDN → client interdit",
+          "message": "Un CDN ne peut pas cibler un client : c'est le client qui appelle le CDN."
+        },
+        "cache-cannot-target-client": {
+          "short": "Cache → client interdit",
+          "message": "Un cache ne peut pas cibler directement un client."
+        },
+        "db-cannot-target-client": {
+          "short": "DB → client interdit",
+          "message": "Une base de données ne peut pas cibler directement un client."
+        },
+        "client-cannot-target-client": {
+          "short": "Client → client interdit",
+          "message": "Deux clients ne peuvent pas être directement reliés entre eux."
+        },
+        "firewall-cannot-initiate": {
+          "short": "Firewall/WAF ne peut pas initier",
+          "message": "Un firewall ou WAF ne peut pas initier de trafic — il filtre uniquement."
+        },
+        "dns-cannot-be-target-of-data": {
+          "short": "DNS comme cible de données interdit",
+          "message": "Un DNS ne peut pas être la cible de trafic applicatif (résolution uniquement)."
+        },
+        "identity-provider-cannot-initiate": {
+          "short": "IdP ne peut pas initier",
+          "message": "Un fournisseur d'identité ne peut pas initier une requête vers un service applicatif."
+        }
+      },
+      "routing": {
+        "queue-direct-to-queue": {
+          "short": "Queue → queue direct interdit",
+          "message": "Une queue ne peut pas être directement reliée à une autre queue (un consumer est requis entre les deux)."
+        },
+        "client-direct-to-db": {
+          "short": "Client → DB direct (suspect)",
+          "message": "Client connecté directement à une base de données — aucun service en façade. Risque de sécurité."
+        },
+        "client-direct-to-cache": {
+          "short": "Client → cache direct (suspect)",
+          "message": "Client connecté directement à un cache — chemin d'accès inhabituel."
+        },
+        "lb-targets-lb": {
+          "short": "LB → LB (suspect)",
+          "message": "Un load-balancer cible un autre load-balancer — chaîne de LB rare en production."
+        },
+        "serverless-targets-client": {
+          "short": "Serverless → client (suspect)",
+          "message": "Une fonction serverless cible un client — pattern push inhabituel, vérifier l'intention."
+        }
+      },
+      "topology": {
+        "orphan-circuit-breaker": {
+          "short": "Circuit breaker orphelin",
+          "message": "Circuit-breaker traversé par une seule edge sans fan-out : il ne sert à rien dans cette configuration."
+        }
+      }
+    }
   }
 }
