@@ -76,6 +76,13 @@ interface NodeVisual {
   // Corner tag (apporté par les hints de plugin via nodeRendererRegistry, ex: "EXT", "L1", "L3").
   cornerTagBg: Graphics;
   cornerTagText: Text;
+  // Secondary badge (haut-GAUCHE) : indicateurs additifs injectés par plugins (ex: "⚡", "📡").
+  // Distinct du cornerTag (haut-DROIT) pour ne pas concurrencer le tag de niveau.
+  secondaryBadgeBg: Graphics;
+  secondaryBadgeText: Text;
+  // Detail indicator (haut-DROIT, juste sous le cornerTag) : signal "has-detail" indiquant
+  // qu'un drill-down est disponible (ex: c4-software-system avec containers enfants). D4.3.
+  detailIndicatorText: Text;
   resizeHandles: ResizeHandle[];
   nodeId: string;
   nodeType: GraphNode['type'];
@@ -408,6 +415,35 @@ export class NodeRenderer {
     });
     cornerTagText.visible = false;
 
+    // Secondary badge (top-left). Distinct du cornerTag (top-right) ; sert aux plugins
+    // pour injecter des indicateurs d'état runtime additifs (cascade ⚡, emitter 📡, etc.).
+    const secondaryBadgeBg = new Graphics();
+    secondaryBadgeBg.visible = false;
+    const secondaryBadgeText = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: 10,
+        fill: 0xffffff,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '700',
+      }),
+    });
+    secondaryBadgeText.visible = false;
+
+    // Detail indicator (top-right, below cornerTag). Glyphe `◧` indiquant un drill-down
+    // disponible — injecté via `hints.extra.hasDetail` (D4.3). Couleur violet signal-server,
+    // cohérente avec l'edge L3.
+    const detailIndicatorText = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: 11,
+        fill: 0x9a7ad9,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '700',
+      }),
+    });
+    detailIndicatorText.visible = false;
+
     toolbar.addChild(toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon, collapseIcon);
     container.addChild(
       selectionGlow, bg, signalBar, separator,
@@ -416,6 +452,8 @@ export class NodeRenderer {
       footerSeparator, footerGauges, footerGaugeLabel,
       footerMetricsText, footerSuccessText, footerErrorText,
       cornerTagBg, cornerTagText,
+      secondaryBadgeBg, secondaryBadgeText,
+      detailIndicatorText,
       toolbar,
     );
 
@@ -500,6 +538,8 @@ export class NodeRenderer {
       footerSeparator, footerGauges, footerGaugeLabel, footerMetricsText,
       footerSuccessText, footerErrorText,
       selectionGlow, cornerTagBg, cornerTagText,
+      secondaryBadgeBg, secondaryBadgeText,
+      detailIndicatorText,
       resizeHandles, nodeId: node.id, nodeType: node.type,
       nodeWidth: node.width ?? NODE_WIDTH, isZone,
       currentStatus: 'idle', animationPhase: 0,
@@ -813,6 +853,20 @@ export class NodeRenderer {
 
     // 3) Corner tag : applicable à toutes les variantes.
     this.applyCornerTag(visual, w, cornerTag);
+
+    // 4) Secondary badge (top-LEFT) : indicateurs additifs des plugins (cascade ⚡, emitter 📡).
+    //    Statique inexistant aujourd'hui sur NodeVisual du CE — uniquement dynamique pour l'instant.
+    const secondaryBadge = dynamicHints?.secondaryBadge;
+    this.applySecondaryBadge(visual, secondaryBadge);
+
+    // 5) Detail indicator (top-RIGHT, sous le cornerTag) : flag `extra.hasDetail` indiquant
+    //    qu'un drill-down est disponible (D4.3). Lu uniquement depuis les hints dynamiques.
+    const extra = dynamicHints?.extra as { hasDetail?: boolean; refinementCount?: number } | undefined;
+    if (extra?.hasDetail) {
+      this.applyDetailIndicator(visual, w, extra.refinementCount ?? 0);
+    } else {
+      this.applyDetailIndicator(visual, w, 0);
+    }
   }
 
   /**
@@ -965,6 +1019,79 @@ export class NodeRenderer {
 
     visual.cornerTagText.position.set(tagX + padX, tagY + padY);
     visual.cornerTagText.visible = true;
+  }
+
+  /**
+   * Dessine un badge secondaire (ex: "⚡", "📡") en haut-GAUCHE du nœud. Distinct du cornerTag
+   * top-right pour permettre aux plugins d'injecter des indicateurs d'état runtime additifs
+   * sans concurrencer le tag de niveau (L1/L3/EXT).
+   *
+   * Couleur dérivée du contenu (heuristique simple) : violet pour cascade (⚡), amber pour
+   * emitter (📡), gris pour le reste. Une future évolution pourra exposer la couleur via
+   * `NodeRenderHints.secondaryBadgeColor`.
+   */
+  private applySecondaryBadge(visual: NodeVisual, badge: string | undefined): void {
+    if (!badge) {
+      visual.secondaryBadgeBg.visible = false;
+      visual.secondaryBadgeText.visible = false;
+      return;
+    }
+
+    visual.secondaryBadgeText.text = badge;
+    const textW = visual.secondaryBadgeText.width;
+    const padX = 4;
+    const padY = 1;
+    const badgeW = textW + padX * 2;
+    const badgeH = 14;
+    const badgeX = -1; // léger débordement gauche, mirror du cornerTag
+    const badgeY = -badgeH / 2;
+
+    const isCascade = badge.includes('⚡');
+    const isEmitter = badge.includes('📡');
+    const badgeColor = isCascade ? 0x7c4dff : isEmitter ? 0xd9a04e : 0x6b7280;
+
+    visual.secondaryBadgeBg.clear();
+    visual.secondaryBadgeBg.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
+    visual.secondaryBadgeBg.fill({ color: badgeColor, alpha: 1 });
+    visual.secondaryBadgeBg.visible = true;
+
+    visual.secondaryBadgeText.position.set(badgeX + padX, badgeY + padY);
+    visual.secondaryBadgeText.visible = true;
+  }
+
+  /**
+   * Dessine l'indicateur "has-detail" (◧) en haut-DROITE du nœud, sous le cornerTag.
+   * Signal qu'un drill-down est disponible — c.-à-d. que le node a des enfants raffinés
+   * (containers pour un L1, components pour un L2). Injecté par `hints.extra.hasDetail`.
+   *
+   * Couleur : violet `#9a7ad9` cohérent avec l'edge L3 du plugin C4.
+   * Suffixe optionnel `·N` quand `count > 1` pour donner une idée du fan-out.
+   *
+   * D4.3 (Phase 1F).
+   */
+  private applyDetailIndicator(visual: NodeVisual, w: number, count: number): void {
+    if (count <= 0) {
+      visual.detailIndicatorText.visible = false;
+      return;
+    }
+
+    // Glyphe + (optionnellement) compteur. On évite l'overlay-counter Pixi pour rester sobre :
+    // un simple suffixe textuel suffit et reste lisible à toutes les échelles de zoom.
+    visual.detailIndicatorText.text = count > 1 ? `◧·${count}` : '◧';
+    const textW = visual.detailIndicatorText.width;
+    const textH = visual.detailIndicatorText.height;
+
+    // Position : haut-DROIT, juste sous le cornerTag. Le cornerTag est centré sur Y=0
+    // (`tagY = -tagH/2`) ; on se place à Y=8 pour rester clairement dessous quand il existe,
+    // et juste à l'intérieur du nœud sinon.
+    const x = w - textW - 4;
+    const y = 8;
+
+    visual.detailIndicatorText.position.set(x, y);
+    visual.detailIndicatorText.visible = true;
+    // Tooltip-like aria via PixiJS : pas supporté nativement. La sémantique est portée par
+    // le node-title et l'overlay du detail-modal. On laisse le glyphe seul.
+    void textH;
   }
 
   private drawFooter(visual: NodeVisual, node: GraphNode | null, w: number): void {
