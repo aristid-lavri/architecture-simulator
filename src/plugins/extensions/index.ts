@@ -134,3 +134,8 @@ export {
   type PseudoEdgeContext,
   type PseudoEdgeProvider,
 } from './pseudo-edge-provider';
+
+export {
+  viewportAnimatorRegistry,
+  type ViewportAnimator,
+} from './viewport-animator';

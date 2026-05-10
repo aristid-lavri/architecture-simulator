@@ -31,7 +31,7 @@ import { applyAutoLayout } from '@/lib/auto-layout';
 import { computeContainerSize, resizeAncestors, resizeContainerAndAncestors } from '@/lib/container-sizing';
 import { applyCollapseView } from '@/lib/collapse-view';
 import { applyPluginCanvasView } from '@/lib/plugin-canvas-view';
-import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry, pseudoEdgeRegistry } from '@/plugins/extensions';
+import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry, pseudoEdgeRegistry, viewportAnimatorRegistry, type ViewportAnimator } from '@/plugins/extensions';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { MiniMap } from './MiniMap';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
@@ -42,6 +42,9 @@ export function PixiCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
+  // Reference vers l'animator courant pour pouvoir l'unregister depuis le cleanup
+  // (l'animator est cree dans l'IIFE asynchrone d'init).
+  const viewportAnimatorRef = useRef<ViewportAnimator | null>(null);
   const engineRef = useRef<SimulationEngine | null>(null);
   const analyticsEngineRef = useRef<AnalyticsEngine | null>(null);
   const nodeRendererRef = useRef<NodeRenderer | null>(null);
@@ -245,6 +248,41 @@ export function PixiCanvas() {
 
       app.stage.addChild(viewport);
 
+      // Enregistre un animator viewport exploitable par les plugins (cf. drill-down C4).
+      // L'API est canvas-agnostic ; toute la mecanique pixi-viewport reste interne.
+      // pixi-viewport@6 expose `animate({ time, position, scale, ease, callbackOnComplete })`
+      // (cf. node_modules/pixi-viewport/dist/plugins/Animate.d.ts).
+      const viewportAnimator: ViewportAnimator = {
+        animateZoomInto: (bounds, durationMs = 350) =>
+          new Promise<void>((resolve) => {
+            // Cadrage : centre le rectangle au centre de l'ecran et choisit le scale
+            // qui maximise la couverture sans depasser (marge 10% via le *0.9).
+            const targetScale = Math.min(
+              viewport.screenWidth / Math.max(bounds.width, 1),
+              viewport.screenHeight / Math.max(bounds.height, 1),
+            ) * 0.9;
+            viewport.animate({
+              time: durationMs,
+              position: { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 },
+              scale: targetScale,
+              ease: 'easeInOutCubic',
+              callbackOnComplete: () => resolve(),
+            });
+          }),
+        animateZoomOut: (durationMs = 350) =>
+          new Promise<void>((resolve) => {
+            viewport.animate({
+              time: durationMs,
+              position: { x: 0, y: 0 },
+              scale: 1,
+              ease: 'easeInOutCubic',
+              callbackOnComplete: () => resolve(),
+            });
+          }),
+      };
+      viewportAnimatorRegistry.register(viewportAnimator);
+      viewportAnimatorRef.current = viewportAnimator;
+
       // Create layers
       const gridLayer = new Container();
       const zoneLayer = new Container();
@@ -349,6 +387,10 @@ export function PixiCanvas() {
     return () => {
       cancelled = true;
       unsubHydrationRef.current?.();
+      if (viewportAnimatorRef.current) {
+        viewportAnimatorRegistry.unregister(viewportAnimatorRef.current);
+        viewportAnimatorRef.current = null;
+      }
       nodeRendererRef.current?.destroy();
       edgeRendererRef.current?.destroy();
       gridRendererRef.current?.destroy();
