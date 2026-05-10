@@ -10,6 +10,7 @@ export type UISlotId =
   | 'header-extra'         // Boutons/widgets additionnels dans le header
   | 'palette-extra'        // Section additionnelle dans le panneau des composants
   | 'properties-extra'     // Section additionnelle dans le panneau des propriétés
+  | 'edge-properties-extra' // Panneau additionnel pour edges sélectionnés
   | 'breadcrumb'           // Slot pour breadcrumb spécifique au projet
   | 'cascade-dialog-provider' // Hôte invisible pour les dialogs de cascade-delete
   | 'project-kind-tile'    // Tuile dans le sélecteur "Nouveau projet"
