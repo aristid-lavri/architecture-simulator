@@ -44,6 +44,7 @@ export function DocScreenshot({
 }: DocScreenshotProps) {
   const { t } = useTranslation();
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const alt = resolveDocText(screenshot.alt, t);
   const caption = resolveDocText(screenshot.caption, t);
@@ -55,6 +56,25 @@ export function DocScreenshot({
 
   function openLightbox() {
     setOpenIdx(indexInList >= 0 ? indexInList : 0);
+  }
+
+  // Si l'asset est manquant (404), on rend un placeholder discret avec le caption
+  // — utile pendant la phase de bootstrap d'une entrée doc avant que les vrais
+  // assets ne soient fournis.
+  if (loadFailed) {
+    return (
+      <figure className={cn('flex flex-col items-start gap-2', className)}>
+        <div
+          className="flex items-center justify-center rounded-md border border-dashed border-border bg-muted/20 text-[10px] text-muted-foreground/70"
+          style={{ width, height }}
+        >
+          asset manquant : <code className="ml-1 font-mono">{screenshot.src}</code>
+        </div>
+        {caption && (
+          <figcaption className="max-w-full text-xs text-muted-foreground">{caption}</figcaption>
+        )}
+      </figure>
+    );
   }
 
   return (
@@ -78,6 +98,7 @@ export function DocScreenshot({
               src={screenshot.src}
               alt={alt}
               loading="lazy"
+              onError={() => setLoadFailed(true)}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -86,6 +107,7 @@ export function DocScreenshot({
               alt={alt}
               width={width}
               height={height}
+              onError={() => setLoadFailed(true)}
               className="h-full w-full object-cover"
               loading="lazy"
             />
