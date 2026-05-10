@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useCallback, useState, useSyncExternalStore } from 'react';
 import { Application, Container, Graphics } from 'pixi.js';
 import { Viewport } from 'pixi-viewport';
 import { useAppStore } from '@/store/app-store';
@@ -23,21 +23,54 @@ import {
   setCanvasTheme,
 } from './constants';
 import { getDefaultNodeData } from './node-defaults';
+import { findSubtreeNodes, findBoundaryEdges } from '@/lib/subtree-utils';
+import type { SimulationScope } from '@/types/simulation-scope';
+import { nodeContextMenuRegistry } from '@/plugins/extensions';
 import { findContainerAtPosition } from './hit-testing';
 import { applyAutoLayout } from '@/lib/auto-layout';
 import { computeContainerSize, resizeAncestors, resizeContainerAndAncestors } from '@/lib/container-sizing';
 import { applyCollapseView } from '@/lib/collapse-view';
 import { applyPluginCanvasView } from '@/lib/plugin-canvas-view';
-import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry } from '@/plugins/extensions';
+import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry, pseudoEdgeRegistry, viewportAnimatorRegistry, type ViewportAnimator } from '@/plugins/extensions';
+import { isEdgeRejection } from '@/plugins/extensions/edge-creation';
+import { useTranslation } from '@/i18n';
+import { addSuppression } from '@/lib/rules-engine';
+import { EdgeContextMenu } from './EdgeContextMenu';
+import { RuleSuppressionDialog } from './RuleSuppressionDialog';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { MiniMap } from './MiniMap';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
+import { CanvasOverlaySlot } from './CanvasOverlaySlot';
 import { Route } from 'lucide-react';
 
+interface EdgeRejectionToast {
+  messageKey: string;
+  params?: Record<string, string | number>;
+  /** ms timestamp; used to auto-dismiss + as a key to retrigger animation when same message fires twice */
+  shownAt: number;
+}
+
 export function PixiCanvas() {
+  const { t } = useTranslation();
+  const [edgeRejection, setEdgeRejection] = useState<EdgeRejectionToast | null>(null);
+
+  // Auto-dismiss the rejection banner after 4s.
+  useEffect(() => {
+    if (!edgeRejection) return;
+    const timer = setTimeout(() => setEdgeRejection(null), 4000);
+    return () => clearTimeout(timer);
+  }, [edgeRejection]);
+
+  // Rules-engine context menu (right-click on a violating edge) + suppression dialog.
+  const [edgeCtxMenu, setEdgeCtxMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
+  const [suppressionTarget, setSuppressionTarget] = useState<{ edgeId: string; ruleId: string } | null>(null);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
+  // Reference vers l'animator courant pour pouvoir l'unregister depuis le cleanup
+  // (l'animator est cree dans l'IIFE asynchrone d'init).
+  const viewportAnimatorRef = useRef<ViewportAnimator | null>(null);
   const engineRef = useRef<SimulationEngine | null>(null);
   const analyticsEngineRef = useRef<AnalyticsEngine | null>(null);
   const nodeRendererRef = useRef<NodeRenderer | null>(null);
@@ -86,6 +119,21 @@ export function PixiCanvas() {
   const setSelectedNodeId = useAppStore((s) => s.setSelectedNodeId);
   const selectedEdgeId = useAppStore((s) => s.selectedEdgeId);
   const setSelectedEdgeId = useAppStore((s) => s.setSelectedEdgeId);
+  const validationResult = useAppStore((s) => s.validationResult);
+
+  // Map<edgeId, count of active rule warnings> — fed to EdgeRenderer for the midpoint badge.
+  // Updated whenever the user re-runs validation (the existing VALID button in Header).
+  const warningCountByEdgeId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!validationResult) return map;
+    for (const issue of validationResult.issues) {
+      if (issue.category !== 'rule' || issue.severity !== 'warning') continue;
+      for (const eid of issue.edgeIds ?? []) {
+        map.set(eid, (map.get(eid) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [validationResult]);
 
   // Architecture store
   const {
@@ -116,10 +164,21 @@ export function PixiCanvas() {
     () => 0,
   );
 
+  // Idem pour le pseudoEdgeRegistry (Phase 1F — D4.5 ghost edges). Toute mutation
+  // (register/unregister d'un provider) déclenche un re-render de la sync edges.
+  const _pseudoEdgeVersion = useSyncExternalStore(
+    (cb) => pseudoEdgeRegistry.subscribe(cb),
+    () => (pseudoEdgeRegistry.hasProviders() ? 1 : 0),
+    () => 0,
+  );
+  void _pseudoEdgeVersion;
+
   // Simulation store selectors
   const simulationState = useSimulationStore((s) => s.state);
   const userSeed = useSimulationStore((s) => s.seed);
   const setLastRunSeed = useSimulationStore((s) => s.setLastRunSeed);
+  const scopedRoot = useSimulationStore((s) => s.scopedRoot);
+  const injectedTraffic = useSimulationStore((s) => s.injectedTraffic);
   const nodeStates = useSimulationStore((s) => s.nodeStates);
   const addParticle = useSimulationStore((s) => s.addParticle);
   const removeParticle = useSimulationStore((s) => s.removeParticle);
@@ -230,6 +289,41 @@ export function PixiCanvas() {
 
       app.stage.addChild(viewport);
 
+      // Enregistre un animator viewport exploitable par les plugins (cf. drill-down C4).
+      // L'API est canvas-agnostic ; toute la mecanique pixi-viewport reste interne.
+      // pixi-viewport@6 expose `animate({ time, position, scale, ease, callbackOnComplete })`
+      // (cf. node_modules/pixi-viewport/dist/plugins/Animate.d.ts).
+      const viewportAnimator: ViewportAnimator = {
+        animateZoomInto: (bounds, durationMs = 350) =>
+          new Promise<void>((resolve) => {
+            // Cadrage : centre le rectangle au centre de l'ecran et choisit le scale
+            // qui maximise la couverture sans depasser (marge 10% via le *0.9).
+            const targetScale = Math.min(
+              viewport.screenWidth / Math.max(bounds.width, 1),
+              viewport.screenHeight / Math.max(bounds.height, 1),
+            ) * 0.9;
+            viewport.animate({
+              time: durationMs,
+              position: { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 },
+              scale: targetScale,
+              ease: 'easeInOutCubic',
+              callbackOnComplete: () => resolve(),
+            });
+          }),
+        animateZoomOut: (durationMs = 350) =>
+          new Promise<void>((resolve) => {
+            viewport.animate({
+              time: durationMs,
+              position: { x: 0, y: 0 },
+              scale: 1,
+              ease: 'easeInOutCubic',
+              callbackOnComplete: () => resolve(),
+            });
+          }),
+      };
+      viewportAnimatorRegistry.register(viewportAnimator);
+      viewportAnimatorRef.current = viewportAnimator;
+
       // Create layers
       const gridLayer = new Container();
       const zoneLayer = new Container();
@@ -334,6 +428,10 @@ export function PixiCanvas() {
     return () => {
       cancelled = true;
       unsubHydrationRef.current?.();
+      if (viewportAnimatorRef.current) {
+        viewportAnimatorRegistry.unregister(viewportAnimatorRef.current);
+        viewportAnimatorRef.current = null;
+      }
       nodeRendererRef.current?.destroy();
       edgeRendererRef.current?.destroy();
       gridRendererRef.current?.destroy();
@@ -364,24 +462,37 @@ export function PixiCanvas() {
     // edges that now share the same effective endpoints, redirect particle traffic onto
     // the visible aggregates.
     // Apply plugin filters first (e.g. visibility per abstraction level), then collapse.
-    const filtered = applyPluginCanvasView(storedNodes, storedEdges, projectMeta);
+    // Merge pseudo-edges (D4.5 ghost edges) into the edges array before filtering : ils
+    // sont synthétiques, jamais persistés, recomputés à chaque changement de edges/nodes/meta.
+    const pseudoEdges = pseudoEdgeRegistry.collect({
+      projectMeta,
+      nodes: storedNodes,
+      edges: storedEdges,
+    });
+    const mergedEdges: GraphEdge[] = pseudoEdges.length > 0 ? [...storedEdges, ...pseudoEdges] : storedEdges;
+
+    const filtered = applyPluginCanvasView(storedNodes, mergedEdges, projectMeta);
     const view = applyCollapseView(filtered.nodes, filtered.edges);
 
     nodeRendererRef.current.renderNodes(view.visibleNodes, selectedNodeId);
     edgeRendererRef.current.renderEdges(view.visibleEdges, view.visibleNodes, selectedEdgeId, edgeRoutingMode, {
       focusNodeId: selectedNodeId ?? hoveredNodeIdRef.current,
       protocolFilters: edgeProtocolFiltersRef.current,
-    });
+    }, warningCountByEdgeId);
 
     // Rebuild particle path cache against the visible edges and tell the renderer how
     // to translate underlying particle edge ids to their visible aggregate.
-    particleRendererRef.current?.rebuildPaths(view.visibleEdges, view.visibleNodes, edgeRoutingMode);
+    // Pseudo-edges sont exclues du path cache : aucune particule ne doit voyager dessus.
+    const realVisibleEdges = view.visibleEdges.filter(
+      (e) => (e as { __pseudo?: boolean }).__pseudo !== true,
+    );
+    particleRendererRef.current?.rebuildPaths(realVisibleEdges, view.visibleNodes, edgeRoutingMode);
     particleRendererRef.current?.setEdgeRemap(view.edgeRemap.size > 0 ? view.edgeRemap : null);
 
     prevSyncVersionRef.current = _syncVersion;
     // Hover and protocol-filter changes do NOT re-run this expensive sync — they go
     // through the dedicated focus effect below, which only touches alphas.
-  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady, projectMeta, _canvasFilterVersion]);
+  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady, projectMeta, _canvasFilterVersion, _pseudoEdgeVersion, warningCountByEdgeId]);
 
   // ============================================
   // Plugin overlay layer (visual-diff EE-3, …)
@@ -466,7 +577,13 @@ export function PixiCanvas() {
     const arch = useArchitectureStore.getState();
     const appState = useAppStore.getState();
     {
-      const filtered = applyPluginCanvasView(arch.nodes, arch.edges, arch.projectMeta);
+      const pseudo = pseudoEdgeRegistry.collect({
+        projectMeta: arch.projectMeta,
+        nodes: arch.nodes,
+        edges: arch.edges,
+      });
+      const merged: GraphEdge[] = pseudo.length > 0 ? [...arch.edges, ...pseudo] : arch.edges;
+      const filtered = applyPluginCanvasView(arch.nodes, merged, arch.projectMeta);
       const view = applyCollapseView(filtered.nodes, filtered.edges);
       nodeRendererRef.current?.renderNodes(view.visibleNodes, appState.selectedNodeId);
       edgeRendererRef.current?.renderEdges(view.visibleEdges, view.visibleNodes, appState.selectedEdgeId, appState.edgeRoutingMode, {
@@ -514,6 +631,9 @@ export function PixiCanvas() {
     edgeRendererRef.current.setEditMode(isEditable);
     edgeRendererRef.current.onEdgeHover = (edgeId: string | null) => {
       useAppStore.getState().setHoveredEdgeId(edgeId);
+    };
+    edgeRendererRef.current.onEdgeRightClick = (edgeId, x, y) => {
+      setEdgeCtxMenu({ edgeId, x, y });
     };
 
     // Reconnection drag: pause viewport and listen for global move/up
@@ -573,12 +693,22 @@ export function PixiCanvas() {
         data: {} as Record<string, unknown>,
       };
       // Laisser les plugins enrichir/valider la création (ex: pose `parentEdgeId` côté C4
-      // sous drill, ou refus si source/target hors des conteneurs raffinés).
+      // sous drill, refus rules-engine sur connexion impossible, etc.).
       const decoratedData = edgeCreationDecoratorRegistry.apply(draftEdge, {
         projectMeta: useArchitectureStore.getState().projectMeta,
+        getNodes: () => useArchitectureStore.getState().nodes,
+        getEdges: () => useArchitectureStore.getState().edges,
       });
+      if (isEdgeRejection(decoratedData)) {
+        setEdgeRejection({
+          messageKey: decoratedData.messageKey,
+          params: decoratedData.params,
+          shownAt: Date.now(),
+        });
+        return;
+      }
       if (decoratedData === null) {
-        // Decorator a refusé la création — abandon silencieux (le plugin a déjà loggé/feedback).
+        // Legacy silent rejection (decorators retournant null sans message).
         return;
       }
       const newEdge: GraphEdge = {
@@ -628,7 +758,9 @@ export function PixiCanvas() {
     };
 
     nodeRenderer.onNodeRightClick = (nodeId: string, event: PointerEvent) => {
-      if (mode !== 'simulation') return;
+      // En sim mode → menu chaos. En edit mode → menu si un plugin contribue (Phase 1E :
+      // "Simulate subtree only" en C4). Si ni l'un ni l'autre, on ignore le right-click.
+      if (mode !== 'simulation' && !nodeContextMenuRegistry.hasProviders()) return;
       setContextMenu({ x: event.clientX, y: event.clientY, nodeId });
     };
 
@@ -1262,6 +1394,28 @@ export function PixiCanvas() {
       engineRef.current.applySeed(effectiveSeedInput);
       setLastRunSeed(engineRef.current.getSeed());
 
+      // Phase 1E — Configure le scope si un sous-arbre est sélectionné. Sinon null = sim normale.
+      // Le scope est calculé au moment du start (pas conservé dans le store) car les
+      // node IDs / boundary edges peuvent changer si l'utilisateur a édité le graph entre temps.
+      if (scopedRoot) {
+        const subtreeNodeIds = findSubtreeNodes(scopedRoot, storedNodes);
+        const { leaving } = findBoundaryEdges(subtreeNodeIds, storedEdges);
+        // Sinks = targets des edges sortantes (où la chain doit terminer).
+        const sinks = new Set(leaving.map((e) => e.target));
+        const scope: SimulationScope = {
+          subtreeRoot: scopedRoot,
+          subtreeNodeIds,
+          syntheticEmitters: injectedTraffic.map((t) => ({
+            edgeId: t.edgeId,
+            requestsPerSecond: t.requestsPerSecond,
+          })),
+          sinks,
+        };
+        engineRef.current.setSimulationScope(scope);
+      } else {
+        engineRef.current.setSimulationScope(null);
+      }
+
       engineRef.current.start();
     } else if (simulationState === 'paused') {
       engineRef.current.pause();
@@ -1272,7 +1426,7 @@ export function PixiCanvas() {
       particleRendererRef.current?.hideAll();
       resetAnalytics();
     }
-  }, [mode, simulationState, storedNodes, storedEdges, resetAnalytics, userSeed, setLastRunSeed]);
+  }, [mode, simulationState, storedNodes, storedEdges, resetAnalytics, userSeed, setLastRunSeed, scopedRoot, injectedTraffic]);
 
   // Fault provider sync
   useEffect(() => {
@@ -1378,6 +1532,18 @@ export function PixiCanvas() {
         style={{ cursor: isDragging ? 'grabbing' : 'default' }}
       />
 
+      {/* Edge rejection toast (rules-engine block) */}
+      {edgeRejection && (
+        <div
+          key={edgeRejection.shownAt}
+          role="alert"
+          onClick={() => setEdgeRejection(null)}
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-md px-4 py-2 rounded-md border border-signal-critical/40 bg-signal-critical/10 backdrop-blur text-signal-critical text-xs font-mono shadow-lg cursor-pointer animate-in fade-in slide-in-from-top-2 duration-200"
+        >
+          ✕ {t(edgeRejection.messageKey)}
+        </div>
+      )}
+
       {/* Reopen components panel button */}
       {!isComponentsPanelOpen && isEditable && (
         <button
@@ -1455,8 +1621,48 @@ export function PixiCanvas() {
         />
       )}
 
+      {/* Rules-engine: right-click context menu on a violating edge */}
+      {edgeCtxMenu && (() => {
+        const edge = storedEdges.find((e) => e.id === edgeCtxMenu.edgeId);
+        if (!edge) return null;
+        const activeRuleIds = (validationResult?.issues ?? [])
+          .filter((i) => i.category === 'rule' && i.severity === 'warning'
+            && i.ruleId !== undefined
+            && (i.edgeIds ?? []).includes(edgeCtxMenu.edgeId))
+          .map((i) => i.ruleId as string);
+        return (
+          <EdgeContextMenu
+            x={edgeCtxMenu.x}
+            y={edgeCtxMenu.y}
+            edge={edge}
+            activeRuleIds={activeRuleIds}
+            onSuppressRule={(ruleId) => setSuppressionTarget({ edgeId: edgeCtxMenu.edgeId, ruleId })}
+            onClose={() => setEdgeCtxMenu(null)}
+          />
+        );
+      })()}
+
+      {/* Rules-engine: suppression dialog */}
+      <RuleSuppressionDialog
+        open={suppressionTarget !== null}
+        ruleId={suppressionTarget?.ruleId ?? null}
+        onCancel={() => setSuppressionTarget(null)}
+        onConfirm={(reason) => {
+          if (!suppressionTarget) return;
+          const edge = storedEdges.find((e) => e.id === suppressionTarget.edgeId);
+          if (!edge) { setSuppressionTarget(null); return; }
+          const updated = addSuppression(edge, suppressionTarget.ruleId, reason);
+          useArchitectureStore.getState().updateEdge(edge.id, updated.data ?? {});
+          setSuppressionTarget(null);
+        }}
+      />
+
       {/* MiniMap (bottom-right) */}
       <MiniMap nodes={storedNodes} viewport={viewportReady ? viewportRef.current : null} />
+
+      {/* Plugin slot: overlays HTML positionnés absolument au-dessus du canvas
+          (ports de boundary, ghost-edges, split-view, …). Cf. canvasHtmlOverlayRegistry. */}
+      <CanvasOverlaySlot />
 
       {/* Metrics panel (bottom) */}
       <MetricsPanel />

@@ -54,6 +54,8 @@ interface EdgeVisual {
   label: Text | null;
   sourceHandle: Graphics;
   targetHandle: Graphics;
+  /** Small dot rendered at the edge midpoint when the rules engine reports active warnings. */
+  warningBadge: Graphics;
   edgeId: string;
   /** Reference to the live edge — used by `applyFocus` to recompute alpha without redrawing paths. */
   edge: GraphEdge;
@@ -115,6 +117,9 @@ export class EdgeRenderer {
   // Callback for edge hover
   onEdgeHover: ((edgeId: string | null) => void) | null = null;
 
+  // Callback for edge right-click (rules-engine context menu, phase 1)
+  onEdgeRightClick: ((edgeId: string, globalX: number, globalY: number) => void) | null = null;
+
   // Détection de double-clic par edge — fenêtre courte entre deux pointerdown.
   private static readonly DOUBLE_CLICK_DELAY_MS = 300;
   private lastTapPerEdge: Map<string, number> = new Map();
@@ -134,6 +139,8 @@ export class EdgeRenderer {
   // Track edit mode for showing endpoint handles
   private editMode = false;
   private selectedEdgeIdCache: string | null = null;
+  /** Latest warning counts per edge — set on each renderEdges() call. */
+  private warningCountByEdgeId: Map<string, number> | null = null;
 
   /** @param layer — visual layer for lines/arrows (Z_EDGES)
    *  @param hitLayer — interactive layer for hit areas (Z_EDGE_HIT, above nodes) */
@@ -157,7 +164,10 @@ export class EdgeRenderer {
     selectedEdgeId: string | null,
     routingMode: EdgeRoutingMode = 'bezier',
     focusContext?: EdgeFocusContext,
+    /** Map keyed by edgeId — count of active (non-suppressed) rule warnings to render as a midpoint badge. */
+    warningCountByEdgeId?: Map<string, number>,
   ): void {
+    this.warningCountByEdgeId = warningCountByEdgeId ?? null;
     // Build node position map
     this.nodePositionCache.clear();
     for (const node of nodes) {
@@ -180,6 +190,7 @@ export class EdgeRenderer {
         visual.arrow.destroy();
         visual.sourceHandle.destroy();
         visual.targetHandle.destroy();
+        visual.warningBadge.destroy();
         visual.label?.destroy();
         this.visuals.delete(id);
       }
@@ -317,6 +328,13 @@ export class EdgeRenderer {
         }
       }
     });
+    hitArea.on('rightclick', (e) => {
+      e.stopPropagation();
+      const native = e.nativeEvent as MouseEvent | undefined;
+      const x = native?.clientX ?? e.global.x;
+      const y = native?.clientY ?? e.global.y;
+      this.onEdgeRightClick?.(edge.id, x, y);
+    });
 
     line.eventMode = 'none';
     arrow.eventMode = 'none';
@@ -351,6 +369,12 @@ export class EdgeRenderer {
     // Reconnection handles go in hitLayer (above nodes) for reliable click detection
     (this.hitLayer ?? this.layer).addChild(sourceHandle, targetHandle);
 
+    // Warning badge for rules-engine violations — invisible by default, drawn in updateEdgeVisual.
+    const warningBadge = new Graphics();
+    warningBadge.eventMode = 'none';
+    warningBadge.visible = false;
+    this.layer.addChild(warningBadge);
+
     // Protocol / aggregate label. Created if either a known protocol or an aggregate count exists.
     const edgeData = edge.data as Record<string, unknown> | undefined;
     const protocol = edgeData?.protocol as string | undefined;
@@ -373,7 +397,7 @@ export class EdgeRenderer {
       this.layer.addChild(label);
     }
 
-    return { line, hitArea, arrow, label, sourceHandle, targetHandle, edgeId: edge.id, edge, targetAlpha: 1 };
+    return { line, hitArea, arrow, label, sourceHandle, targetHandle, warningBadge, edgeId: edge.id, edge, targetAlpha: 1 };
   }
 
   private updateEdgeVisual(
@@ -394,6 +418,13 @@ export class EdgeRenderer {
     const customColorNum = customColor ? parseInt(customColor.replace('#', ''), 16) : undefined;
     const customWidth = edgeData?.strokeWidth as number | undefined;
 
+    // Pseudo-edge flag (D4.5 — injecté par pseudoEdgeRegistry, jamais persisté).
+    // Un pseudo-edge `ghost` est rendu en couleur slate-400, opacité réduite, et
+    // largeur amincie ; les handles de reconnexion sont désactivés.
+    const isPseudo = (edge as { __pseudo?: boolean }).__pseudo === true;
+    const pseudoVisualHint = (edge as { visualHint?: string }).visualHint;
+    const isGhost = isPseudo && pseudoVisualHint === 'ghost';
+
     // Plugin overrides (edgeStyleRegistry.resolveHints) — appliqués si l'edge n'a pas
     // déjà un override explicite de l'utilisateur (customColor/customWidth conservent la priorité).
     let pluginColorNum: number | undefined;
@@ -412,11 +443,23 @@ export class EdgeRenderer {
       if (typeof hints?.strokeWidth === 'number') pluginWidth = hints.strokeWidth;
     }
 
-    const baseColor = customColorNum ?? pluginColorNum ?? PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor;
-    const baseWidth = customWidth ?? pluginWidth ?? PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH;
+    // Ghost edge : couleur slate-400 par défaut, width amincie. Ces valeurs écrasent
+    // les fallbacks (mais respectent un customColor utilisateur explicite).
+    const ghostColor = 0x94a3b8; // slate-400
+    const ghostBaseColor = customColorNum ?? pluginColorNum ?? ghostColor;
+    const ghostBaseWidth = Math.max(1, (customWidth ?? pluginWidth ?? EDGE_WIDTH) - 0.4);
+
+    const baseColor = isGhost
+      ? ghostBaseColor
+      : (customColorNum ?? pluginColorNum ?? PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor);
+    const baseWidth = isGhost
+      ? ghostBaseWidth
+      : (customWidth ?? pluginWidth ?? PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH);
     const color = isSelected ? EDGE_SELECTED_COLOR : baseColor;
     const width = isSelected ? baseWidth + 1 : baseWidth;
-    const alpha = isSelected ? 1 : canvasTheme().edgeAlpha;
+    const baseAlpha = isSelected ? 1 : canvasTheme().edgeAlpha;
+    // Ghost : opacité réduite à 0.45 pour signaler le caractère synthétique (non persisté).
+    const alpha = isGhost ? Math.min(baseAlpha, 0.45) : baseAlpha;
     const alphaMul = this.computeAlphaMultiplier(edge, isSelected, focusContext);
     // Apply focus/filter via sprite-level alpha so hover can temporarily boost through it.
     // Stroke alpha stays at the baseline; sprite alpha = alphaMul carries focus/filter state.
@@ -459,7 +502,8 @@ export class EdgeRenderer {
     }
 
     // ── Endpoint handles for reconnection (edit mode + selected or hovered) ──
-    const showEndpoints = this.editMode && isSelected;
+    // Pseudo-edges ne sont jamais reconnectables (pas persistées dans le store) → handles masqués.
+    const showEndpoints = this.editMode && isSelected && !isPseudo;
     const sp = anchor.source;
     const tp = anchor.target;
 
@@ -533,6 +577,11 @@ export class EdgeRenderer {
       const t = staggeredLabelT(groupInfo);
       const m = bezierPoint(params, t);
       visual.label.position.set(m.x - visual.label.width / 2, m.y - visual.label.height - 4);
+    }
+    {
+      const t = staggeredLabelT(groupInfo);
+      const m = bezierPoint(params, t);
+      this.updateWarningBadge(visual, visual.edge, m.x, m.y, alpha);
     }
   }
 
@@ -619,6 +668,34 @@ export class EdgeRenderer {
       const pos = pointAlongPolyline(allPoints, t);
       visual.label.position.set(pos.x - visual.label.width / 2, pos.y - visual.label.height - 4);
     }
+    {
+      const t = staggeredLabelT(groupInfo);
+      const pos = pointAlongPolyline(allPoints, t);
+      this.updateWarningBadge(visual, edge, pos.x, pos.y, alpha);
+    }
+  }
+
+  /**
+   * Renders the rules-engine warning dot at the given midpoint when warningCountByEdgeId reports >0
+   * active violations for this edge. Hidden otherwise. The dot is offset to sit beside the protocol
+   * label without overlapping.
+   */
+  private updateWarningBadge(visual: EdgeVisual, edge: GraphEdge, mx: number, my: number, alpha: number): void {
+    const count = this.warningCountByEdgeId?.get(edge.id) ?? 0;
+    if (count <= 0) {
+      visual.warningBadge.visible = false;
+      return;
+    }
+    visual.warningBadge.visible = true;
+    visual.warningBadge.alpha = alpha;
+    visual.warningBadge.clear();
+    // Filled amber circle with thin dark outline for contrast against any edge color.
+    visual.warningBadge.circle(0, 0, 4);
+    visual.warningBadge.fill({ color: 0xf59e0b, alpha: 1 }); // amber-500 — matches signal-warning
+    visual.warningBadge.setStrokeStyle({ width: 1, color: 0x1f2937, alpha: 0.8 });
+    visual.warningBadge.stroke();
+    // Position below the label spot to avoid overlap.
+    visual.warningBadge.position.set(mx + 8, my + 6);
   }
 
   // ── Arrow head helper ──

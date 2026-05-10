@@ -379,6 +379,14 @@ export function PropertiesPanel() {
                 </div>
               </div>
             </div>
+
+            {/* Plugin slot pour panneaux additionnels sur edges sélectionnés. */}
+            <UISlotHost
+              slotId="edge-properties-extra"
+              projectMeta={projectMeta}
+              context={{ edgeId: selectedEdge.id }}
+              hideWhenEmpty
+            />
           </div>
         </ScrollArea>
 

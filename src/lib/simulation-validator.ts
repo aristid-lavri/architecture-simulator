@@ -20,6 +20,8 @@ import type {
 } from '@/types';
 import { CONTAINER_TYPES } from '@/types';
 import { outgoingEdges, incomingEdges } from './graph-helpers';
+import { evaluateGraph } from '@/lib/rules-engine/evaluation';
+import { ruleViolationsToValidationIssues } from '@/lib/rules-engine/adapters';
 
 // ============================================
 // Validation Types
@@ -35,7 +37,8 @@ export type ValidationCategory =
   | 'required-fields'
   | 'disconnected'
   | 'configuration'
-  | 'hierarchy';
+  | 'hierarchy'
+  | 'rule';
 
 export interface ValidationIssue {
   id: string;
@@ -45,6 +48,8 @@ export interface ValidationIssue {
   messageParams?: Record<string, string | number>;
   nodeIds?: string[];
   edgeIds?: string[];
+  /** For category === 'rule' issues only : the originating rules-engine rule ID. */
+  ruleId?: string;
 }
 
 export interface ValidationResult {
@@ -848,6 +853,7 @@ function hierarchyRules(nodes: GraphNode[]): ValidationIssue[] {
 // ============================================
 
 export function validateArchitecture(nodes: GraphNode[], edges: GraphEdge[]): ValidationResult {
+  const ruleEngineIssues = ruleViolationsToValidationIssues(evaluateGraph(nodes, edges));
   const issues: ValidationIssue[] = [
     ...connectionRules(nodes, edges),
     ...portRules(nodes, edges),
@@ -857,6 +863,7 @@ export function validateArchitecture(nodes: GraphNode[], edges: GraphEdge[]): Va
     ...disconnectedRules(nodes, edges),
     ...configurationRules(nodes, edges),
     ...hierarchyRules(nodes),
+    ...ruleEngineIssues,
   ];
 
   const errorCount = issues.filter((i) => i.severity === 'error').length;

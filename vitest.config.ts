@@ -40,6 +40,7 @@ export default defineConfig({
       'zustand': path.resolve(__dirname, './node_modules/zustand'),
       '@radix-ui/react-dialog': path.resolve(__dirname, './node_modules/@radix-ui/react-dialog'),
       'yaml': path.resolve(__dirname, './node_modules/yaml'),
+      'lucide-react': path.resolve(__dirname, './node_modules/lucide-react'),
       // next/link is imported by EE marketing-site components but the EE workspace has
       // no node_modules of its own. Pin to the simulator copy so vitest can resolve it.
       'next/link': path.resolve(__dirname, './node_modules/next/link.js'),
