@@ -394,6 +394,13 @@ export class EdgeRenderer {
     const customColorNum = customColor ? parseInt(customColor.replace('#', ''), 16) : undefined;
     const customWidth = edgeData?.strokeWidth as number | undefined;
 
+    // Pseudo-edge flag (D4.5 — injecté par pseudoEdgeRegistry, jamais persisté).
+    // Un pseudo-edge `ghost` est rendu en couleur slate-400, opacité réduite, et
+    // largeur amincie ; les handles de reconnexion sont désactivés.
+    const isPseudo = (edge as { __pseudo?: boolean }).__pseudo === true;
+    const pseudoVisualHint = (edge as { visualHint?: string }).visualHint;
+    const isGhost = isPseudo && pseudoVisualHint === 'ghost';
+
     // Plugin overrides (edgeStyleRegistry.resolveHints) — appliqués si l'edge n'a pas
     // déjà un override explicite de l'utilisateur (customColor/customWidth conservent la priorité).
     let pluginColorNum: number | undefined;
@@ -412,11 +419,23 @@ export class EdgeRenderer {
       if (typeof hints?.strokeWidth === 'number') pluginWidth = hints.strokeWidth;
     }
 
-    const baseColor = customColorNum ?? pluginColorNum ?? PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor;
-    const baseWidth = customWidth ?? pluginWidth ?? PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH;
+    // Ghost edge : couleur slate-400 par défaut, width amincie. Ces valeurs écrasent
+    // les fallbacks (mais respectent un customColor utilisateur explicite).
+    const ghostColor = 0x94a3b8; // slate-400
+    const ghostBaseColor = customColorNum ?? pluginColorNum ?? ghostColor;
+    const ghostBaseWidth = Math.max(1, (customWidth ?? pluginWidth ?? EDGE_WIDTH) - 0.4);
+
+    const baseColor = isGhost
+      ? ghostBaseColor
+      : (customColorNum ?? pluginColorNum ?? PROTOCOL_COLORS[protocol ?? ''] ?? canvasTheme().edgeColor);
+    const baseWidth = isGhost
+      ? ghostBaseWidth
+      : (customWidth ?? pluginWidth ?? PROTOCOL_WIDTHS[protocol ?? ''] ?? EDGE_WIDTH);
     const color = isSelected ? EDGE_SELECTED_COLOR : baseColor;
     const width = isSelected ? baseWidth + 1 : baseWidth;
-    const alpha = isSelected ? 1 : canvasTheme().edgeAlpha;
+    const baseAlpha = isSelected ? 1 : canvasTheme().edgeAlpha;
+    // Ghost : opacité réduite à 0.45 pour signaler le caractère synthétique (non persisté).
+    const alpha = isGhost ? Math.min(baseAlpha, 0.45) : baseAlpha;
     const alphaMul = this.computeAlphaMultiplier(edge, isSelected, focusContext);
     // Apply focus/filter via sprite-level alpha so hover can temporarily boost through it.
     // Stroke alpha stays at the baseline; sprite alpha = alphaMul carries focus/filter state.
@@ -459,7 +478,8 @@ export class EdgeRenderer {
     }
 
     // ── Endpoint handles for reconnection (edit mode + selected or hovered) ──
-    const showEndpoints = this.editMode && isSelected;
+    // Pseudo-edges ne sont jamais reconnectables (pas persistées dans le store) → handles masqués.
+    const showEndpoints = this.editMode && isSelected && !isPseudo;
     const sp = anchor.source;
     const tp = anchor.target;
 

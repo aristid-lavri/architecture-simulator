@@ -23,12 +23,15 @@ import {
   setCanvasTheme,
 } from './constants';
 import { getDefaultNodeData } from './node-defaults';
+import { findSubtreeNodes, findBoundaryEdges } from '@/lib/subtree-utils';
+import type { SimulationScope } from '@/types/simulation-scope';
+import { nodeContextMenuRegistry } from '@/plugins/extensions';
 import { findContainerAtPosition } from './hit-testing';
 import { applyAutoLayout } from '@/lib/auto-layout';
 import { computeContainerSize, resizeAncestors, resizeContainerAndAncestors } from '@/lib/container-sizing';
 import { applyCollapseView } from '@/lib/collapse-view';
 import { applyPluginCanvasView } from '@/lib/plugin-canvas-view';
-import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry } from '@/plugins/extensions';
+import { canvasFilterRegistry, nodeInteractionRegistry, edgeInteractionRegistry, nodeCreationDecoratorRegistry, edgeCreationDecoratorRegistry, metricsProjectionRegistry, canvasOverlayRegistry, pseudoEdgeRegistry } from '@/plugins/extensions';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { MiniMap } from './MiniMap';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
@@ -117,10 +120,21 @@ export function PixiCanvas() {
     () => 0,
   );
 
+  // Idem pour le pseudoEdgeRegistry (Phase 1F — D4.5 ghost edges). Toute mutation
+  // (register/unregister d'un provider) déclenche un re-render de la sync edges.
+  const _pseudoEdgeVersion = useSyncExternalStore(
+    (cb) => pseudoEdgeRegistry.subscribe(cb),
+    () => (pseudoEdgeRegistry.hasProviders() ? 1 : 0),
+    () => 0,
+  );
+  void _pseudoEdgeVersion;
+
   // Simulation store selectors
   const simulationState = useSimulationStore((s) => s.state);
   const userSeed = useSimulationStore((s) => s.seed);
   const setLastRunSeed = useSimulationStore((s) => s.setLastRunSeed);
+  const scopedRoot = useSimulationStore((s) => s.scopedRoot);
+  const injectedTraffic = useSimulationStore((s) => s.injectedTraffic);
   const nodeStates = useSimulationStore((s) => s.nodeStates);
   const addParticle = useSimulationStore((s) => s.addParticle);
   const removeParticle = useSimulationStore((s) => s.removeParticle);
@@ -365,7 +379,16 @@ export function PixiCanvas() {
     // edges that now share the same effective endpoints, redirect particle traffic onto
     // the visible aggregates.
     // Apply plugin filters first (e.g. visibility per abstraction level), then collapse.
-    const filtered = applyPluginCanvasView(storedNodes, storedEdges, projectMeta);
+    // Merge pseudo-edges (D4.5 ghost edges) into the edges array before filtering : ils
+    // sont synthétiques, jamais persistés, recomputés à chaque changement de edges/nodes/meta.
+    const pseudoEdges = pseudoEdgeRegistry.collect({
+      projectMeta,
+      nodes: storedNodes,
+      edges: storedEdges,
+    });
+    const mergedEdges: GraphEdge[] = pseudoEdges.length > 0 ? [...storedEdges, ...pseudoEdges] : storedEdges;
+
+    const filtered = applyPluginCanvasView(storedNodes, mergedEdges, projectMeta);
     const view = applyCollapseView(filtered.nodes, filtered.edges);
 
     nodeRendererRef.current.renderNodes(view.visibleNodes, selectedNodeId);
@@ -376,13 +399,17 @@ export function PixiCanvas() {
 
     // Rebuild particle path cache against the visible edges and tell the renderer how
     // to translate underlying particle edge ids to their visible aggregate.
-    particleRendererRef.current?.rebuildPaths(view.visibleEdges, view.visibleNodes, edgeRoutingMode);
+    // Pseudo-edges sont exclues du path cache : aucune particule ne doit voyager dessus.
+    const realVisibleEdges = view.visibleEdges.filter(
+      (e) => (e as { __pseudo?: boolean }).__pseudo !== true,
+    );
+    particleRendererRef.current?.rebuildPaths(realVisibleEdges, view.visibleNodes, edgeRoutingMode);
     particleRendererRef.current?.setEdgeRemap(view.edgeRemap.size > 0 ? view.edgeRemap : null);
 
     prevSyncVersionRef.current = _syncVersion;
     // Hover and protocol-filter changes do NOT re-run this expensive sync — they go
     // through the dedicated focus effect below, which only touches alphas.
-  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady, projectMeta, _canvasFilterVersion]);
+  }, [storedNodes, storedEdges, _syncVersion, selectedNodeId, selectedEdgeId, edgeRoutingMode, viewportReady, projectMeta, _canvasFilterVersion, _pseudoEdgeVersion]);
 
   // ============================================
   // Plugin overlay layer (visual-diff EE-3, …)
@@ -467,7 +494,13 @@ export function PixiCanvas() {
     const arch = useArchitectureStore.getState();
     const appState = useAppStore.getState();
     {
-      const filtered = applyPluginCanvasView(arch.nodes, arch.edges, arch.projectMeta);
+      const pseudo = pseudoEdgeRegistry.collect({
+        projectMeta: arch.projectMeta,
+        nodes: arch.nodes,
+        edges: arch.edges,
+      });
+      const merged: GraphEdge[] = pseudo.length > 0 ? [...arch.edges, ...pseudo] : arch.edges;
+      const filtered = applyPluginCanvasView(arch.nodes, merged, arch.projectMeta);
       const view = applyCollapseView(filtered.nodes, filtered.edges);
       nodeRendererRef.current?.renderNodes(view.visibleNodes, appState.selectedNodeId);
       edgeRendererRef.current?.renderEdges(view.visibleEdges, view.visibleNodes, appState.selectedEdgeId, appState.edgeRoutingMode, {
@@ -629,7 +662,9 @@ export function PixiCanvas() {
     };
 
     nodeRenderer.onNodeRightClick = (nodeId: string, event: PointerEvent) => {
-      if (mode !== 'simulation') return;
+      // En sim mode → menu chaos. En edit mode → menu si un plugin contribue (Phase 1E :
+      // "Simulate subtree only" en C4). Si ni l'un ni l'autre, on ignore le right-click.
+      if (mode !== 'simulation' && !nodeContextMenuRegistry.hasProviders()) return;
       setContextMenu({ x: event.clientX, y: event.clientY, nodeId });
     };
 
@@ -1263,6 +1298,28 @@ export function PixiCanvas() {
       engineRef.current.applySeed(effectiveSeedInput);
       setLastRunSeed(engineRef.current.getSeed());
 
+      // Phase 1E — Configure le scope si un sous-arbre est sélectionné. Sinon null = sim normale.
+      // Le scope est calculé au moment du start (pas conservé dans le store) car les
+      // node IDs / boundary edges peuvent changer si l'utilisateur a édité le graph entre temps.
+      if (scopedRoot) {
+        const subtreeNodeIds = findSubtreeNodes(scopedRoot, storedNodes);
+        const { leaving } = findBoundaryEdges(subtreeNodeIds, storedEdges);
+        // Sinks = targets des edges sortantes (où la chain doit terminer).
+        const sinks = new Set(leaving.map((e) => e.target));
+        const scope: SimulationScope = {
+          subtreeRoot: scopedRoot,
+          subtreeNodeIds,
+          syntheticEmitters: injectedTraffic.map((t) => ({
+            edgeId: t.edgeId,
+            requestsPerSecond: t.requestsPerSecond,
+          })),
+          sinks,
+        };
+        engineRef.current.setSimulationScope(scope);
+      } else {
+        engineRef.current.setSimulationScope(null);
+      }
+
       engineRef.current.start();
     } else if (simulationState === 'paused') {
       engineRef.current.pause();
@@ -1273,7 +1330,7 @@ export function PixiCanvas() {
       particleRendererRef.current?.hideAll();
       resetAnalytics();
     }
-  }, [mode, simulationState, storedNodes, storedEdges, resetAnalytics, userSeed, setLastRunSeed]);
+  }, [mode, simulationState, storedNodes, storedEdges, resetAnalytics, userSeed, setLastRunSeed, scopedRoot, injectedTraffic]);
 
   // Fault provider sync
   useEffect(() => {

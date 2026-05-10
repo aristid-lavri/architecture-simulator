@@ -127,3 +127,10 @@ export {
   type NodeContextMenuItem,
   type NodeContextMenuProvider,
 } from './node-context-menu';
+
+export {
+  pseudoEdgeRegistry,
+  type PseudoEdge,
+  type PseudoEdgeContext,
+  type PseudoEdgeProvider,
+} from './pseudo-edge-provider';
