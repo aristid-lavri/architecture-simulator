@@ -83,6 +83,14 @@ interface NodeVisual {
   // Detail indicator (haut-DROIT, juste sous le cornerTag) : signal "has-detail" indiquant
   // qu'un drill-down est disponible (ex: c4-software-system avec containers enfants). D4.3.
   detailIndicatorText: Text;
+  // Entry-status badge (bas-DROIT) : sur un container L2 délégué, indique si `entryComponentId`
+  // résout (`↘` vert) ou manque (`⚠` rouge). Distinct du cornerTag (haut-DROIT) et du
+  // detailIndicator (haut-DROIT, sous cornerTag) — D1.2.
+  entryStatusBg: Graphics;
+  entryStatusText: Text;
+  // Entry-arrow (haut-GAUCHE) : sur un c4-component désigné comme entry de son parent
+  // container, glyphe `↘` vert. D1.2.
+  entryArrowText: Text;
   resizeHandles: ResizeHandle[];
   nodeId: string;
   nodeType: GraphNode['type'];
@@ -444,6 +452,34 @@ export class NodeRenderer {
     });
     detailIndicatorText.visible = false;
 
+    // Entry-status badge (bottom-right). Sur un container L2 délégué : `↘` vert si l'entry
+    // résout, `⚠` rouge si elle est manquante / non-rattachée. D1.2.
+    const entryStatusBg = new Graphics();
+    entryStatusBg.visible = false;
+    const entryStatusText = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: 10,
+        fill: 0xffffff,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '700',
+      }),
+    });
+    entryStatusText.visible = false;
+
+    // Entry-arrow (top-left). Sur un c4-component désigné comme entry de son parent : glyphe
+    // `↘` vert. D1.2. Distinct du secondaryBadge (top-left aussi mais pour cascade/emitter).
+    const entryArrowText = new Text({
+      text: '',
+      style: new TextStyle({
+        fontSize: 12,
+        fill: 0x16a34a,
+        fontFamily: '"SF Mono", "Fira Code", monospace',
+        fontWeight: '700',
+      }),
+    });
+    entryArrowText.visible = false;
+
     toolbar.addChild(toolbarBg, statusDot, chaosIcon, cogIcon, trashIcon, collapseIcon);
     container.addChild(
       selectionGlow, bg, signalBar, separator,
@@ -454,6 +490,8 @@ export class NodeRenderer {
       cornerTagBg, cornerTagText,
       secondaryBadgeBg, secondaryBadgeText,
       detailIndicatorText,
+      entryStatusBg, entryStatusText,
+      entryArrowText,
       toolbar,
     );
 
@@ -540,6 +578,8 @@ export class NodeRenderer {
       selectionGlow, cornerTagBg, cornerTagText,
       secondaryBadgeBg, secondaryBadgeText,
       detailIndicatorText,
+      entryStatusBg, entryStatusText,
+      entryArrowText,
       resizeHandles, nodeId: node.id, nodeType: node.type,
       nodeWidth: node.width ?? NODE_WIDTH, isZone,
       currentStatus: 'idle', animationPhase: 0,
@@ -861,11 +901,32 @@ export class NodeRenderer {
 
     // 5) Detail indicator (top-RIGHT, sous le cornerTag) : flag `extra.hasDetail` indiquant
     //    qu'un drill-down est disponible (D4.3). Lu uniquement depuis les hints dynamiques.
-    const extra = dynamicHints?.extra as { hasDetail?: boolean; refinementCount?: number } | undefined;
+    // 6) Entry-status badge (bottom-RIGHT) + entry-arrow (top-LEFT) : indicateurs D1.2 du
+    //    point d'entrée d'un container L2 délégué et de son c4-component cible.
+    const extra = dynamicHints?.extra as {
+      hasDetail?: boolean;
+      refinementCount?: number;
+      entryStatus?: 'bound' | 'missing';
+      isEntryComponent?: boolean;
+    } | undefined;
     if (extra?.hasDetail) {
       this.applyDetailIndicator(visual, w, extra.refinementCount ?? 0);
     } else {
       this.applyDetailIndicator(visual, w, 0);
+    }
+
+    if (extra?.entryStatus === 'bound') {
+      this.applyEntryStatusBadge(visual, w, h, '↘', 0x16a34a); // green-600
+    } else if (extra?.entryStatus === 'missing') {
+      this.applyEntryStatusBadge(visual, w, h, '⚠', 0xdc2626); // red-600
+    } else {
+      this.applyEntryStatusBadge(visual, w, h, undefined, 0);
+    }
+
+    if (extra?.isEntryComponent) {
+      this.applyEntryArrow(visual, true);
+    } else {
+      this.applyEntryArrow(visual, false);
     }
   }
 
@@ -1092,6 +1153,66 @@ export class NodeRenderer {
     // Tooltip-like aria via PixiJS : pas supporté nativement. La sémantique est portée par
     // le node-title et l'overlay du detail-modal. On laisse le glyphe seul.
     void textH;
+  }
+
+  /**
+   * Dessine le badge "entry-status" en bas-DROITE du nœud. Utilisé sur les containers L2
+   * délégués (`simulateAtComponentLevel=true`) pour signaler la résolution de
+   * `entryComponentId` : `↘` vert si bound, `⚠` rouge si missing.
+   *
+   * Position bottom-right, distincte du cornerTag (top-right) et du detailIndicator
+   * (top-right, sous cornerTag). D1.2 (Phase 1F).
+   */
+  private applyEntryStatusBadge(
+    visual: NodeVisual,
+    w: number,
+    h: number,
+    glyph: string | undefined,
+    color: number,
+  ): void {
+    if (!glyph) {
+      visual.entryStatusBg.visible = false;
+      visual.entryStatusText.visible = false;
+      return;
+    }
+
+    visual.entryStatusText.text = glyph;
+    const textW = visual.entryStatusText.width;
+    const padX = 4;
+    const padY = 1;
+    const badgeW = textW + padX * 2;
+    const badgeH = 14;
+    // Bottom-right : on s'aligne avec le cornerTag (débordement de 1px) mais en bas.
+    const badgeX = w - badgeW + 1;
+    const badgeY = h - badgeH / 2;
+
+    visual.entryStatusBg.clear();
+    visual.entryStatusBg.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
+    visual.entryStatusBg.fill({ color, alpha: 1 });
+    visual.entryStatusBg.visible = true;
+
+    visual.entryStatusText.position.set(badgeX + padX, badgeY + padY);
+    visual.entryStatusText.visible = true;
+  }
+
+  /**
+   * Dessine la flèche "entry-component" en haut-GAUCHE d'un c4-component désigné comme
+   * point d'entrée par son parent container. Glyphe `↘` vert sans background — sobre et
+   * complémentaire du badge cascade `⚡` qui occupe la même zone côté container parent.
+   *
+   * D1.2 (Phase 1F).
+   */
+  private applyEntryArrow(visual: NodeVisual, visible: boolean): void {
+    if (!visible) {
+      visual.entryArrowText.visible = false;
+      return;
+    }
+    visual.entryArrowText.text = '↘';
+    // Position : top-LEFT, légèrement à l'intérieur du nœud (mirror du detailIndicator
+    // top-right). On évite de chevaucher le secondaryBadge qui occupe Y=-7..7 ; on place
+    // donc à Y=8 pour rester clairement dessous quand cohabitation, et lisible sinon.
+    visual.entryArrowText.position.set(4, 8);
+    visual.entryArrowText.visible = true;
   }
 
   private drawFooter(visual: NodeVisual, node: GraphNode | null, w: number): void {
