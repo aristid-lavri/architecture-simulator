@@ -20,14 +20,22 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { X, Settings, Trash2, Server, Monitor, Users, Cpu, Database, Zap, Share2, MessageSquare, Shield, ArrowRight, Plus, GripVertical, HelpCircle } from 'lucide-react';
 import { PropertyHelpDrawer } from '@/components/properties/PropertyHelpDrawer';
+import { FieldHelp } from '@/components/properties/FieldHelp';
+import { ValidatedNumberInput } from '@/components/properties/ValidatedNumberInput';
+import { PropertiesSectionNav, type SectionNavItem } from '@/components/properties/PropertiesSectionNav';
+import { PropertiesTabs } from '@/components/properties/PropertiesTabs';
+import { validatePort } from '@/lib/field-validation';
 import type { HttpMethod, RequestMode, LoadDistribution, RampUpCurve, ServerResources, DegradationSettings, DatabaseType, DatabaseNodeData, CacheType, CacheNodeData, EvictionPolicy, LoadBalancerAlgorithm, LoadBalancerNodeData, MessageQueueType, MessageQueueMode, MessageQueueNodeData, ApiGatewayAuthType, AutoTokenMode, ApiGatewayNodeData, ApiGatewayRouteRule, CircuitBreakerNodeData, CDNNodeData, WAFNodeData, FirewallNodeData, ServerlessNodeData, ContainerNodeData, ServiceDiscoveryNodeData, DNSNodeData, CloudStorageNodeData, CloudFunctionNodeData, NetworkZoneNodeData, RequestTypeDistribution, HostServerNodeData, HostPortMapping } from '@/types';
-import { defaultServerResources, defaultDegradation, serverPresets, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
+import { defaultServerResources, defaultDegradation, loadPresets, defaultDatabaseNodeData, defaultCacheNodeData, defaultLoadBalancerNodeData, defaultMessageQueueNodeData, defaultApiGatewayNodeData, defaultCircuitBreakerData, defaultCDNNodeData, defaultWAFNodeData, defaultFirewallData, defaultServerlessData, defaultContainerData, defaultServiceDiscoveryData, defaultDNSNodeData, defaultCloudStorageData, defaultCloudFunctionData, defaultNetworkZoneData, defaultHostServerData, defaultApiServiceData, defaultBackgroundJobData } from '@/types';
 import type { ApiServiceNodeData, BackgroundJobNodeData, ApiServiceProtocol, BackgroundJobType, IdentityProviderNodeData, IdentityProviderType, IdPProtocol, IdPTokenFormat } from '@/types';
 import { defaultIdentityProviderData, IDP_PROVIDER_CAPABILITIES } from '@/types';
 import type { HttpServerNodeData, HttpClientNodeData, ProcessingComplexity, ClientGroupNodeData, AnimatedEdgeData } from '@/types';
 import { complexityMultipliers } from '@/types';
 import type { ConnectionProtocol, ComponentType } from '@/types';
 import { validateConnection } from '@/lib/connection-validator';
+import { applyServerPreset, detectServerPreset, type ServerPresetSelection } from '@/lib/server-presets';
+import { MetadataSection } from '@/components/properties/MetadataSection';
+import { RelatedADRsSection } from '@/components/adr/RelatedADRsSection';
 import { incomingEdges as findIncomingEdges, outgoingEdges as findOutgoingEdges, getNodeById } from '@/lib/graph-helpers';
 import type { KafkaTopic } from '@/types';
 import { defaultKafkaTopic } from '@/types';
@@ -43,11 +51,37 @@ import { useTranslation } from '@/i18n';
 import type { GraphNode } from '@/types/graph';
 import { UISlotHost } from '@/plugins/extensions';
 
+/**
+ * Sections affichées par le sticky section-nav (A4.1a) pour les types pilotes.
+ * Pour les autres types → fallback à `[info]` seul, ce qui désactive le nav
+ * (le composant lui-même short-circuit si <2 sections).
+ *
+ * Étendre type-par-type quand on plombe les `data-section="..."` correspondants
+ * dans la branche de rendu du PropertiesPanel.
+ */
+function sectionsForNodeType(type: string | undefined): SectionNavItem[] {
+  switch (type) {
+    // http-server utilise PropertiesTabs (A4.1b) → pas de sticky nav redondant.
+    case 'http-server':
+      return [];
+    case 'database':
+      return [
+        { id: 'info', label: 'Info' },
+        { id: 'pool', label: 'Pool' },
+        { id: 'latencies', label: 'Latences' },
+        { id: 'capacity', label: 'Capacité' },
+        { id: 'errors', label: 'Erreurs' },
+      ];
+    default:
+      return [{ id: 'info', label: 'Info' }];
+  }
+}
+
 export function PropertiesPanel() {
   const { t } = useTranslation();
   const { isPropertiesPanelOpen, setPropertiesPanelOpen, selectedNodeId, setSelectedNodeId, selectedEdgeId, setSelectedEdgeId } =
     useAppStore();
-  const { nodes, edges, updateNode, removeNode, updateEdge, removeEdge } = useArchitectureStore();
+  const { nodes, edges, updateNode, updateNodeMetadata, removeNode, updateEdge, removeEdge } = useArchitectureStore();
 
   // Drawer d'aide riche pour le composant sélectionné. Ouvre `PropertyHelpDrawer`
   // alimenté par le registre EE + les entrées CE built-in.
@@ -86,6 +120,17 @@ export function PropertiesPanel() {
     setSelectedEdgeId(null);
     setPropertiesPanelOpen(false);
   }, [selectedEdgeId, removeEdge, setSelectedEdgeId, setPropertiesPanelOpen]);
+
+  // ScrollArea wrapper ref → on en extrait le viewport Radix pour l'observer
+  // intersection-based dans `useScrollSpy` (A4.1a section navigator).
+  const scrollAreaWrapperRef = useRef<HTMLDivElement | null>(null);
+  const scrollViewportRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = scrollAreaWrapperRef.current?.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+    scrollViewportRef.current = el ?? null;
+  });
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(320);
@@ -482,10 +527,21 @@ export function PropertiesPanel() {
       />
 
       {/* Content */}
-      <ScrollArea className="flex-1 overflow-auto">
+      <div ref={scrollAreaWrapperRef} className="flex-1 min-h-0 overflow-hidden">
+      <ScrollArea className="h-full overflow-auto">
         <div className="p-4 space-y-6 pb-6">
+          {/* Section navigator (A4.1a) — chips de jump-to. Liste construite par type. */}
+          {(() => {
+            const sections = sectionsForNodeType(selectedNode.type);
+            return sections.length >= 2 ? (
+              <PropertiesSectionNav
+                scrollRootRef={scrollViewportRef}
+                sections={sections}
+              />
+            ) : null;
+          })()}
           {/* Node Info */}
-          <div className="space-y-3">
+          <div data-section="info" className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground uppercase tracking-wide">
                 Information
@@ -514,18 +570,54 @@ export function PropertiesPanel() {
             </div>
           </div>
 
-          {/* HTTP Server Configuration */}
+          {/* HTTP Server Configuration — pilote A4.1b : 4 onglets persistés */}
           {isHttpServer && (
-            <>
-              <HttpServerConfig
-                data={selectedNode.data as HttpServerNodeData}
-                onUpdate={updateNodeData}
-              />
-              <ServerResourcesConfig
-                data={selectedNode.data as HttpServerNodeData}
-                onUpdate={updateNodeData}
-              />
-            </>
+            <PropertiesTabs
+              storageKey="http-server"
+              tabs={[
+                {
+                  id: 'basic',
+                  label: 'Basic',
+                  content: (
+                    <HttpServerConfig
+                      data={selectedNode.data as HttpServerNodeData}
+                      onUpdate={updateNodeData}
+                      sections={new Set(['response', 'auth'])}
+                    />
+                  ),
+                },
+                {
+                  id: 'resources',
+                  label: 'Resources',
+                  content: (
+                    <ServerResourcesConfig
+                      data={selectedNode.data as HttpServerNodeData}
+                      onUpdate={updateNodeData}
+                    />
+                  ),
+                },
+                {
+                  id: 'advanced',
+                  label: 'Advanced',
+                  content: (
+                    <HttpServerConfig
+                      data={selectedNode.data as HttpServerNodeData}
+                      onUpdate={updateNodeData}
+                      sections={new Set(['latency', 'errors', 'complexity'])}
+                    />
+                  ),
+                },
+                {
+                  id: 'notes',
+                  label: 'Notes',
+                  content: (
+                    <div className="text-xs text-muted-foreground p-3 border border-dashed rounded-md bg-muted/20">
+                      Annotations, ADR, ownership — à venir (cf. A7.1).
+                    </div>
+                  ),
+                },
+              ]}
+            />
           )}
 
           {/* HTTP Client Configuration */}
@@ -731,8 +823,23 @@ export function PropertiesPanel() {
             context={{ nodeId: selectedNode.id, nodeType: selectedNode.type }}
             hideWhenEmpty
           />
+
+          {/* Métadonnées transverses (A7.1 + A7.4) : notes, tags, lastReviewed, owner.
+              Composant standalone qui n'édite que le bloc `metadata` du noeud. */}
+          <MetadataSection
+            node={selectedNode}
+            onChange={(patch) => {
+              if (patch.metadata !== undefined || 'metadata' in patch) {
+                updateNodeMetadata(selectedNode.id, patch.metadata);
+              }
+            }}
+          />
+
+          {/* ADRs liées au nœud sélectionné (A7.2) */}
+          <RelatedADRsSection elementKind="node" elementId={selectedNode.id} />
         </div>
       </ScrollArea>
+      </div>
 
       {/* Footer Actions */}
       <div className="p-4 border-t shrink-0">
@@ -753,12 +860,22 @@ export function PropertiesPanel() {
 interface HttpServerConfigProps {
   data: HttpServerNodeData;
   onUpdate: (updates: Partial<HttpServerNodeData>) => void;
+  /**
+   * Filtre optionnel des sections à rendre. Si omis → toutes les sections
+   * (comportement historique). Si fourni → seules les sections dont la clé est
+   * dans le set sont rendues. Permet d'utiliser PropertiesTabs (A4.1b) pour
+   * éclater la config sur plusieurs onglets sans dupliquer le state.
+   *
+   * Clés acceptées : `'response' | 'auth' | 'latency' | 'errors' | 'complexity'`.
+   */
+  sections?: ReadonlySet<string>;
 }
 
-function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
+function HttpServerConfig({ data, onUpdate, sections }: HttpServerConfigProps) {
   const [responseDelay, setResponseDelay] = useState(data.responseDelay || 100);
   const [errorRate, setErrorRate] = useState(data.errorRate || 0);
   const [httpAuthFailureRate, setHttpAuthFailureRate] = useState(data.authFailureRate || 0);
+  const showSection = (id: string) => !sections || sections.has(id);
 
   useEffect(() => {
     setResponseDelay(data.responseDelay || 100);
@@ -769,21 +886,24 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
   return (
     <>
       {/* Response Configuration */}
-      <div className="space-y-3">
+      {showSection('response') && (
+      <div data-section="response" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Configuration de la réponse
         </span>
         <Separator />
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="port">Port</Label>
-            <Input
-              id="port"
-              type="number"
-              value={data.port || 8080}
-              onChange={(e) => onUpdate({ port: parseInt(e.target.value) || 8080 })}
-            />
-          </div>
+          <ValidatedNumberInput
+            id="port"
+            label="Port"
+            helpKey="properties.httpServer.help.port"
+            value={data.port || 8080}
+            onChange={(v) => onUpdate({ port: Number.isFinite(v) ? v : 8080 })}
+            validate={validatePort}
+            min={1}
+            max={65535}
+            step={1}
+          />
 
           <div className="space-y-2">
             <Label htmlFor="status">Code de statut</Label>
@@ -819,9 +939,11 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Authentification */}
-      <div className="space-y-3">
+      {showSection('auth') && (
+      <div data-section="auth" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Authentification
         </span>
@@ -887,8 +1009,10 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
           )}
         </div>
       </div>
+      )}
 
       {/* Microservice Configuration */}
+      {showSection('auth') && (
       <div className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Configuration Microservice
@@ -922,16 +1046,21 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Latency */}
-      <div className="space-y-3">
+      {showSection('latency') && (
+      <div data-section="latency" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Latence
         </span>
         <Separator />
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <label>Délai de réponse</label>
+            <span className="flex items-center gap-1">
+              <label>Délai de réponse</label>
+              <FieldHelp i18nKey="properties.httpServer.help.delay" />
+            </span>
             <span className="text-muted-foreground">{responseDelay}ms</span>
           </div>
           <Slider
@@ -943,16 +1072,21 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
           />
         </div>
       </div>
+      )}
 
       {/* Error Rate */}
-      <div className="space-y-3">
+      {showSection('errors') && (
+      <div data-section="errors" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Simulation d'erreurs
         </span>
         <Separator />
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <label>Taux d'erreur</label>
+            <span className="flex items-center gap-1">
+              <label>Taux d'erreur</label>
+              <FieldHelp i18nKey="properties.httpServer.help.errorRate" />
+            </span>
             <span className="text-muted-foreground">{errorRate}%</span>
           </div>
           <Slider
@@ -967,9 +1101,11 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
           </p>
         </div>
       </div>
+      )}
 
       {/* Code Efficiency / Processing Complexity */}
-      <div className="space-y-3">
+      {showSection('complexity') && (
+      <div data-section="complexity" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Efficacité du code
         </span>
@@ -1001,6 +1137,7 @@ function HttpServerConfig({ data, onUpdate }: HttpServerConfigProps) {
           </p>
         </div>
       </div>
+      )}
     </>
   );
 }
@@ -1582,6 +1719,7 @@ interface ServerResourcesConfigProps {
 }
 
 function ServerResourcesConfig({ data, onUpdate }: ServerResourcesConfigProps) {
+  const { t } = useTranslation();
   const resources = data.resources || defaultServerResources;
   const degradation = data.degradation || defaultDegradation;
 
@@ -1642,30 +1780,36 @@ function ServerResourcesConfig({ data, onUpdate }: ServerResourcesConfigProps) {
 
   return (
     <>
-      {/* Server Preset */}
-      <div className="space-y-3">
+      {/* Server Preset (A4.3) — Custom + Small/Medium/Large, controlled */}
+      <div data-section="resources" className="space-y-3">
         <div className="flex items-center gap-2">
           <Cpu className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs text-muted-foreground uppercase tracking-wide">
-            Preset serveur
+            {t('properties.server.preset.label')}
           </span>
         </div>
         <Separator />
+        <Label className="text-xs text-muted-foreground">
+          {t('properties.server.preset.label')}
+        </Label>
         <Select
+          value={detectServerPreset(resources)}
           onValueChange={(value) => {
-            const preset = serverPresets[value as keyof typeof serverPresets];
-            if (preset) {
-              onUpdate({ resources: preset });
+            const applied = applyServerPreset(value as ServerPresetSelection);
+            if (applied) {
+              onUpdate({ resources: applied });
             }
+            // 'custom' → no-op: keep current resources, just flip the label.
           }}
         >
           <SelectTrigger>
-            <SelectValue placeholder="Choisir un preset..." />
+            <SelectValue placeholder={t('properties.server.preset.placeholder')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="small">Petit (1 CPU, 512MB)</SelectItem>
-            <SelectItem value="medium">Moyen (4 CPU, 8GB)</SelectItem>
-            <SelectItem value="large">Grand (16 CPU, 32GB)</SelectItem>
+            <SelectItem value="custom">{t('properties.server.preset.custom')}</SelectItem>
+            <SelectItem value="small">{t('properties.server.preset.small')}</SelectItem>
+            <SelectItem value="medium">{t('properties.server.preset.medium')}</SelectItem>
+            <SelectItem value="large">{t('properties.server.preset.large')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -1948,7 +2092,7 @@ function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
       </div>
 
       {/* Connection Pool */}
-      <div className="space-y-3">
+      <div data-section="pool" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Pool de connexions
         </span>
@@ -1956,7 +2100,10 @@ function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <label>Connexions max</label>
+              <span className="flex items-center gap-1">
+                <label>Connexions max</label>
+                <FieldHelp i18nKey="properties.database.help.maxConnections" />
+              </span>
               <span className="text-muted-foreground">{maxConnections}</span>
             </div>
             <Slider
@@ -1986,7 +2133,7 @@ function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
       </div>
 
       {/* Performance */}
-      <div className="space-y-3">
+      <div data-section="latencies" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Latences
         </span>
@@ -1994,7 +2141,10 @@ function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <label>Lecture</label>
+              <span className="flex items-center gap-1">
+                <label>Lecture</label>
+                <FieldHelp i18nKey="properties.database.help.readLatency" />
+              </span>
               <span className="text-muted-foreground">{readLatency}ms</span>
             </div>
             <Slider
@@ -2008,7 +2158,10 @@ function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <label>Écriture</label>
+              <span className="flex items-center gap-1">
+                <label>Écriture</label>
+                <FieldHelp i18nKey="properties.database.help.writeLatency" />
+              </span>
               <span className="text-muted-foreground">{writeLatency}ms</span>
             </div>
             <Slider
@@ -2038,14 +2191,17 @@ function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
       </div>
 
       {/* Capacity */}
-      <div className="space-y-3">
+      <div data-section="capacity" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Capacité
         </span>
         <Separator />
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <label>Max requêtes/sec</label>
+            <span className="flex items-center gap-1">
+              <label>Max requêtes/sec</label>
+              <FieldHelp i18nKey="properties.database.help.maxQps" />
+            </span>
             <span className="text-muted-foreground">{maxQps}</span>
           </div>
           <Slider
@@ -2060,14 +2216,17 @@ function DatabaseConfig({ data, onUpdate }: DatabaseConfigProps) {
       </div>
 
       {/* Error Rate */}
-      <div className="space-y-3">
+      <div data-section="errors" className="space-y-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           Simulation d'erreurs
         </span>
         <Separator />
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <label>Taux d'erreur</label>
+            <span className="flex items-center gap-1">
+              <label>Taux d'erreur</label>
+              <FieldHelp i18nKey="properties.database.help.errorRate" />
+            </span>
             <span className="text-muted-foreground">{errorRate}%</span>
           </div>
           <Slider

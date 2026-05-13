@@ -143,14 +143,23 @@
       "modeSingle": "Requête unique",
       "modeLoop": "En boucle",
       "interval": "Intervalle (ms)",
-      "count": "Nombre de requêtes"
+      "count": "Nombre de requêtes",
+      "help": {
+        "interval": "Délai entre 2 requêtes en mode boucle. 1000 ms = 1 RPS ; 10 ms = 100 RPS. Pour stress-test, voir aussi le composant ClientGroup.",
+        "count": "Nombre total de requêtes à émettre. 0 ou vide = illimité (boucle continue jusqu'à arrêt manuel)."
+      }
     },
     "httpServer": {
       "port": "Port",
       "status": "Code de statut",
       "responseBody": "Corps de la réponse",
       "delay": "Latence (ms)",
-      "errorRate": "Taux d'erreur (%)"
+      "errorRate": "Taux d'erreur (%)",
+      "help": {
+        "port": "Port TCP d'écoute. Plage 1–65535. Conventions : 80 (HTTP), 443 (HTTPS), 8080/8443 (proxy), >1024 pour services non-privilégiés.",
+        "delay": "Latence interne moyenne du serveur (traitement applicatif). Plage typique : 10–200 ms. Une API CRUD simple ≈ 20 ms ; une API avec jointures DB ≈ 100–500 ms.",
+        "errorRate": "Taux d'erreur de base injecté dans la simulation (hors saturation des ressources). Plage typique : 0–5 %. Au-delà de 1 %, considérer un circuit breaker en amont."
+      }
     },
     "database": {
       "type": "Type de base de données",
@@ -165,7 +174,14 @@
       "transactionLatency": "Latence transaction (ms)",
       "capacity": "Capacité",
       "maxQps": "Max requêtes/sec",
-      "errorRate": "Taux d'erreur (%)"
+      "errorRate": "Taux d'erreur (%)",
+      "help": {
+        "readLatency": "Temps moyen pour exécuter un SELECT. PostgreSQL OLTP ≈ 1–10 ms ; jointures complexes 50–200 ms. Penser à un cache pour <1 ms.",
+        "writeLatency": "Temps moyen pour exécuter un INSERT/UPDATE. PostgreSQL ≈ 5–20 ms (commit synchrone). Plus élevé si index multiples ou triggers.",
+        "maxQps": "Capacité maximale en requêtes/seconde avant saturation. Indicatif : PostgreSQL m5.large ≈ 5 000 ; Aurora write-leader ≈ 50 000. Au-delà, dégradation quadratique.",
+        "errorRate": "Taux d'erreur de base (deadlock, timeout sporadique). Plage typique : 0–0.5 %. Au-delà → audit des requêtes longues.",
+        "maxConnections": "Limite supérieure du pool. PostgreSQL : ~100 par instance (memory-bound). Au-delà : utiliser pgBouncer."
+      }
     },
     "cache": {
       "type": "Type de cache",
@@ -185,7 +201,13 @@
       "hitRatioVariance": "Variance (%)",
       "warmUp": "Période de warm-up",
       "warmUpEnabled": "Activer le warm-up",
-      "warmUpDuration": "Durée (ms)"
+      "warmUpDuration": "Durée (ms)",
+      "help": {
+        "initialHitRatio": "Ratio des requêtes servies depuis le cache (vs miss vers la source). Plage typique : 60–95 %. <50 % → cache mal dimensionné ou TTL trop court.",
+        "defaultTTL": "Durée de vie par défaut d'une entrée. Sessions : 1800 s ; pages CDN : 86400 s ; lookups référentiels : 3600–86400 s.",
+        "maxMemory": "Mémoire allouée au cache. Au-delà, les entrées sont évincées selon la politique. Redis cache-aside typique : 1–32 GB par instance.",
+        "getLatency": "Latence d'un GET. Redis local : 0.1–1 ms ; Memcached : 0.2 ms ; cache-régional : 1–5 ms."
+      }
     },
     "loadBalancer": {
       "algorithm": "Algorithme de répartition",
@@ -254,7 +276,25 @@
       "os": "Systeme d'exploitation",
       "osLinux": "Linux",
       "osWindows": "Windows",
-      "osMacos": "macOS"
+      "osMacos": "macOS",
+      "preset": {
+        "label": "Preset",
+        "placeholder": "Choisir un preset...",
+        "custom": "Custom",
+        "small": "Small (1 CPU, 512MB)",
+        "medium": "Medium (4 CPU, 8GB)",
+        "large": "Large (16 CPU, 32GB)"
+      }
+    },
+    "server": {
+      "preset": {
+        "label": "Preset",
+        "placeholder": "Choisir un preset...",
+        "custom": "Custom",
+        "small": "Small (1 CPU, 512MB)",
+        "medium": "Medium (4 CPU, 8GB)",
+        "large": "Large (16 CPU, 32GB)"
+      }
     },
     "hierarchy": {
       "sameContainer": "Meme container",
@@ -383,6 +423,22 @@
     "bankingOnline": {
       "name": "Banque Online (démo)",
       "description": "Parcours bancaire focusé : clients → WAF/CDN/API GW → Auth + 2 services → DB + Redis + Kafka + Circuit Breaker vers Paiement Externe (14 nœuds)"
+    },
+    "cqrs": {
+      "name": "Event-Driven CQRS",
+      "description": "Séparation commande/lecture via event bus : Command Service écrit la write DB et émet des événements, un worker projette vers une vue matérialisée lue par le Query Service"
+    },
+    "serverlessApi": {
+      "name": "Serverless API",
+      "description": "API Gateway devant une cloud function (FaaS) qui écrit dans un object storage et une base de métadonnées (cold start simulé)"
+    },
+    "monolithDecomposition": {
+      "name": "Décomposition de Monolithe",
+      "description": "Pattern strangler-fig : monolithe legacy et microservice extrait derrière le même API Gateway, qui route progressivement le trafic vers le nouveau service"
+    },
+    "bff": {
+      "name": "Backend-for-Frontend",
+      "description": "Un BFF mobile et un BFF web devant une couche de services partagée (user, catalog, order) pour optimiser les payloads et l'agrégation par canal"
     },
     "confirmReplace": "Remplacer l'architecture actuelle?"
   },
@@ -725,8 +781,27 @@
     "allNodes": "Tous les composants"
   },
   "rules": {
+    "custom": {
+      "title": "Règles personnalisées",
+      "description": "DSL YAML pour des règles d'architecture propres à ce projet. Le pack `project-custom` est recompilé à chaque application.",
+      "yamlLabel": "YAML des règles personnalisées",
+      "apply": "Appliquer",
+      "appliedSuccess": "{count} règle(s) compilée(s) et appliquée(s)",
+      "headerButton": "Règles custom",
+      "headerTooltip": "Règles d'architecture personnalisées (YAML)"
+    },
     "toast": {
-      "blocked": "Connexion impossible : {reason}"
+      "blocked": "Connexion impossible : {reason}",
+      "simulationWarnings": "Simulation démarrée avec {count} avertissement(s)",
+      "simulationWarningsHint": "Cliquer pour ignorer"
+    },
+    "blockingDialog": {
+      "title": "Simulation bloquée",
+      "subtitle": "{count} erreur(s) critique(s) empêchent le démarrage de la simulation.",
+      "ruleIdLabel": "Règle",
+      "suggestionLabel": "Suggestion",
+      "dismiss": "Fermer",
+      "fixHint": "Corrigez les problèmes ci-dessus puis relancez la simulation."
     },
     "suppression": {
       "dialog": {
@@ -809,8 +884,166 @@
         "orphan-circuit-breaker": {
           "short": "Circuit breaker orphelin",
           "message": "Circuit-breaker traversé par une seule edge sans fan-out : il ne sert à rien dans cette configuration."
+        },
+        "orphan-node": {
+          "short": "Noeud orphelin",
+          "title": "Noeud sans connexion",
+          "message": "Ce noeud n'a aucune edge entrante ni sortante.",
+          "description": "Un composant non connecté ne participe à aucun flux de simulation.",
+          "suggestion": "Connectez ce noeud à au moins un autre composant, ou supprimez-le."
+        },
+        "cycle-detected": {
+          "short": "Cycle détecté",
+          "title": "Cycle dans le graphe",
+          "message": "Un cycle a été détecté dans le graphe de dépendances.",
+          "description": "Les cycles peuvent provoquer des appels récursifs sans contre-pression et compliquer l'analyse de chemin critique.",
+          "suggestion": "Cassez le cycle en remplaçant une edge par un message-queue (pattern asynchrone) ou en revoyant la séquence d'appels."
+        },
+        "single-lb-spof": {
+          "short": "LB en SPOF",
+          "title": "Load-balancer unique",
+          "message": "Un seul load-balancer dessert plusieurs backends — il devient un SPOF.",
+          "description": "Si ce LB tombe en panne, tout le trafic backend devient inaccessible.",
+          "suggestion": "Ajoutez un second load-balancer (active/passive ou multi-AZ) pour la haute disponibilité."
+        },
+        "single-db-spof": {
+          "short": "DB en SPOF",
+          "title": "Base de données unique",
+          "message": "Une seule base de données dessert plusieurs services upstream.",
+          "description": "La DB devient un point unique de défaillance pour toute la stack.",
+          "suggestion": "Ajoutez un replica de lecture ou déployez un cluster multi-AZ."
+        },
+        "mq-no-consumer": {
+          "short": "MQ sans consumer",
+          "title": "Queue sans consumer",
+          "message": "Une message-queue reçoit des messages mais n'a aucun consumer.",
+          "description": "Les messages s'accumuleront indéfiniment — probablement une erreur de conception.",
+          "suggestion": "Ajoutez un background-job ou un service consumer relié à la sortie de la queue."
+        },
+        "container-missing-parent": {
+          "short": "Container sans hôte",
+          "title": "Container sans host-server parent",
+          "message": "Un container doit être imbriqué dans un host-server.",
+          "description": "Sans host-server parent, la simulation ne peut pas partager les ressources CPU/mémoire correctement.",
+          "suggestion": "Glissez ce container à l'intérieur d'un host-server."
+        }
+      },
+      "exposure": {
+        "db-exposed-publicly": {
+          "short": "DB exposée publiquement",
+          "title": "Base de données exposée publiquement",
+          "message": "Une base de données est directement accessible depuis un client.",
+          "description": "C'est une faille de sécurité majeure : un service applicatif doit toujours s'interposer entre les clients et le stockage.",
+          "suggestion": "Insérez un http-server ou api-service entre le client et la database."
+        },
+        "cache-exposed-publicly": {
+          "short": "Cache exposé publiquement",
+          "title": "Cache exposé publiquement",
+          "message": "Un cache est directement accessible depuis un client.",
+          "description": "Un cache exposé permet la lecture et l'écriture arbitraires de données partagées.",
+          "suggestion": "Insérez un service applicatif entre le client et le cache."
+        }
+      },
+      "security": {
+        "cross-zone-edge-no-gateway": {
+          "short": "Cross-zone sans gateway",
+          "title": "Edge traversant zone publique → privée sans gateway",
+          "message": "Une edge traverse la zone publique vers une zone privée sans filtre.",
+          "description": "Le trafic public ne devrait jamais atteindre directement des composants backend sans passer par un firewall, WAF, API gateway ou load-balancer.",
+          "suggestion": "Insérez un api-gateway, firewall ou load-balancer en frontière de zone."
+        },
+        "public-service-no-auth": {
+          "short": "Service public sans auth",
+          "title": "Service public sans identity-provider",
+          "message": "Un service en zone publique/DMZ est accessible sans identity-provider dans l'architecture.",
+          "description": "Sans IdP, aucun mécanisme d'authentification standardisé ne protège ce service.",
+          "suggestion": "Ajoutez un identity-provider (OIDC, OAuth2) et raccordez les services exposés."
+        }
+      },
+      "performance": {
+        "no-cdn-multi-clients": {
+          "short": "CDN manquant",
+          "title": "CDN absent pour trafic multi-clients",
+          "message": "Plusieurs client-groups frappent directement le même http-server sans CDN.",
+          "description": "Un CDN edge-cache permettrait de servir les ressources statiques à proximité des clients et de soulager le serveur d'origine.",
+          "suggestion": "Ajoutez un CDN entre les clients et le serveur d'origine."
+        },
+        "db-without-cache": {
+          "short": "DB sans cache",
+          "title": "Base de données sans cache en amont",
+          "message": "Une base de données est sollicitée par un service mais aucun cache n'existe dans l'architecture.",
+          "description": "Sans cache, chaque requête de lecture frappe la DB — coût et latence évitables.",
+          "suggestion": "Ajoutez un cache (Redis/Memcached) entre le service et la base."
+        }
+      },
+      "hygiene": {
+        "duplicate-node-names": {
+          "short": "Noms dupliqués",
+          "title": "Noeuds avec libellés dupliqués",
+          "message": "Deux noeuds ou plus partagent le même libellé.",
+          "description": "Les libellés dupliqués rendent les diagrammes ambigus et compliquent la corrélation logs/traces.",
+          "suggestion": "Renommez chaque noeud avec un libellé unique."
+        },
+        "edge-no-protocol": {
+          "short": "Edge sans protocole",
+          "title": "Edge sans protocole défini",
+          "message": "Une edge applicative ne définit aucun protocole.",
+          "description": "Sans protocole, le moteur ne peut pas appliquer les latences/coûts spécifiques (REST vs gRPC vs WebSocket).",
+          "suggestion": "Sélectionnez l'edge et choisissez un protocole dans le panneau de propriétés."
+        },
+        "duplicate-edge": {
+          "short": "Edges dupliquées",
+          "title": "Edges dupliquées",
+          "message": "Plusieurs edges partagent la même source, cible et protocole.",
+          "description": "Les edges dupliquées sont probablement un artefact d'édition.",
+          "suggestion": "Supprimez l'edge redondante."
         }
       }
     }
+  },
+  "metadata": {
+    "section": "Métadonnées",
+    "sectionDescription": "Annotations transverses : notes, tags, propriétaire, dernière revue. N'affectent pas la simulation.",
+    "notes": "Notes",
+    "notesPlaceholder": "Notes libres, décisions de design, contexte…",
+    "tags": "Tags",
+    "tagsPlaceholder": "Séparés par des virgules (ex : critique, PCI, legacy)",
+    "tagsHelp": "Utilisez des virgules pour séparer plusieurs tags.",
+    "lastReviewed": "Dernière revue",
+    "owner": {
+      "team": "Équipe propriétaire",
+      "teamPlaceholder": "Ex : platform, paiements…",
+      "individual": "Personne responsable",
+      "individualPlaceholder": "Ex : a.lavri@desjardins.com"
+    }
+  },
+  "adr": {
+    "headerTooltip": "Décisions d'architecture (ADR)",
+    "notFound": "ADR introuvable",
+    "list": {
+      "empty": "Aucune décision pour l'instant — créez-en une pour documenter un choix d'architecture.",
+      "new": "Nouvelle ADR"
+    },
+    "fields": {
+      "title": "Titre",
+      "date": "Date",
+      "status": "Statut",
+      "author": "Auteur",
+      "context": "Contexte",
+      "decision": "Décision",
+      "consequences": "Conséquences",
+      "alternatives": "Alternatives",
+      "tags": "Tags"
+    },
+    "related": {
+      "title": "ADRs liées",
+      "empty": "Aucune ADR liée à cet élément.",
+      "link": "Lier à une ADR"
+    }
+  },
+  "exportMarkdown": {
+    "tooltip": "Exporter en Markdown (diagramme Mermaid + composants + ADRs)",
+    "menuItem": "Documentation Markdown",
+    "description": "Génère un .md complet : diagramme, composants, connexions et ADRs."
   }
 }

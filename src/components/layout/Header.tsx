@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { useSimulationStore } from '@/store/simulation-store';
 import { useArchitectureStore } from '@/store/architecture-store';
+import { useAdrStore } from '@/store/adr-store';
 import { useTranslation } from '@/i18n';
 import {
   DropdownMenu,
@@ -44,10 +45,18 @@ import {
   Camera,
   History,
   X,
+  FileText,
+  ListChecks,
+  ScrollText,
 } from 'lucide-react';
 import Link from 'next/link';
 import { architectureTemplates, type ArchitectureTemplate } from '@/data/architecture-templates';
 import { exportToYaml } from '@/lib/yaml-exporter';
+import { buildMarkdown } from '@/lib/markdown-export';
+import { ADRDialog } from '@/components/adr/ADRDialog';
+import { CustomRulesPanel } from '@/components/rules/CustomRulesPanel';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import type { AppMode } from '@/types';
 import { cn } from '@/lib/utils';
 import { YamlEditor } from '@/components/YamlEditor';
@@ -94,6 +103,25 @@ export function Header() {
   const [yamlOpen, setYamlOpen] = useState(false);
   const [yamlInitialContent, setYamlInitialContent] = useState<string | undefined>(undefined);
   const [snapshotName, setSnapshotName] = useState('');
+  const [rulesOpen, setRulesOpen] = useState(false);
+
+  // A7.6 — Markdown export: builds + downloads a `.md` of the current architecture.
+  const handleExportMarkdown = () => {
+    const adrs = useAdrStore.getState().adrs;
+    const md = buildMarkdown({ name: 'Architecture', nodes, edges, adrs });
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `architecture-${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // A6.2 — Persist applied custom rules YAML through architecture-store.
+  const setCustomRulesYaml = useArchitectureStore((s) => s.setCustomRulesYaml);
 
   const handleViewTemplateYaml = (template: ArchitectureTemplate) => {
     const yaml = exportToYaml(template.nodes, template.edges);
@@ -619,6 +647,56 @@ export function Header() {
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Definir l&apos;architecture en YAML</TooltipContent>
+        </Tooltip>
+
+        {/* A6.2 — Custom rules YAML editor */}
+        <Sheet open={rulesOpen} onOpenChange={setRulesOpen}>
+          <SheetTrigger
+            className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+            title={t('rules.custom.headerTooltip')}
+          >
+            <ListChecks className="w-3 h-3" />
+            RULES
+          </SheetTrigger>
+          <SheetContent side="right" className="w-[480px] sm:w-[520px] p-0">
+            <SheetTitle asChild>
+              <VisuallyHidden>{t('rules.custom.title')}</VisuallyHidden>
+            </SheetTitle>
+            <CustomRulesPanel
+              initialYaml={projectMeta?.customRulesYaml ?? ''}
+              onApply={(yaml) => setCustomRulesYaml(yaml)}
+            />
+          </SheetContent>
+        </Sheet>
+
+        {/* A7.2 — Architecture Decision Records */}
+        <ADRDialog
+          trigger={
+            <button
+              className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+              aria-label={t('adr.headerTooltip')}
+              title={t('adr.headerTooltip')}
+            >
+              <ScrollText className="w-3 h-3" />
+              ADR
+            </button>
+          }
+        />
+
+        {/* A7.6 — Markdown documentation export */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleExportMarkdown}
+              disabled={nodes.length === 0}
+              className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+              aria-label={t('exportMarkdown.tooltip')}
+            >
+              <FileText className="w-3 h-3" />
+              MD
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('exportMarkdown.tooltip')}</TooltipContent>
         </Tooltip>
 
         <Tooltip>

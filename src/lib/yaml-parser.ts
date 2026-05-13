@@ -1,5 +1,5 @@
 import YAML from 'yaml';
-import type { GraphNode, GraphEdge } from '@/types/graph';
+import type { GraphNode, GraphEdge, NodeMetadata } from '@/types/graph';
 import type { ComponentType, NetworkZoneType } from '@/types';
 import {
   yamlSchemaRegistry,
@@ -53,6 +53,7 @@ interface YamlZone {
   interZoneLatency?: number;
   position?: { x: number; y: number };
   size?: { width: number; height: number };
+  annotations?: NodeMetadata;
 }
 
 interface YamlHost {
@@ -69,6 +70,7 @@ interface YamlHost {
   config?: Record<string, unknown>;
   position?: { x: number; y: number };
   size?: { width: number; height: number };
+  annotations?: NodeMetadata;
 }
 
 interface YamlComponent {
@@ -78,6 +80,33 @@ interface YamlComponent {
   container?: string;
   position?: { x: number; y: number };
   config?: Record<string, unknown>;
+  annotations?: NodeMetadata;
+}
+
+/**
+ * Garde-fou : ne propage que les sous-champs connus de `NodeMetadata` pour eviter
+ * qu'un YAML bidouillé injecte des clés arbitraires dans le store.
+ */
+function sanitizeAnnotations(raw: unknown): NodeMetadata | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: NodeMetadata = {};
+  if (typeof r.notes === 'string' && r.notes.trim()) out.notes = r.notes;
+  if (Array.isArray(r.tags)) {
+    const tags = r.tags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0);
+    if (tags.length > 0) out.tags = tags;
+  }
+  if (typeof r.lastReviewed === 'string' && r.lastReviewed.trim()) out.lastReviewed = r.lastReviewed;
+  if (r.owner && typeof r.owner === 'object' && !Array.isArray(r.owner)) {
+    const ownerRaw = r.owner as Record<string, unknown>;
+    const owner: { team?: string; individual?: string } = {};
+    if (typeof ownerRaw.team === 'string' && ownerRaw.team.trim()) owner.team = ownerRaw.team;
+    if (typeof ownerRaw.individual === 'string' && ownerRaw.individual.trim()) {
+      owner.individual = ownerRaw.individual;
+    }
+    if (Object.keys(owner).length > 0) out.owner = owner;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 interface YamlConnection {
@@ -127,9 +156,9 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 
 export function parseYamlArchitecture(
   yamlString: string,
-): { nodes: GraphNode[]; edges: GraphEdge[]; projectMeta: ProjectKindMeta } | { error: string } {
+): { nodes: GraphNode[]; edges: GraphEdge[]; projectMeta: ProjectKindMeta; adrs?: import('@/types').ADR[] } | { error: string } {
   try {
-    const arch = YAML.parse(yamlString) as YamlArchitecture;
+    const arch = YAML.parse(yamlString) as YamlArchitecture & { adrs?: import('@/types').ADR[] };
 
     if (!arch || !arch.components) {
       return { error: 'YAML invalide : la section "components" est requise.' };
@@ -138,16 +167,21 @@ export function parseYamlArchitecture(
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
 
-    // Parse projectMeta : kind par défaut + champs apportés par les plugins.
+    // Parse projectMeta : kind par défaut + champs apportés par les plugins + custom rules YAML (A6.2).
     // Rétrocompatibilité : un YAML sans metadata reste un projet "free".
     const rawMetadata = (arch.metadata ?? {}) as Record<string, unknown>;
     const kindFromYaml = typeof rawMetadata.kind === 'string' ? rawMetadata.kind : DEFAULT_PROJECT_KIND;
     const pluginMeta = yamlSchemaRegistry.parseMetadata(rawMetadata);
+    const customRulesYaml = typeof rawMetadata.customRules === 'string' ? rawMetadata.customRules : undefined;
     const projectMeta: ProjectKindMeta = {
       ...createProjectMeta(kindFromYaml),
       ...pluginMeta,
       kind: kindFromYaml,
+      ...(customRulesYaml ? { customRulesYaml } : {}),
     };
+
+    // ADRs (A7.2) — top-level block, optional.
+    const adrs = Array.isArray(arch.adrs) ? arch.adrs : undefined;
 
     // Zone layout tracking
     const zonePositions: Record<string, { x: number; y: number; width: number; height: number }> = {};
@@ -167,6 +201,7 @@ export function parseYamlArchitecture(
         zonePositions[zoneId] = { ...pos, ...size };
         componentCountInZone[zoneId] = 0;
 
+        const zoneAnnotations = sanitizeAnnotations(zone.annotations);
         nodes.push({
           id: `zone-${zoneId}`,
           type: 'network-zone',
@@ -182,6 +217,7 @@ export function parseYamlArchitecture(
             color: zoneColors[zone.type || 'backend'],
             interZoneLatency: zone.interZoneLatency ?? 2,
           },
+          ...(zoneAnnotations ? { metadata: zoneAnnotations } : {}),
         });
 
         zoneIndex++;
@@ -218,6 +254,7 @@ export function parseYamlArchitecture(
         if (host.hostname) (hostData as Record<string, unknown>).hostname = host.hostname;
         if (host.portMappings) (hostData as Record<string, unknown>).portMappings = host.portMappings;
 
+        const hostAnnotations = sanitizeAnnotations(host.annotations);
         nodes.push({
           id: hostId,
           type: 'host-server',
@@ -226,6 +263,7 @@ export function parseYamlArchitecture(
           height: size.height,
           data: hostData,
           ...(parentId ? { parentId } : {}),
+          ...(hostAnnotations ? { metadata: hostAnnotations } : {}),
         });
 
         hostIndex++;
@@ -293,12 +331,14 @@ export function parseYamlArchitecture(
       const nodePatch = yamlSchemaRegistry.parseNode(rawComp);
       const nodeDataPatch = yamlSchemaRegistry.parseNodeData(rawComp);
 
+      const compAnnotations = sanitizeAnnotations(comp.annotations);
       nodes.push({
         id: compId,
         type: comp.type,
         position,
         data: { ...mergedData, ...nodeDataPatch },
         ...(parentId ? { parentId } : {}),
+        ...(compAnnotations ? { metadata: compAnnotations } : {}),
         ...nodePatch,
       });
     }
@@ -323,7 +363,7 @@ export function parseYamlArchitecture(
       }
     }
 
-    return { nodes, edges, projectMeta };
+    return { nodes, edges, projectMeta, ...(adrs ? { adrs } : {}) };
   } catch (e) {
     return { error: `Erreur de parsing YAML : ${e instanceof Error ? e.message : String(e)}` };
   }

@@ -1,6 +1,6 @@
 import YAML from 'yaml';
 import type { GraphNode, GraphEdge } from '@/types/graph';
-import type { NetworkZoneNodeData, HostServerNodeData } from '@/types';
+import type { ADR, NetworkZoneNodeData, HostServerNodeData } from '@/types';
 import { yamlSchemaRegistry, type ProjectKindMeta } from '@/plugins/extensions';
 
 interface YamlArchitecture {
@@ -12,6 +12,8 @@ interface YamlArchitecture {
   hosts?: Record<string, Record<string, unknown>>;
   components: Record<string, Record<string, unknown>>;
   connections: { from: string; to: string; protocol?: string; targetPort?: number; topic?: string; [key: string]: unknown }[];
+  /** Architecture Decision Records (A7.2) — top-level block. */
+  adrs?: ADR[];
 }
 
 const statusKeys = ['status', 'utilization', 'circuitState', 'failureCount', 'successCount', 'currentInstances'];
@@ -35,6 +37,7 @@ export function exportToYaml(
   edges: GraphEdge[],
   name = 'Architecture',
   projectMeta?: ProjectKindMeta,
+  extras?: { adrs?: ADR[] },
 ): string {
   const arch: YamlArchitecture = {
     version: 1,
@@ -43,16 +46,24 @@ export function exportToYaml(
     connections: [],
   };
 
-  // Metadata : kind + extensions des plugins.
+  // Metadata : kind + extensions des plugins + custom rules YAML (A6.2).
   // Pour la rétrocompatibilité, on omet la metadata si kind === 'free' et qu'aucun plugin
   // n'ajoute de champ. Un YAML produit par un projet "libre" reste donc identique au format historique.
   if (projectMeta) {
     const pluginMeta = yamlSchemaRegistry.serializeMetadata(projectMeta);
     const kindMeta = projectMeta.kind && projectMeta.kind !== 'free' ? { kind: projectMeta.kind } : {};
-    const merged = { ...kindMeta, ...pluginMeta };
+    const customRulesMeta = typeof projectMeta.customRulesYaml === 'string' && projectMeta.customRulesYaml.trim().length > 0
+      ? { customRules: projectMeta.customRulesYaml }
+      : {};
+    const merged = { ...kindMeta, ...pluginMeta, ...customRulesMeta };
     if (Object.keys(merged).length > 0) {
       arch.metadata = merged;
     }
+  }
+
+  // ADRs (A7.2) — top-level block, omitted when empty for backwards compat.
+  if (extras?.adrs && extras.adrs.length > 0) {
+    arch.adrs = extras.adrs;
   }
 
   // Export zones
@@ -69,6 +80,7 @@ export function exportToYaml(
         interZoneLatency: data.interZoneLatency,
         position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
         ...(node.width != null && node.height != null ? { size: { width: node.width, height: node.height } } : {}),
+        ...(node.metadata ? { annotations: node.metadata } : {}),
       };
     }
   }
@@ -94,6 +106,8 @@ export function exportToYaml(
           ? { x: Math.round(node.position.x), y: Math.round(node.position.y) }
           : { x: Math.round(node.position.x), y: Math.round(node.position.y) },
         ...(node.width != null && node.height != null ? { size: { width: node.width, height: node.height } } : {}),
+        // Annotations transverses (notes, tags, owner, lastReviewed). Omises si absentes.
+        ...(node.metadata ? { annotations: node.metadata } : {}),
       };
     }
   }
@@ -121,6 +135,8 @@ export function exportToYaml(
         label: (node.data as Record<string, unknown>).label,
         ...cleanData(node.data as Record<string, unknown>),
       },
+      // Annotations transverses (notes, tags, owner, lastReviewed). Omises si absentes.
+      ...(node.metadata ? { annotations: node.metadata } : {}),
     };
   }
 

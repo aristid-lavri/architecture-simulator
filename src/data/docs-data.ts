@@ -1000,6 +1000,118 @@ export const componentDocs: DocComponent[] = [
     connections: 'Pas de connexions directes. Les composants enfants maintiennent leurs propres connexions.',
     protocols: [],
   },
+  // ═══════════════════════════════════════
+  // CONCEPT — Annotations & Ownership (transverse)
+  // ═══════════════════════════════════════
+  {
+    id: 'metadata',
+    name: 'Annotations & Propriété',
+    type: 'metadata',
+    description: 'Bloc transverse de métadonnées documentaires (notes, tags, dernière revue, équipe et personne responsable) attachable à n\'importe quel nœud. Distinct de la configuration de simulation — n\'affecte ni le runtime, ni les métriques.',
+    category: 'concept',
+    sections: [
+      {
+        name: 'Champs disponibles',
+        description: 'Tous optionnels, stockés `undefined` quand vides (sérialisation propre).',
+        properties: [
+          { name: 'notes', type: 'string', defaultValue: '—', description: 'Notes libres en texte plain. Idéal pour documenter une décision de design, un ADR lié, un contexte historique. Affichage textarea 3 lignes dans le Properties Panel.' },
+          { name: 'tags', type: 'object', defaultValue: '[]', description: 'Liste de tags libres (ex : « critical », « PCI », « legacy »). Saisis séparés par virgules, stockés en `string[]` dédupliqué. Sert à filtrer, regrouper, et signaler des invariants de gouvernance.' },
+          { name: 'lastReviewed', type: 'string', defaultValue: '—', description: 'Date ISO (YYYY-MM-DD) de la dernière revue d\'architecture du composant. Permet de tracker l\'âge documentaire (« revue il y a > 12 mois » = signal de drift potentiel).' },
+          { name: 'owner.team', type: 'string', defaultValue: '—', description: 'Équipe propriétaire du composant (ex : « platform », « paiements »). Distinct de la personne responsable — typiquement l\'équipe est le point de contact stable.' },
+          { name: 'owner.individual', type: 'string', defaultValue: '—', description: 'Personne nominée responsable (ex : email, handle). Utile quand une décision opérationnelle nécessite un point de contact unique.' },
+        ],
+      },
+    ],
+    behavior: 'Les annotations sont purement documentaires : l\'engine de simulation, les handlers et les validateurs OWASP les ignorent intégralement. Elles persistent dans le `localStorage` avec le reste du graphe et traversent l\'export YAML sous la clé `annotations` (ex : `components.svc.annotations.notes`). Quand un champ devient vide, il est supprimé de l\'objet — pas de pollution avec des strings vides.',
+    connections: 'N\'affecte aucune connexion. Champ documentaire seul.',
+    protocols: [],
+    referenceDoc: 'Dossiers-projet/REFERENCE-Composants-CE.md#annotations--ownership-transverse',
+  },
+  // ═══════════════════════════════════════
+  // CONCEPT — Custom Rules DSL (A6.2)
+  // ═══════════════════════════════════════
+  {
+    id: 'custom-rules',
+    name: 'Règles personnalisées (DSL)',
+    type: 'custom-rules',
+    description: 'DSL YAML déclaratif pour encoder des règles d\'architecture propres à votre projet (« tout service marqué payment doit être dans une zone PCI », « les bases doivent avoir un owner.team », « les edges payment doivent utiliser HTTPS »). Complète les 30 règles built-in du pack `core-sanity`.',
+    category: 'concept',
+    sections: [
+      {
+        name: 'Workflow',
+        description: 'Ouvrir Header → RULES, coller le YAML, appliquer. Le pack `project-custom` remplace l\'ancien à chaque application.',
+        properties: [
+          { name: 'id', type: 'string', defaultValue: '—', description: 'Identifiant unique de la règle dans le projet (ex : `my-org/payment-in-pci`). Préfixe libre.' },
+          { name: 'severity', type: 'enum', defaultValue: 'warning', description: '`error` (bloque la simulation via A6.4) ou `warning` (toast non bloquant).' },
+          { name: 'scope', type: 'enum', defaultValue: 'graph', description: '`graph` (évaluée une fois sur le graphe entier) ou `edge` (évaluée par edge).' },
+          { name: 'forall', type: 'object', defaultValue: '—', description: 'Scope `graph` : `{ node: NodeMatcher }` ou `{ edge: EdgeMatcher }` — itère sur les éléments correspondants.' },
+          { name: 'require', type: 'object', defaultValue: '—', description: 'Condition à remplir : `ancestor_zone`, `metadata_field`, `protocol_in`, `target_type`, `tag`.' },
+          { name: 'forbid', type: 'object', defaultValue: '—', description: 'Scope `edge` : violation si l\'edge match (source + target + protocol/tag).' },
+        ],
+      },
+    ],
+    behavior: 'Le DSL est stocké dans `projectMeta.customRulesYaml` (string), parsé et compilé par `applyCustomRulesPack()` à chaque modification, et re-hydraté au démarrage. Le pack `project-custom` cohabite avec `core-sanity` ; toutes les violations passent par les mêmes adapters → ValidationPanel + BlockingValidationDialog. Round-trip YAML via `metadata.customRules`.',
+    connections: 'Aucune connexion modifiée. Le DSL agit purement comme validateur.',
+    protocols: [],
+    referenceDoc: 'Dossiers-projet/REFERENCE-Custom-Rules-DSL.md',
+  },
+  // ═══════════════════════════════════════
+  // CONCEPT — Architecture Decision Records (A7.2)
+  // ═══════════════════════════════════════
+  {
+    id: 'adr',
+    name: 'Décisions d\'architecture (ADR)',
+    type: 'adr',
+    description: 'Système natif d\'Architecture Decision Records scopés au projet. Chaque ADR capture le contexte, la décision, les conséquences et les alternatives. Lien optionnel vers des nœuds/edges du graphe ; chaîne de supersession traçable.',
+    category: 'concept',
+    sections: [
+      {
+        name: 'Champs',
+        description: 'Modèle adapté de MADR. Markdown libre dans context/decision/consequences/alternatives.',
+        properties: [
+          { name: 'number', type: 'number', defaultValue: 'auto', description: 'Numéro auto-incrémenté (ADR-0001, ADR-0002…) — utilisé pour les références humaines.' },
+          { name: 'status', type: 'enum', defaultValue: 'proposed', description: '`proposed` · `accepted` · `superseded` · `deprecated`. Cycle de vie standard.' },
+          { name: 'context', type: 'string', defaultValue: '—', description: 'Markdown : pourquoi cette décision, contraintes, état antérieur.' },
+          { name: 'decision', type: 'string', defaultValue: '—', description: 'Markdown : ce qui a été décidé, en termes actionnables.' },
+          { name: 'consequences', type: 'string', defaultValue: '—', description: 'Markdown : impacts positifs/négatifs, dette technique introduite, suivi à prévoir.' },
+          { name: 'links', type: 'object', defaultValue: '[]', description: 'Tableau `{ kind: "node"|"edge", targetId }`. Lien révoqué automatiquement à la suppression de l\'élément.' },
+          { name: 'supersededBy', type: 'string', defaultValue: '—', description: 'Id de l\'ADR qui remplace celle-ci. Permet de tracer l\'évolution des décisions.' },
+        ],
+      },
+    ],
+    behavior: 'Stockées dans `useAdrStore` (Zustand), persistées par projet via `project-store` (champ `Project.adrs`). Round-trip YAML via clé top-level `adrs:`. UI : bouton ADR dans le Header ouvre une dialog liste+éditeur. Section « ADRs liées » dans le PropertiesPanel pour le nœud sélectionné.',
+    connections: 'Aucune. Les liens vers nodes/edges sont documentaires uniquement.',
+    protocols: [],
+    referenceDoc: 'Dossiers-projet/REFERENCE-ADR-System.md',
+  },
+  // ═══════════════════════════════════════
+  // FEATURE — Markdown Export (A7.6)
+  // ═══════════════════════════════════════
+  {
+    id: 'markdown-export',
+    name: 'Export Markdown',
+    type: 'markdown-export',
+    description: 'Exporte l\'architecture courante au format Markdown complet : overview, diagramme Mermaid auto-généré, composants groupés par catégorie, table des connexions, ADRs (A7.2) avec leurs liens, index des tags. Sortie déterministe — paste-able directement dans Confluence/GitHub.',
+    category: 'concept',
+    sections: [
+      {
+        name: 'Sections produites',
+        description: 'Le builder compose 6 sections dans l\'ordre fixe ci-dessous.',
+        properties: [
+          { name: 'overview', type: 'string', defaultValue: '—', description: 'Compteurs : composants, types, connexions, ADRs (par statut).' },
+          { name: 'diagram', type: 'string', defaultValue: '—', description: 'Bloc Mermaid `flowchart LR` avec ids sanitisés et labels échappés.' },
+          { name: 'components', type: 'string', defaultValue: '—', description: 'Tables Markdown par catégorie (Simulation, Compute, Data, etc.) avec name/type/tags/owner/notes.' },
+          { name: 'connections', type: 'string', defaultValue: '—', description: 'Table from→to avec protocole, latence et tags.' },
+          { name: 'adrs', type: 'string', defaultValue: '—', description: 'Chaque ADR formatée avec context/decision/consequences + liens vers les composants.' },
+          { name: 'tagsIndex', type: 'string', defaultValue: '—', description: 'Liste alphabétique des tags avec les composants associés.' },
+        ],
+      },
+    ],
+    behavior: 'Fonctions pures dans `src/lib/markdown-export/*`. Le builder accepte `MarkdownExportInput { name, nodes, edges, adrs?, exportedAt? }`. Trigger : bouton MD dans le Header — déclenche un download `architecture-YYYY-MM-DD.md`.',
+    connections: 'Lit nodes/edges/ADRs au moment de l\'export. Pas de mutation.',
+    protocols: [],
+    referenceDoc: 'Dossiers-projet/REFERENCE-Markdown-Export.md',
+  },
 ];
 
 // ── Edge Properties ──

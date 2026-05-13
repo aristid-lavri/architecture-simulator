@@ -161,7 +161,25 @@
       "os": "Operating system",
       "osLinux": "Linux",
       "osWindows": "Windows",
-      "osMacos": "macOS"
+      "osMacos": "macOS",
+      "preset": {
+        "label": "Preset",
+        "placeholder": "Choose a preset...",
+        "custom": "Custom",
+        "small": "Small (1 CPU, 512MB)",
+        "medium": "Medium (4 CPU, 8GB)",
+        "large": "Large (16 CPU, 32GB)"
+      }
+    },
+    "server": {
+      "preset": {
+        "label": "Preset",
+        "placeholder": "Choose a preset...",
+        "custom": "Custom",
+        "small": "Small (1 CPU, 512MB)",
+        "medium": "Medium (4 CPU, 8GB)",
+        "large": "Large (16 CPU, 32GB)"
+      }
     },
     "hierarchy": {
       "sameContainer": "Same container",
@@ -178,14 +196,23 @@
       "modeSingle": "Single request",
       "modeLoop": "Loop",
       "interval": "Interval (ms)",
-      "count": "Request count"
+      "count": "Request count",
+      "help": {
+        "interval": "Delay between two requests in loop mode. 1000 ms = 1 RPS ; 10 ms = 100 RPS. For stress-testing, see the ClientGroup component instead.",
+        "count": "Total number of requests to emit. 0 or empty = unlimited (loops continuously until manual stop)."
+      }
     },
     "httpServer": {
       "port": "Port",
       "status": "Status code",
       "responseBody": "Response body",
       "delay": "Latency (ms)",
-      "errorRate": "Error rate (%)"
+      "errorRate": "Error rate (%)",
+      "help": {
+        "port": "TCP listen port. Range 1–65535. Conventions : 80 (HTTP), 443 (HTTPS), 8080/8443 (proxy), >1024 for non-privileged services.",
+        "delay": "Average internal server latency (application processing). Typical range : 10–200 ms. Simple CRUD API ≈ 20 ms ; API with DB joins ≈ 100–500 ms.",
+        "errorRate": "Base error rate injected into the simulation (excluding resource-saturation errors). Typical range : 0–5 %. Above 1 %, consider an upstream circuit breaker."
+      }
     },
     "database": {
       "type": "Database type",
@@ -200,7 +227,14 @@
       "transactionLatency": "Transaction latency (ms)",
       "capacity": "Capacity",
       "maxQps": "Max queries/sec",
-      "errorRate": "Error rate (%)"
+      "errorRate": "Error rate (%)",
+      "help": {
+        "readLatency": "Average time to execute a SELECT. PostgreSQL OLTP ≈ 1–10 ms ; complex joins 50–200 ms. Consider a cache for <1 ms.",
+        "writeLatency": "Average time to execute an INSERT/UPDATE. PostgreSQL ≈ 5–20 ms (synchronous commit). Higher with multiple indexes or triggers.",
+        "maxQps": "Maximum queries-per-second capacity before saturation. Indicative : PostgreSQL m5.large ≈ 5,000 ; Aurora write-leader ≈ 50,000. Beyond, quadratic degradation.",
+        "errorRate": "Base error rate (deadlock, sporadic timeout). Typical range : 0–0.5 %. Above → audit long queries.",
+        "maxConnections": "Pool upper bound. PostgreSQL : ~100 per instance (memory-bound). Beyond : use pgBouncer."
+      }
     },
     "cache": {
       "type": "Cache type",
@@ -220,7 +254,13 @@
       "hitRatioVariance": "Variance (%)",
       "warmUp": "Warm-up period",
       "warmUpEnabled": "Enable warm-up",
-      "warmUpDuration": "Duration (ms)"
+      "warmUpDuration": "Duration (ms)",
+      "help": {
+        "initialHitRatio": "Ratio of requests served from cache (vs miss going to source). Typical range : 60–95 %. <50 % → undersized cache or TTL too short.",
+        "defaultTTL": "Default lifetime of an entry. Sessions : 1800 s ; CDN pages : 86400 s ; reference lookups : 3600–86400 s.",
+        "maxMemory": "Memory allocated to cache. Beyond, entries are evicted per policy. Typical Redis cache-aside : 1–32 GB per instance.",
+        "getLatency": "GET latency. Local Redis : 0.1–1 ms ; Memcached : 0.2 ms ; regional cache : 1–5 ms."
+      }
     },
     "loadBalancer": {
       "algorithm": "Distribution algorithm",
@@ -383,6 +423,22 @@
     "bankingOnline": {
       "name": "Online Banking (demo)",
       "description": "Focused banking journey: clients → WAF/CDN/API GW → Auth + 2 services → DB + Redis + Kafka + Circuit Breaker to External Payment (14 nodes)"
+    },
+    "cqrs": {
+      "name": "Event-Driven CQRS",
+      "description": "Command/query separation via event bus: Command Service writes the write DB and emits events; a projection worker materializes a read view consumed by the Query Service"
+    },
+    "serverlessApi": {
+      "name": "Serverless API",
+      "description": "API Gateway in front of a cloud function (FaaS) that writes to object storage and a metadata DB (cold start simulated)"
+    },
+    "monolithDecomposition": {
+      "name": "Monolith Decomposition",
+      "description": "Strangler-fig pattern: legacy monolith and extracted microservice behind the same API Gateway, gradually routing traffic to the new service"
+    },
+    "bff": {
+      "name": "Backend-for-Frontend",
+      "description": "A mobile BFF and a web BFF in front of a shared service layer (user, catalog, order) to optimize payloads and per-channel aggregation"
     },
     "confirmReplace": "Replace current architecture?"
   },
@@ -725,8 +781,27 @@
     "allNodes": "All components"
   },
   "rules": {
+    "custom": {
+      "title": "Custom rules",
+      "description": "YAML DSL for project-specific architecture rules. The `project-custom` pack is recompiled on every apply.",
+      "yamlLabel": "Custom rules YAML",
+      "apply": "Apply",
+      "appliedSuccess": "{count} rule(s) compiled and applied",
+      "headerButton": "Custom rules",
+      "headerTooltip": "Custom architecture rules (YAML)"
+    },
     "toast": {
-      "blocked": "Connection not possible: {reason}"
+      "blocked": "Connection not possible: {reason}",
+      "simulationWarnings": "Simulation started with {count} warning(s)",
+      "simulationWarningsHint": "Click to dismiss"
+    },
+    "blockingDialog": {
+      "title": "Simulation blocked",
+      "subtitle": "{count} critical error(s) prevent the simulation from starting.",
+      "ruleIdLabel": "Rule",
+      "suggestionLabel": "Suggestion",
+      "dismiss": "Close",
+      "fixHint": "Fix the issues above, then re-run the simulation."
     },
     "suppression": {
       "dialog": {
@@ -809,8 +884,166 @@
         "orphan-circuit-breaker": {
           "short": "Orphan circuit breaker",
           "message": "Circuit breaker traversed by a single edge with no fan-out: it serves no purpose in this configuration."
+        },
+        "orphan-node": {
+          "short": "Orphan node",
+          "title": "Unconnected node",
+          "message": "This node has no incoming or outgoing edges.",
+          "description": "An unconnected component does not participate in any simulation flow.",
+          "suggestion": "Connect this node to at least one other component, or delete it."
+        },
+        "cycle-detected": {
+          "short": "Cycle detected",
+          "title": "Cycle in dependency graph",
+          "message": "A cycle has been detected in the dependency graph.",
+          "description": "Cycles can cause recursive calls without backpressure and confuse critical-path analysis.",
+          "suggestion": "Break the cycle by replacing an edge with a message-queue (async pattern) or by re-sequencing calls."
+        },
+        "single-lb-spof": {
+          "short": "LB is SPOF",
+          "title": "Single load-balancer",
+          "message": "A single load-balancer fronts multiple backends — it becomes a SPOF.",
+          "description": "If this LB fails, all backend traffic becomes unreachable.",
+          "suggestion": "Add a second load-balancer (active/passive or multi-AZ) for high availability."
+        },
+        "single-db-spof": {
+          "short": "DB is SPOF",
+          "title": "Single database",
+          "message": "A single database serves multiple upstream services.",
+          "description": "The DB becomes a single point of failure for the entire stack.",
+          "suggestion": "Add a read replica or deploy a multi-AZ cluster."
+        },
+        "mq-no-consumer": {
+          "short": "MQ has no consumer",
+          "title": "Queue without consumer",
+          "message": "A message-queue receives messages but has no consumer.",
+          "description": "Messages will pile up indefinitely — likely a design oversight.",
+          "suggestion": "Add a background-job or consumer service wired to the queue's output."
+        },
+        "container-missing-parent": {
+          "short": "Container without host",
+          "title": "Container missing host-server parent",
+          "message": "A container must be nested inside a host-server.",
+          "description": "Without a host-server parent, the simulation cannot share CPU/memory resources correctly.",
+          "suggestion": "Drag the container inside a host-server."
+        }
+      },
+      "exposure": {
+        "db-exposed-publicly": {
+          "short": "DB exposed publicly",
+          "title": "Database exposed publicly",
+          "message": "A database is directly accessible from a client.",
+          "description": "Major security flaw: an application service must always sit between clients and storage.",
+          "suggestion": "Insert an http-server or api-service between the client and the database."
+        },
+        "cache-exposed-publicly": {
+          "short": "Cache exposed publicly",
+          "title": "Cache exposed publicly",
+          "message": "A cache is directly accessible from a client.",
+          "description": "An exposed cache allows arbitrary read/write of shared data.",
+          "suggestion": "Insert an application service between the client and the cache."
+        }
+      },
+      "security": {
+        "cross-zone-edge-no-gateway": {
+          "short": "Cross-zone without gateway",
+          "title": "Edge crossing public → private zone without gateway",
+          "message": "An edge crosses the public zone into a private zone without a filter.",
+          "description": "Public traffic should never reach backend components directly without passing through a firewall, WAF, API gateway, or load-balancer.",
+          "suggestion": "Insert an api-gateway, firewall, or load-balancer at the zone boundary."
+        },
+        "public-service-no-auth": {
+          "short": "Public service without auth",
+          "title": "Public service without identity-provider",
+          "message": "A service in a public/DMZ zone is reachable but no identity-provider exists in the architecture.",
+          "description": "Without an IdP, no standardized authentication mechanism protects this service.",
+          "suggestion": "Add an identity-provider (OIDC, OAuth2) and wire it to exposed services."
+        }
+      },
+      "performance": {
+        "no-cdn-multi-clients": {
+          "short": "Missing CDN",
+          "title": "Missing CDN for multi-client traffic",
+          "message": "Multiple client-groups hit the same http-server with no CDN in front.",
+          "description": "An edge CDN would serve static resources closer to clients and offload the origin server.",
+          "suggestion": "Add a CDN between clients and the origin server."
+        },
+        "db-without-cache": {
+          "short": "DB without cache",
+          "title": "Database without upstream cache",
+          "message": "A database is hit by a service but no cache exists in the architecture.",
+          "description": "Without a cache, every read query hits the DB — avoidable cost and latency.",
+          "suggestion": "Add a cache (Redis/Memcached) between the service and the database."
+        }
+      },
+      "hygiene": {
+        "duplicate-node-names": {
+          "short": "Duplicate names",
+          "title": "Nodes with duplicate labels",
+          "message": "Two or more nodes share the same label.",
+          "description": "Duplicate labels make diagrams ambiguous and complicate log/trace correlation.",
+          "suggestion": "Rename each node with a unique label."
+        },
+        "edge-no-protocol": {
+          "short": "Edge without protocol",
+          "title": "Edge without protocol set",
+          "message": "An application edge has no protocol defined.",
+          "description": "Without a protocol, the engine cannot apply protocol-specific latencies/costs (REST vs gRPC vs WebSocket).",
+          "suggestion": "Select the edge and choose a protocol in the properties panel."
+        },
+        "duplicate-edge": {
+          "short": "Duplicate edges",
+          "title": "Duplicate edges",
+          "message": "Multiple edges share the same source, target, and protocol.",
+          "description": "Duplicate edges are likely an editing artifact.",
+          "suggestion": "Delete the redundant edge."
         }
       }
     }
+  },
+  "metadata": {
+    "section": "Metadata",
+    "sectionDescription": "Cross-cutting annotations: notes, tags, owner, last review. Do not affect simulation.",
+    "notes": "Notes",
+    "notesPlaceholder": "Free-form notes, design decisions, context…",
+    "tags": "Tags",
+    "tagsPlaceholder": "Comma-separated (e.g. critical, PCI, legacy)",
+    "tagsHelp": "Use commas to separate multiple tags.",
+    "lastReviewed": "Last reviewed",
+    "owner": {
+      "team": "Owning team",
+      "teamPlaceholder": "E.g. platform, payments…",
+      "individual": "Responsible person",
+      "individualPlaceholder": "E.g. a.lavri@desjardins.com"
+    }
+  },
+  "adr": {
+    "headerTooltip": "Architecture Decision Records",
+    "notFound": "ADR not found",
+    "list": {
+      "empty": "No decisions yet — create one to document an architectural choice.",
+      "new": "New ADR"
+    },
+    "fields": {
+      "title": "Title",
+      "date": "Date",
+      "status": "Status",
+      "author": "Author",
+      "context": "Context",
+      "decision": "Decision",
+      "consequences": "Consequences",
+      "alternatives": "Alternatives",
+      "tags": "Tags"
+    },
+    "related": {
+      "title": "Related ADRs",
+      "empty": "No ADRs linked to this element.",
+      "link": "Link to an ADR"
+    }
+  },
+  "exportMarkdown": {
+    "tooltip": "Export as Markdown (Mermaid diagram + components + ADRs)",
+    "menuItem": "Markdown documentation",
+    "description": "Generates a complete .md document: diagram, components, connections, and ADRs."
   }
 }

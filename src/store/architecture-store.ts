@@ -7,6 +7,8 @@ import {
   deleteHookRegistry,
   type ProjectKindMeta,
 } from '@/plugins/extensions';
+import { applyCustomRulesPack } from '@/lib/rules-engine/custom';
+import { useAdrStore } from './adr-store';
 
 const MAX_HISTORY = 50;
 
@@ -92,6 +94,8 @@ interface ArchitectureState {
   /** Sets both nodes and edges in a single operation (single pushHistory). */
   setNodesAndEdges: (nodes: GraphNode[], edges: GraphEdge[]) => void;
   updateNode: (nodeId: string, data: Partial<GraphNode['data']>) => void;
+  /** Met à jour le bloc `metadata` (annotations + ownership) d'un noeud. Conserve l'historique. */
+  updateNodeMetadata: (nodeId: string, metadata: GraphNode['metadata']) => void;
   /**
    * Supprime un nœud et tous ses descendants.
    * @param nodeId ID du nœud à supprimer
@@ -115,6 +119,13 @@ interface ArchitectureState {
 
   /** Met à jour le ProjectMeta (kind + champs additionnels des plugins). */
   setProjectMeta: (meta: ProjectKindMeta | ((prev: ProjectKindMeta) => ProjectKindMeta)) => void;
+
+  /**
+   * Met à jour le DSL custom rules du projet (A6.2). Applique immédiatement le pack
+   * `project-custom` dans le ruleRegistry et persiste la string dans `projectMeta.customRulesYaml`.
+   * Vide ou whitespace ⇒ retire le pack.
+   */
+  setCustomRulesYaml: (yaml: string) => void;
 
   // Undo/Redo
   undo: () => void;
@@ -201,6 +212,16 @@ export const useArchitectureStore = create<ArchitectureState>()(
           }));
         },
 
+        updateNodeMetadata: (nodeId, metadata) => {
+          pushHistory();
+          set((state) => ({
+            nodes: state.nodes.map((node) =>
+              node.id === nodeId ? { ...node, metadata } : node,
+            ),
+            lastSaved: Date.now(),
+          }));
+        },
+
         removeNode: (nodeId, options) => {
           // Consultation des hooks de plugins (DeleteHookRegistry).
           // Un plugin peut intercepter pour afficher un dialog de confirmation.
@@ -227,6 +248,13 @@ export const useArchitectureStore = create<ArchitectureState>()(
             // Suppression en cascade : trouver tous les descendants
             const descendants = findAllDescendants(nodeId, state.nodes);
             const idsToRemove = new Set([nodeId, ...descendants]);
+            // ADR cleanup (A7.2) — retire les liens vers tout nœud/edge supprimé
+            const adrStore = useAdrStore.getState();
+            const removedEdgeIds = state.edges
+              .filter((e) => idsToRemove.has(e.source) || idsToRemove.has(e.target))
+              .map((e) => e.id);
+            for (const id of idsToRemove) adrStore.onGraphElementDeleted('node', id);
+            for (const eid of removedEdgeIds) adrStore.onGraphElementDeleted('edge', eid);
             return {
               nodes: state.nodes.filter((node) => !idsToRemove.has(node.id)),
               edges: state.edges.filter(
@@ -339,6 +367,8 @@ export const useArchitectureStore = create<ArchitectureState>()(
           }
 
           pushHistory();
+          // ADR cleanup (A7.2)
+          useAdrStore.getState().onGraphElementDeleted('edge', edgeId);
           set((state) => ({
             edges: state.edges.filter((edge) => edge.id !== edgeId),
             lastSaved: Date.now(),
@@ -360,6 +390,18 @@ export const useArchitectureStore = create<ArchitectureState>()(
         setProjectMeta: (meta) => {
           set((state) => ({
             projectMeta: typeof meta === 'function' ? meta(state.projectMeta) : meta,
+            lastSaved: Date.now(),
+          }));
+        },
+
+        setCustomRulesYaml: (yaml: string) => {
+          // applyCustomRulesPack handles the empty-string case (clears the pack).
+          applyCustomRulesPack(yaml);
+          set((state) => ({
+            projectMeta: {
+              ...state.projectMeta,
+              customRulesYaml: yaml.trim().length > 0 ? yaml : undefined,
+            },
             lastSaved: Date.now(),
           }));
         },
@@ -456,6 +498,14 @@ export const useArchitectureStore = create<ArchitectureState>()(
     {
       name: 'architecture-simulator-storage',
       version: 3,
+      // A6.2 — réapplique le pack `project-custom` après rehydrate du store, pour que le
+      // ruleRegistry soit en sync avec la string persistée dans `projectMeta.customRulesYaml`.
+      onRehydrateStorage: () => (state) => {
+        const yaml = state?.projectMeta?.customRulesYaml;
+        if (typeof yaml === 'string' && yaml.trim().length > 0) {
+          applyCustomRulesPack(yaml);
+        }
+      },
       migrate: (persistedState, version) => {
         const state = persistedState as Record<string, unknown>;
         if (version < 2) {
