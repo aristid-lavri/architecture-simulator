@@ -8,8 +8,8 @@ describe('ADRListPanel', () => {
 
   it('renders empty state with create button', () => {
     render(<ADRListPanel onOpen={() => {}} />);
-    expect(screen.getByText(/no decisions yet|adr\.list\.empty/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /new adr|adr\.list\.new/i }));
+    expect(screen.getByText(/no decisions yet|aucune décision|adr\.list\.empty/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /new adr|nouvelle adr|adr\.list\.new/i }));
     expect(useAdrStore.getState().adrs).toHaveLength(1);
   });
 

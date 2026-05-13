@@ -8,6 +8,11 @@ import type { ReactNode } from 'react';
 export interface ProjectKindMeta {
   /** Identifiant du type de projet (doit correspondre à un ProjectKindDefinition enregistré). */
   kind: string;
+  /**
+   * Custom rules YAML pour ce projet (A6.2). Empty/undefined ⇒ pas de règles custom.
+   * Re-compilé et appliqué via `applyCustomRulesPack` à chaque changement et au rehydrate.
+   */
+  customRulesYaml?: string;
   /** Champs additionnels apportés par les plugins (ex: niveau actif, drill-down...). */
   [key: string]: unknown;
 }

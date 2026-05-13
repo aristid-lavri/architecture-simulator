@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Project, ProjectMeta, Diagram, GraphNode, GraphEdge, ArchitectureSnapshot } from '@/types';
 import { useArchitectureStore } from './architecture-store';
+import { useAdrStore } from './adr-store';
 import {
   createProjectMeta,
   DEFAULT_PROJECT_KIND,
@@ -159,6 +160,8 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
         : d
     );
     project.projectMeta = structuredClone(archState.projectMeta);
+    // ADRs (A7.2) — persistées au niveau projet, partagées entre les diagrammes d'un même projet.
+    project.adrs = structuredClone(useAdrStore.getState().adrs);
     project.updatedAt = now;
     saveProject(project);
 
@@ -253,6 +256,8 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
           if (diagram) {
             loadDiagramIntoStore(diagram, project.projectMeta);
           }
+          // Hydrate ADRs (A7.2) into the ADR store.
+          useAdrStore.getState().replaceAll(project.adrs ?? []);
         }
       }
 
@@ -283,6 +288,8 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
       localStorage.setItem(KEYS.activeProject, project.id);
 
       loadDiagramIntoStore(diagram, projectMeta);
+      // Reset ADRs (A7.2) — new project starts empty.
+      useAdrStore.getState().replaceAll([]);
 
       set({
         projectsMeta: meta,
@@ -500,6 +507,8 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
       const diagramId = project.activeDiagramId ?? project.diagrams[0]?.id;
       const diagram = project.diagrams.find((d) => d.id === diagramId);
       if (diagram) loadDiagramIntoStore(diagram, project.projectMeta);
+      // Swap ADRs to the new project's set (A7.2).
+      useAdrStore.getState().replaceAll(project.adrs ?? []);
 
       localStorage.setItem(KEYS.activeProject, projectId);
       set({ activeProjectId: projectId, activeDiagramId: diagramId ?? null });

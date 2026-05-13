@@ -11,20 +11,20 @@ describe('CustomRulesPanel', () => {
 
   it('shows current YAML and an apply button', () => {
     render(<CustomRulesPanel />);
-    expect(screen.getByRole('textbox', { name: /custom rules yaml/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /apply/i })).toBeDefined();
+    expect(screen.getByRole('textbox', { name: /custom rules yaml|règles personnalisées/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /apply|appliquer/i })).toBeDefined();
   });
 
   it('initializes from initialYaml prop', () => {
     const seed = 'rules: []\n';
     render(<CustomRulesPanel initialYaml={seed} />);
-    const textarea = screen.getByRole('textbox', { name: /custom rules yaml/i }) as HTMLTextAreaElement;
+    const textarea = screen.getByRole('textbox', { name: /custom rules yaml|règles personnalisées/i }) as HTMLTextAreaElement;
     expect(textarea.value).toBe(seed);
   });
 
   it('apply with valid YAML displays success count and registers the pack', () => {
     render(<CustomRulesPanel />);
-    const textarea = screen.getByRole('textbox', { name: /custom rules yaml/i });
+    const textarea = screen.getByRole('textbox', { name: /custom rules yaml|règles personnalisées/i });
     fireEvent.change(textarea, {
       target: {
         value: `
@@ -38,17 +38,17 @@ rules:
 `,
       },
     });
-    fireEvent.click(screen.getByRole('button', { name: /apply/i }));
-    expect(screen.getByText(/1 rule/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /apply|appliquer/i }));
+    expect(screen.getByText(/1 rule|1 règle/i)).toBeDefined();
     expect(ruleRegistry.allRules().map((r) => r.id)).toEqual(['my/r1']);
   });
 
   it('apply with invalid YAML displays errors and does not register', () => {
     render(<CustomRulesPanel />);
-    fireEvent.change(screen.getByRole('textbox', { name: /custom rules yaml/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /custom rules yaml|règles personnalisées/i }), {
       target: { value: 'rules:\n  - id: my/r\n    severity: bogus\n    scope: edge\n' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /apply/i }));
+    fireEvent.click(screen.getByRole('button', { name: /apply|appliquer/i }));
     // At least one error mentioning severity must appear in the rendered list.
     expect(screen.getAllByText(/severity/i).length).toBeGreaterThan(0);
     expect(ruleRegistry.allRules()).toHaveLength(0);
@@ -67,10 +67,10 @@ rules:
       source: { type: cache }
       target: { type: http-client }
 `;
-    fireEvent.change(screen.getByRole('textbox', { name: /custom rules yaml/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /custom rules yaml|règles personnalisées/i }), {
       target: { value: yaml },
     });
-    fireEvent.click(screen.getByRole('button', { name: /apply/i }));
+    fireEvent.click(screen.getByRole('button', { name: /apply|appliquer/i }));
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(onApply.mock.calls[0][0]).toBe(yaml);
     expect(onApply.mock.calls[0][1].ok).toBe(true);
@@ -80,10 +80,10 @@ rules:
   it('does not invoke onApply when validation fails', () => {
     const onApply = vi.fn();
     render(<CustomRulesPanel onApply={onApply} />);
-    fireEvent.change(screen.getByRole('textbox', { name: /custom rules yaml/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /custom rules yaml|règles personnalisées/i }), {
       target: { value: 'rules:\n  - id: my/r\n    severity: bogus\n    scope: edge\n' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /apply/i }));
+    fireEvent.click(screen.getByRole('button', { name: /apply|appliquer/i }));
     expect(onApply).not.toHaveBeenCalled();
   });
 });

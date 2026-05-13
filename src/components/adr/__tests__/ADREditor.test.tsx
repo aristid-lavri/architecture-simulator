@@ -11,24 +11,24 @@ describe('ADREditor', () => {
   it('renders title, status, context, decision, consequences fields', () => {
     const id = useAdrStore.getState().createADR();
     render(<ADREditor adrId={id} />);
-    expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/status/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/context/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/decision/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/consequences/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/title|titre/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/status|statut/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/context|contexte/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/decision|décision/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/consequences|conséquences/i)).toBeInTheDocument();
   });
 
   it('updating title persists into store', () => {
     const id = useAdrStore.getState().createADR();
     render(<ADREditor adrId={id} />);
-    fireEvent.change(screen.getByLabelText(/title/i), { target: { value: 'Pick Postgres' } });
+    fireEvent.change(screen.getByLabelText(/title|titre/i), { target: { value: 'Pick Postgres' } });
     expect(useAdrStore.getState().adrs[0].title).toBe('Pick Postgres');
   });
 
   it('changing status persists', () => {
     const id = useAdrStore.getState().createADR();
     render(<ADREditor adrId={id} />);
-    fireEvent.change(screen.getByLabelText(/status/i), { target: { value: 'accepted' } });
+    fireEvent.change(screen.getByLabelText(/status|statut/i), { target: { value: 'accepted' } });
     expect(useAdrStore.getState().adrs[0].status).toBe('accepted');
   });
 });

@@ -1901,7 +1901,12 @@ export interface Project {
   updatedAt: number;
   /** Métadonnées du kind de projet (kind + champs additionnels apportés par les plugins). */
   projectMeta?: import('@/plugins/extensions').ProjectKindMeta;
+  /** Architecture Decision Records (A7.2) scopés à ce projet. */
+  adrs?: import('./adr').ADR[];
 }
+
+// Re-export ADR types (A7.2) for convenience.
+export type { ADR, ADRStatus, ADRLink } from './adr';
 
 /** Metadonnees legeres d'un projet pour l'index. */
 export interface ProjectMeta {

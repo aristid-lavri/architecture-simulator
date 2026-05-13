@@ -8,7 +8,7 @@ describe('RelatedADRsSection', () => {
 
   it('shows empty state when no related ADRs', () => {
     render(<RelatedADRsSection elementKind="node" elementId="n1" />);
-    expect(screen.getByText(/no ADRs linked|adr\.related\.empty/i)).toBeInTheDocument();
+    expect(screen.getByText(/no ADRs linked|aucune ADR liée|adr\.related\.empty/i)).toBeInTheDocument();
   });
 
   it('lists only ADRs linked to the element', () => {
@@ -27,7 +27,7 @@ describe('RelatedADRsSection', () => {
     const a = useAdrStore.getState().createADR();
     useAdrStore.getState().updateADR(a, { title: 'A' });
     render(<RelatedADRsSection elementKind="node" elementId="n1" />);
-    fireEvent.change(screen.getByLabelText(/link to ADR|adr\.related\.link/i), { target: { value: a } });
+    fireEvent.change(screen.getByLabelText(/link to ADR|lier à une ADR|adr\.related\.link/i), { target: { value: a } });
     expect(useAdrStore.getState().adrs[0].links).toEqual([{ kind: 'node', targetId: 'n1' }]);
   });
 });

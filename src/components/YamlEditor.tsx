@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/sheet';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useArchitectureStore } from '@/store/architecture-store';
+import { useAdrStore } from '@/store/adr-store';
 import { parseYamlArchitecture } from '@/lib/yaml-parser';
 import { exportToYaml } from '@/lib/yaml-exporter';
 import { Upload, Download, Play, AlertTriangle, Check, FileDown, Copy, X } from 'lucide-react';
@@ -124,7 +125,7 @@ export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorPro
   }, [yamlContent]);
 
   const handleExport = useCallback(() => {
-    const yaml = exportToYaml(nodes, edges, 'Architecture', projectMeta);
+    const yaml = exportToYaml(nodes, edges, 'Architecture', projectMeta, { adrs: useAdrStore.getState().adrs });
     setYamlContent(yaml);
     setError(null);
     setSuccess(false);
@@ -146,13 +147,17 @@ export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorPro
     setNodes(result.nodes);
     setEdges(result.edges);
     setProjectMeta(result.projectMeta);
+    // Hydrate ADRs (A7.2) on YAML import.
+    if (result.adrs) {
+      useAdrStore.getState().replaceAll(result.adrs);
+    }
     setError(null);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 2500);
   }, [yamlContent, setNodes, setEdges, setProjectMeta]);
 
   const handleDownload = useCallback(() => {
-    const content = yamlContent || exportToYaml(nodes, edges, 'Architecture', projectMeta);
+    const content = yamlContent || exportToYaml(nodes, edges, 'Architecture', projectMeta, { adrs: useAdrStore.getState().adrs });
     const blob = new Blob([content], { type: 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -179,7 +184,7 @@ export function YamlEditor({ open, onOpenChange, initialContent }: YamlEditorPro
   }, []);
 
   const handleCopy = useCallback(() => {
-    const content = yamlContent || exportToYaml(nodes, edges, 'Architecture', projectMeta);
+    const content = yamlContent || exportToYaml(nodes, edges, 'Architecture', projectMeta, { adrs: useAdrStore.getState().adrs });
     navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
