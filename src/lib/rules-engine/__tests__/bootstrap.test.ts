@@ -18,9 +18,9 @@ describe('registerCoreRulesEngine', () => {
     __resetForTests();
   });
 
-  it('registers the core-sanity pack with its 15 rules', () => {
+  it('registers the core-sanity pack with its 30 rules', () => {
     registerCoreRulesEngine();
-    expect(ruleRegistry.allRules()).toHaveLength(15);
+    expect(ruleRegistry.allRules()).toHaveLength(30);
   });
 
   it('registers the core-rules-engine decorator on the edge-creation registry', () => {
@@ -29,10 +29,10 @@ describe('registerCoreRulesEngine', () => {
     expect(edgeCreationDecoratorRegistry.hasDecorators()).toBe(true);
   });
 
-  it('is idempotent : two calls keep 15 rules and one decorator entry', () => {
+  it('is idempotent : two calls keep 30 rules and one decorator entry', () => {
     registerCoreRulesEngine();
     registerCoreRulesEngine();
-    expect(ruleRegistry.allRules()).toHaveLength(15);
+    expect(ruleRegistry.allRules()).toHaveLength(30);
     // hasDecorators is just truthy, but we can verify single entry by unregistering once
     edgeCreationDecoratorRegistry.unregister(DECORATOR_ID);
     expect(edgeCreationDecoratorRegistry.hasDecorators()).toBe(false);
@@ -40,7 +40,7 @@ describe('registerCoreRulesEngine', () => {
 
   it('after __resetForTests, calling again re-runs the registrations', () => {
     registerCoreRulesEngine();
-    expect(ruleRegistry.allRules()).toHaveLength(15);
+    expect(ruleRegistry.allRules()).toHaveLength(30);
 
     // Simulate a fresh module : clear external state + reset internal flag
     ruleRegistry.clear();
@@ -48,7 +48,7 @@ describe('registerCoreRulesEngine', () => {
     __resetForTests();
 
     registerCoreRulesEngine();
-    expect(ruleRegistry.allRules()).toHaveLength(15);
+    expect(ruleRegistry.allRules()).toHaveLength(30);
     expect(edgeCreationDecoratorRegistry.hasDecorators()).toBe(true);
   });
 });

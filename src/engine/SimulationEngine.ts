@@ -67,6 +67,7 @@ import { RequestDispatcher } from './RequestDispatcher';
 import { ClientGroupSimulator } from './ClientGroupSimulator';
 import { createSeededRNG, randomSeed, type SimulationRNG } from './SimulationRNG';
 import type { SimulationScope } from '@/types/simulation-scope';
+import { validateArchitecture, type ValidationIssue } from '@/lib/simulation-validator';
 
 /**
  * Callbacks fournis par la couche React pour recevoir les mises a jour du moteur.
@@ -89,6 +90,28 @@ interface SimulationCallbacks {
   onSimulationComplete?: () => void;
   onBottleneckUpdate?: (analysis: BottleneckAnalysis) => void;
   onExtendedMetricsUpdate?: (metrics: ReturnType<MetricsCollector['getExtendedMetrics']>) => void;
+  /**
+   * A6.4 — Fired when `start()` is aborted because the architecture has at least one
+   * `error`-severity violation. The full list of error issues is passed to the host
+   * so it can surface a blocking dialog with rule IDs and suggestions.
+   */
+  onSimulationBlocked?: (errors: ValidationIssue[]) => void;
+  /**
+   * A6.4 — Fired when `start()` proceeds but there are `warning`-severity violations
+   * the user may want to know about. Surfaces a non-blocking toast.
+   */
+  onSimulationWarnings?: (warnings: ValidationIssue[]) => void;
+}
+
+/**
+ * Result of a call to `SimulationEngine.start()` :
+ *  - `started: true`  — simulation transitioned to 'running' (possibly with warnings).
+ *  - `started: false` — simulation refused to start; `errors` contains the blocking issues.
+ */
+export interface SimulationStartResult {
+  started: boolean;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
 }
 
 /**
@@ -1000,10 +1023,56 @@ export class SimulationEngine {
   }
 
   /**
-   * Demarre la simulation.
+   * A6.4 — Pre-flight validation gate. Returns the lists of `error` and `warning`
+   * severity issues for the current graph. Pure function — no side effects on the
+   * engine. The caller is responsible for invoking `start()` only if `errors` is empty.
+   *
+   * The host typically calls this BEFORE `start()` and renders a blocking dialog
+   * when `errors.length > 0`.
    */
-  start(): void {
-    if (this.state === 'running') return;
+  validateForStart(): { errors: ValidationIssue[]; warnings: ValidationIssue[] } {
+    const validation = validateArchitecture(this.nodes, this.edges);
+    return {
+      errors: validation.issues.filter((i) => i.severity === 'error'),
+      warnings: validation.issues.filter((i) => i.severity === 'warning'),
+    };
+  }
+
+  /**
+   * Demarre la simulation.
+   *
+   * A6.4 — Validation bloquante par severite :
+   *  - Si `options.skipValidation` n'est pas activé, toute violation de severité `error`
+   *    (rules-engine + simulation-validator) ABORT le start. Un `SimulationStartResult`
+   *    avec `started=false` est retourné et la callback `onSimulationBlocked` est
+   *    invoquée avec la liste des issues bloquantes (l'UI affiche un dialog).
+   *  - Les violations `warning` ne bloquent pas mais déclenchent `onSimulationWarnings`
+   *    pour permettre un toast non-bloquant.
+   *  - `skipValidation: true` court-circuite la validation (utilisé par les tests
+   *    et certains scénarios scoped où les checks de configuration ne s'appliquent pas).
+   */
+  start(options: { skipValidation?: boolean } = {}): SimulationStartResult {
+    if (this.state === 'running') {
+      return { started: true, errors: [], warnings: [] };
+    }
+
+    let errors: ValidationIssue[] = [];
+    let warnings: ValidationIssue[] = [];
+
+    if (!options.skipValidation) {
+      const validation = this.validateForStart();
+      errors = validation.errors;
+      warnings = validation.warnings;
+
+      if (errors.length > 0) {
+        this.callbacks.onSimulationBlocked?.(errors);
+        return { started: false, errors, warnings };
+      }
+
+      if (warnings.length > 0) {
+        this.callbacks.onSimulationWarnings?.(warnings);
+      }
+    }
 
     this.state = 'running';
     this.callbacks.onStateChange('running');
@@ -1052,6 +1121,8 @@ export class SimulationEngine {
     this.startTimeSeriesCapture();
     this.startExtendedMetricsPush();
     this.particleManager.startAnimationLoop(() => this.state);
+
+    return { started: true, errors: [], warnings };
   }
 
   /** Met en pause la simulation. */

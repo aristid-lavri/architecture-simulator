@@ -27,6 +27,8 @@ import { findSubtreeNodes, findBoundaryEdges } from '@/lib/subtree-utils';
 import type { SimulationScope } from '@/types/simulation-scope';
 import { nodeContextMenuRegistry } from '@/plugins/extensions';
 import { findContainerAtPosition } from './hit-testing';
+import { getDraggedComponentType, clearDraggedComponentType } from '@/lib/drag-state';
+import { snapToGrid } from '@/lib/snap-grid';
 import { applyAutoLayout } from '@/lib/auto-layout';
 import { computeContainerSize, resizeAncestors, resizeContainerAndAncestors } from '@/lib/container-sizing';
 import { applyCollapseView } from '@/lib/collapse-view';
@@ -37,6 +39,8 @@ import { useTranslation } from '@/i18n';
 import { addSuppression } from '@/lib/rules-engine';
 import { EdgeContextMenu } from './EdgeContextMenu';
 import { RuleSuppressionDialog } from './RuleSuppressionDialog';
+import { BlockingValidationDialog } from './BlockingValidationDialog';
+import { SimulationWarningToast } from './SimulationWarningToast';
 import { MetricsPanel } from '@/components/simulation/MetricsPanel';
 import { MiniMap } from './MiniMap';
 import { NodeContextMenu } from '@/components/flow/NodeContextMenu';
@@ -92,6 +96,11 @@ export function PixiCanvas() {
   const overlayLayerRef = useRef<Container | null>(null);
   const overlayGraphicsRef = useRef<Graphics | null>(null);
 
+  // Auto-layout post-drop trigger (A3.1) — set par handleDrop, consommé par
+  // un effect qui attend la prochaine mise à jour de storedNodes pour déclencher
+  // l'auto-layout (sinon il opérerait sur l'ancien snapshot).
+  const pendingAutoLayoutRef = useRef(false);
+
   // Drag state
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<{
@@ -120,6 +129,8 @@ export function PixiCanvas() {
   const selectedEdgeId = useAppStore((s) => s.selectedEdgeId);
   const setSelectedEdgeId = useAppStore((s) => s.setSelectedEdgeId);
   const validationResult = useAppStore((s) => s.validationResult);
+  const snapToGridPref = useAppStore((s) => s.snapToGrid);
+  const autoLayoutOnDropPref = useAppStore((s) => s.autoLayoutOnDrop);
 
   // Map<edgeId, count of active rule warnings> — fed to EdgeRenderer for the midpoint badge.
   // Updated whenever the user re-runs validation (the existing VALID button in Header).
@@ -535,8 +546,26 @@ export function PixiCanvas() {
   // ============================================
   const hoveredNodeIdRef = useRef(hoveredNodeId);
   const edgeProtocolFiltersRef = useRef(edgeProtocolFilters);
+  const snapToGridRef = useRef(snapToGridPref);
+  const shiftDownRef = useRef(false);
   useEffect(() => { hoveredNodeIdRef.current = hoveredNodeId; }, [hoveredNodeId]);
   useEffect(() => { edgeProtocolFiltersRef.current = edgeProtocolFilters; }, [edgeProtocolFilters]);
+  useEffect(() => { snapToGridRef.current = snapToGridPref; }, [snapToGridPref]);
+  // Track shift key globally so the drag rAF can read fresh state without
+  // re-binding pointer handlers each render.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Shift') shiftDownRef.current = true; };
+    const onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') shiftDownRef.current = false; };
+    const onBlur = () => { shiftDownRef.current = false; };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 
   useEffect(() => {
     if (!initializedRef.current || !edgeRendererRef.current) return;
@@ -1000,7 +1029,9 @@ export function PixiCanvas() {
       pendingDragPos = null;
       if (!pos || !dragStateRef.current || !isEditable) return;
       const draggedId = dragStateRef.current.nodeId;
-      const { x: newX, y: newY } = pos;
+      // A3.2 — snap au grid (20px), bypass si Shift maintenu
+      const snapped = snapToGrid(pos, snapToGridRef.current, shiftDownRef.current);
+      const { x: newX, y: newY } = snapped;
 
       nodeRenderer.moveNode(draggedId, newX, newY);
 
@@ -1189,10 +1220,35 @@ export function PixiCanvas() {
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+
+    // A3.3 — Highlight du container parent valide pendant le drag.
+    // `dataTransfer.getData()` est vide pendant `dragover` (sécurité), donc on
+    // s'appuie sur la state partagée `drag-state` posée par ComponentsPanel.
+    const renderer = nodeRendererRef.current;
+    if (!renderer || !isEditable || !viewportRef.current || !canvasRef.current) return;
+    const draggedType = getDraggedComponentType();
+    if (!draggedType) {
+      renderer.setDropHighlight(null);
+      return;
+    }
+    const rect = canvasRef.current.getBoundingClientRect();
+    const worldPos = viewportRef.current.toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const target = findContainerAtPosition(storedNodes, worldPos, draggedType);
+    renderer.setDropHighlight(target?.id ?? null, true);
+  }, [isEditable, storedNodes]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Ne clear le highlight que si on quitte vraiment la zone du canvas
+    // (relatedTarget hors du canvasRef ou null). Évite les flashs au passage
+    // au-dessus d'un nœud enfant.
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    nodeRendererRef.current?.setDropHighlight(null);
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    nodeRendererRef.current?.setDropHighlight(null);
+    clearDraggedComponentType();
     if (!isEditable || !viewportRef.current || !canvasRef.current) return;
 
     const type = e.dataTransfer.getData('application/reactflow') as NodeType;
@@ -1202,7 +1258,8 @@ export function PixiCanvas() {
     const viewport = viewportRef.current;
     const worldPos = viewport.toWorld(e.clientX - rect.left, e.clientY - rect.top);
 
-    const position = { x: worldPos.x, y: worldPos.y };
+    // A3.2 — snap au grid (20px), bypass si Shift maintenu lors du drop
+    const position = snapToGrid({ x: worldPos.x, y: worldPos.y }, snapToGridRef.current, e.shiftKey);
 
     // Find parent container at drop position
     const parent = findContainerAtPosition(storedNodes, position, type);
@@ -1266,7 +1323,14 @@ export function PixiCanvas() {
     // Grow ancestor containers if the drop landed inside one (cascades zone → host → container).
     const nextNodes = resizeAncestors([...storedNodes, newNode], newNode.id);
     saveNodesAndEdges(nextNodes, storedEdges);
-  }, [isEditable, storedNodes, storedEdges, saveNodesAndEdges, projectMeta]);
+
+    // A3.1 — auto-layout post-drop si l'utilisateur a activé la préférence.
+    // Le flag est consommé par un effect qui attend que storedNodes reflète
+    // l'ajout avant de déclencher ELK.
+    if (autoLayoutOnDropPref) {
+      pendingAutoLayoutRef.current = true;
+    }
+  }, [isEditable, storedNodes, storedEdges, saveNodesAndEdges, projectMeta, autoLayoutOnDropPref]);
 
   // ============================================
   // Keyboard shortcuts
@@ -1345,6 +1409,13 @@ export function PixiCanvas() {
       onHierarchicalResourceUpdate: (parentId, aggregated, children) => {
         analyticsEngineRef.current?.handleHierarchicalResourceUpdate(parentId, aggregated, children);
       },
+      // A6.4 — Blocking validation by severity
+      onSimulationBlocked: (errors) => {
+        useSimulationStore.getState().setBlockedReason(errors);
+      },
+      onSimulationWarnings: (warnings) => {
+        useSimulationStore.getState().pushWarningToast(warnings);
+      },
     });
 
     registerEngineMetricsProvider(() => engineRef.current!.getFinalMetrics().metrics);
@@ -1416,7 +1487,13 @@ export function PixiCanvas() {
         engineRef.current.setSimulationScope(null);
       }
 
-      engineRef.current.start();
+      const result = engineRef.current.start();
+      if (!result.started) {
+        // A6.4 — Engine refused to start due to error-severity violations.
+        // Rollback the store state to idle so the toggle button reflects reality.
+        // The onSimulationBlocked callback above has already set blockedReason for the dialog.
+        useSimulationStore.getState().stop('manual');
+      }
     } else if (simulationState === 'paused') {
       engineRef.current.pause();
       particleRendererRef.current?.stopRenderLoop();
@@ -1500,6 +1577,16 @@ export function PixiCanvas() {
     }
   }, [storedNodes, storedEdges, isLayouting, saveNodesAndEdges, projectMeta]);
 
+  // A3.1 — déclenche l'auto-layout dès que storedNodes reflète la nouvelle node
+  // posée par handleDrop (le flag `pendingAutoLayoutRef` aura été armé dans le
+  // même tick). On ne dépend que de storedNodes : si plusieurs drops s'enchaînent
+  // sans nouveau render, le flag reste armé et l'effect se déclenchera au prochain.
+  useEffect(() => {
+    if (!pendingAutoLayoutRef.current) return;
+    pendingAutoLayoutRef.current = false;
+    void handleAutoLayout();
+  }, [storedNodes, handleAutoLayout]);
+
   // ============================================
   // Resize handling
   // ============================================
@@ -1527,6 +1614,7 @@ export function PixiCanvas() {
         ref={canvasRef}
         className="flex-1 relative overflow-hidden"
         onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onContextMenu={(e) => e.preventDefault()}
         style={{ cursor: isDragging ? 'grabbing' : 'default' }}
@@ -1543,6 +1631,12 @@ export function PixiCanvas() {
           ✕ {t(edgeRejection.messageKey)}
         </div>
       )}
+
+      {/* A6.4 — Warning toast on simulation start with warning-severity issues. */}
+      <SimulationWarningToast />
+
+      {/* A6.4 — Blocking dialog when start is refused for error-severity issues. */}
+      <BlockingValidationDialog />
 
       {/* Reopen components panel button */}
       {!isComponentsPanelOpen && isEditable && (
@@ -1572,6 +1666,38 @@ export function PixiCanvas() {
           >
             {isLayouting ? '...' : '⊞ Layout'}
           </button>
+        )}
+        {isEditable && (
+          <>
+            <button
+              onClick={() => useAppStore.getState().setSnapToGrid(!snapToGridPref)}
+              title={snapToGridPref
+                ? 'Snap au grid actif (20px). Maintenir Maj pour bypass.'
+                : 'Activer le snap au grid (20px)'}
+              aria-pressed={snapToGridPref}
+              className={`px-2 py-1 rounded text-xs font-mono border transition-colors ${
+                snapToGridPref
+                  ? 'bg-signal-flux/15 text-signal-flux border-signal-flux/40'
+                  : 'bg-card/80 backdrop-blur border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              ⊟ SNAP
+            </button>
+            <button
+              onClick={() => useAppStore.getState().setAutoLayoutOnDrop(!autoLayoutOnDropPref)}
+              title={autoLayoutOnDropPref
+                ? 'Auto-layout déclenché à chaque drop'
+                : 'Activer l\'auto-layout post-drop'}
+              aria-pressed={autoLayoutOnDropPref}
+              className={`px-2 py-1 rounded text-xs font-mono border transition-colors ${
+                autoLayoutOnDropPref
+                  ? 'bg-signal-flux/15 text-signal-flux border-signal-flux/40'
+                  : 'bg-card/80 backdrop-blur border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              ⇲ AUTO
+            </button>
+          </>
         )}
         {storedEdges.length > 0 && (
           <button

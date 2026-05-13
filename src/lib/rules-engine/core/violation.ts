@@ -17,8 +17,20 @@ export function ruleIdToI18nPath(ruleId: string): string {
   return `rules.${ruleId.replaceAll('/', '.')}`;
 }
 
-/** i18n key for a ruleId, with an optional suffix (default 'message'). Use 'short' for the menu/badge label. */
-export function ruleIdToI18nKey(ruleId: string, suffix: 'message' | 'short' = 'message'): string {
+/**
+ * i18n key for a ruleId, with an optional suffix (default 'message').
+ *
+ * Suffix conventions :
+ *  - 'message'      — long-form sentence shown in the validation panel (default).
+ *  - 'short'        — concise label for menus / badges.
+ *  - 'title'        — short heading for the new blocking-dialog (A6.4).
+ *  - 'description'  — detailed explanation in the blocking-dialog.
+ *  - 'suggestion'   — actionable hint shown to the user to fix the violation.
+ */
+export function ruleIdToI18nKey(
+  ruleId: string,
+  suffix: 'message' | 'short' | 'title' | 'description' | 'suggestion' = 'message',
+): string {
   return `${ruleIdToI18nPath(ruleId)}.${suffix}`;
 }
 

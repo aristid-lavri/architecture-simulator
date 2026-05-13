@@ -61,6 +61,25 @@ interface AppState {
   diffTargetId: string | null;
   setDiffMode: (active: boolean) => void;
   setDiffSnapshots: (baselineId: string | null, targetId: string | null) => void;
+
+  // Canvas preferences (A3.1, A3.2) — persistées localStorage.
+  snapToGrid: boolean;
+  setSnapToGrid: (enabled: boolean) => void;
+  autoLayoutOnDrop: boolean;
+  setAutoLayoutOnDrop: (enabled: boolean) => void;
+}
+
+const SNAP_KEY = 'arch-sim-snap-to-grid';
+const AUTOLAYOUT_KEY = 'arch-sim-autolayout-on-drop';
+
+function getInitialSnapToGrid(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(SNAP_KEY) === '1';
+}
+
+function getInitialAutoLayoutOnDrop(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(AUTOLAYOUT_KEY) === '1';
 }
 
 function getInitialTheme(): Theme {
@@ -164,5 +183,17 @@ export const useAppStore = create<AppState>((set) => {
     setDiffMode: (active) => set({ diffMode: active }),
     setDiffSnapshots: (baselineId, targetId) =>
       set({ diffBaselineId: baselineId, diffTargetId: targetId }),
+
+    // Canvas preferences (A3.1, A3.2)
+    snapToGrid: getInitialSnapToGrid(),
+    setSnapToGrid: (enabled) => {
+      if (typeof window !== 'undefined') localStorage.setItem(SNAP_KEY, enabled ? '1' : '0');
+      set({ snapToGrid: enabled });
+    },
+    autoLayoutOnDrop: getInitialAutoLayoutOnDrop(),
+    setAutoLayoutOnDrop: (enabled) => {
+      if (typeof window !== 'undefined') localStorage.setItem(AUTOLAYOUT_KEY, enabled ? '1' : '0');
+      set({ autoLayoutOnDrop: enabled });
+    },
   };
 });

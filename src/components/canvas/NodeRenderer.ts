@@ -151,6 +151,10 @@ export class NodeRenderer {
   private boundPointerMove: (e: PointerEvent) => void;
   private boundPointerUp: (e: PointerEvent) => void;
 
+  // Drop-target highlight overlay (A3.3) — positionné au-dessus de tous les nœuds
+  // pour signaler le container parent valide pendant un drag depuis ComponentsPanel.
+  private dropHighlightGfx: Graphics | null = null;
+
   constructor(
     private nodeLayer: Container,
     private zoneLayer: Container,
@@ -184,6 +188,12 @@ export class NodeRenderer {
 
     // Animation ticker for status pulses (every 50ms)
     this.animationTicker = setInterval(() => this.tickAnimations(), 50);
+
+    // Drop-target highlight overlay : créé une fois, hidden par défaut.
+    this.dropHighlightGfx = new Graphics();
+    this.dropHighlightGfx.visible = false;
+    this.dropHighlightGfx.eventMode = 'none';
+    this.handleLayer.addChild(this.dropHighlightGfx);
   }
 
   renderNodes(nodes: GraphNode[], selectedId: string | null): void {
@@ -1434,6 +1444,47 @@ export class NodeRenderer {
   }
 
   /**
+   * Highlight overlay around a container node during a drag-from-palette (A3.3).
+   * Pass `nodeId = null` to clear. Pass `valid = false` to render in red.
+   *
+   * Why: pendant un drag, l'utilisateur ne sait pas dans quel container son
+   * composant atterrira (network-zone vs host-server vs container Docker imbriqués).
+   * On surligne le container parent résolu par `findContainerAtPosition` pour
+   * éliminer cette devinette.
+   */
+  setDropHighlight(nodeId: string | null, valid: boolean = true): void {
+    const gfx = this.dropHighlightGfx;
+    if (!gfx) return;
+    if (!nodeId) {
+      gfx.visible = false;
+      gfx.clear();
+      return;
+    }
+    const visual = this.visuals.get(nodeId);
+    const pos = this.positions.get(nodeId);
+    if (!visual || !pos) {
+      gfx.visible = false;
+      gfx.clear();
+      return;
+    }
+    const bgBounds = visual.bg.getLocalBounds();
+    const w = Math.max(1, Math.round(bgBounds.width));
+    const h = Math.max(1, Math.round(bgBounds.height));
+
+    const color = valid ? 0x22c55e : 0xef4444;
+    const PAD = 4;
+
+    gfx.clear();
+    // Soft fill flag (low alpha) pour signaler la zone de dépôt
+    gfx.roundRect(pos.x - PAD, pos.y - PAD, w + PAD * 2, h + PAD * 2, NODE_RADIUS + PAD);
+    gfx.fill({ color, alpha: 0.08 });
+    // Halo épais pour un signal fort
+    gfx.roundRect(pos.x - PAD, pos.y - PAD, w + PAD * 2, h + PAD * 2, NODE_RADIUS + PAD);
+    gfx.stroke({ width: 3, color, alpha: 0.85 });
+    gfx.visible = true;
+  }
+
+  /**
    * Bounds absolus du visuel d'un nœud — origine en haut-gauche, taille effective.
    * Utilisé par les overlays plugin (ex: visual-diff) pour dessiner par-dessus.
    * Renvoie `null` si le nœud n'est pas rendu actuellement.
@@ -1595,5 +1646,9 @@ export class NodeRenderer {
     }
     this.visuals.clear();
     this.positions.clear();
+    if (this.dropHighlightGfx) {
+      this.dropHighlightGfx.destroy();
+      this.dropHighlightGfx = null;
+    }
   }
 }

@@ -768,6 +768,485 @@ connections:
 `;
 
 // ============================================
+// Template 6 : Event-Driven CQRS
+// Pattern CQRS : separation Command (write) / Query (read) via event bus.
+// [Client Group] → [API Gateway]
+//                      ↓
+//          [Command Service] ─writes→ [Write DB]
+//                      ↓
+//                [Event Bus (Kafka)]
+//                      ↓
+//          [Query Service] ─reads→ [Materialized View DB]
+// ============================================
+const cqrsYaml = `
+version: 1
+name: "Event-Driven CQRS"
+
+zones:
+  dmz:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 240, y: 30 }
+    size: { width: 250, height: 180 }
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 100, y: 260 }
+    size: { width: 600, height: 220 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 100, y: 530 }
+    size: { width: 600, height: 220 }
+
+components:
+  clients:
+    type: client-group
+    position: { x: 30, y: 100 }
+    config:
+      label: "Clients"
+      virtualClients: 30
+      baseInterval: 300
+      paths:
+        - /api/commands
+        - /api/queries
+
+  api-gateway:
+    type: api-gateway
+    zone: dmz
+    config:
+      label: "API Gateway"
+      authType: jwt
+      authFailureRate: 1
+      routeRules:
+        - id: cqrs-rule-1
+          pathPattern: "/api/commands"
+          targetServiceName: "command-service"
+          priority: 1
+        - id: cqrs-rule-2
+          pathPattern: "/api/commands/**"
+          targetServiceName: "command-service"
+          priority: 2
+        - id: cqrs-rule-3
+          pathPattern: "/api/queries"
+          targetServiceName: "query-service"
+          priority: 3
+        - id: cqrs-rule-4
+          pathPattern: "/api/queries/**"
+          targetServiceName: "query-service"
+          priority: 4
+
+  command-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Command Service"
+      serviceName: "command-service"
+      basePath: "/api/commands"
+      authType: jwt
+      authFailureRate: 0
+      responseTime: 40
+
+  projection-worker:
+    type: background-job
+    zone: backend
+    config:
+      label: "Projection Worker"
+      jobType: "consumer"
+
+  query-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Query Service"
+      serviceName: "query-service"
+      basePath: "/api/queries"
+      authType: jwt
+      authFailureRate: 0
+      responseTime: 15
+
+  write-db:
+    type: database
+    zone: data
+    config:
+      label: "Write DB (events)"
+
+  event-bus:
+    type: message-queue
+    zone: data
+    config:
+      label: "Event Bus"
+      queueType: kafka
+      mode: pubsub
+      consumerCount: 2
+      topics:
+        - name: domain-events
+          partitions: 3
+          retentionMs: 604800000
+
+  read-db:
+    type: database
+    zone: data
+    config:
+      label: "Materialized View DB"
+
+connections:
+  - from: clients
+    to: api-gateway
+  - from: api-gateway
+    to: command-service
+  - from: api-gateway
+    to: query-service
+  - from: command-service
+    to: write-db
+  - from: command-service
+    to: event-bus
+    topic: domain-events
+  - from: event-bus
+    to: projection-worker
+    topic: domain-events
+  - from: projection-worker
+    to: read-db
+  - from: query-service
+    to: read-db
+`;
+
+// ============================================
+// Template 7 : Serverless API
+// [Client Group] → [API Gateway] → [Cloud Function] ─→ [Cloud Storage]
+//                                                   └→ [Database]
+// ============================================
+const serverlessApiYaml = `
+version: 1
+name: "Serverless API"
+
+zones:
+  dmz:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 240, y: 30 }
+    size: { width: 250, height: 180 }
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 240, y: 260 }
+    size: { width: 300, height: 200 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 100, y: 510 }
+    size: { width: 600, height: 200 }
+
+components:
+  clients:
+    type: client-group
+    position: { x: 30, y: 100 }
+    config:
+      label: "Clients"
+      virtualClients: 20
+      baseInterval: 400
+      paths:
+        - /api/items
+        - /api/items/upload
+
+  api-gateway:
+    type: api-gateway
+    zone: dmz
+    config:
+      label: "API Gateway"
+      authType: jwt
+      authFailureRate: 1
+      routeRules:
+        - id: sl-rule-1
+          pathPattern: "/api/items"
+          targetServiceName: "item-handler"
+          priority: 1
+        - id: sl-rule-2
+          pathPattern: "/api/items/**"
+          targetServiceName: "item-handler"
+          priority: 2
+
+  item-handler:
+    type: cloud-function
+    zone: backend
+    config:
+      label: "Item Handler (FaaS)"
+      serviceName: "item-handler"
+      runtime: nodejs
+      memoryMB: 512
+      timeoutSeconds: 30
+      coldStartMs: 800
+
+  blob-storage:
+    type: cloud-storage
+    zone: data
+    config:
+      label: "Object Storage"
+
+  metadata-db:
+    type: database
+    zone: data
+    config:
+      label: "Metadata DB"
+
+connections:
+  - from: clients
+    to: api-gateway
+  - from: api-gateway
+    to: item-handler
+  - from: item-handler
+    to: blob-storage
+  - from: item-handler
+    to: metadata-db
+`;
+
+// ============================================
+// Template 8 : Monolith Decomposition (Strangler Fig)
+// Pattern strangler-fig : monolithe legacy + microservice extrait, derriere un
+// API Gateway qui route progressivement le trafic vers le nouveau service.
+//
+// [Client Group] → [API Gateway] ─/legacy/**→ [Monolith Legacy] → [Legacy DB]
+//                              └─/orders/** → [Order Service]   → [Orders DB]
+// ============================================
+const monolithDecompositionYaml = `
+version: 1
+name: "Monolith Decomposition"
+
+zones:
+  dmz:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 240, y: 30 }
+    size: { width: 250, height: 180 }
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 100, y: 260 }
+    size: { width: 600, height: 220 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 100, y: 530 }
+    size: { width: 600, height: 200 }
+
+components:
+  clients:
+    type: client-group
+    position: { x: 30, y: 100 }
+    config:
+      label: "Clients"
+      virtualClients: 30
+      baseInterval: 350
+      paths:
+        - /legacy/users
+        - /legacy/products
+        - /api/orders
+
+  api-gateway:
+    type: api-gateway
+    zone: dmz
+    config:
+      label: "API Gateway (Strangler)"
+      authType: jwt
+      authFailureRate: 1
+      routeRules:
+        - id: sf-rule-1
+          pathPattern: "/api/orders"
+          targetServiceName: "order-service"
+          priority: 1
+        - id: sf-rule-2
+          pathPattern: "/api/orders/**"
+          targetServiceName: "order-service"
+          priority: 2
+        - id: sf-rule-3
+          pathPattern: "/legacy/**"
+          targetServiceName: "monolith-legacy"
+          priority: 10
+
+  monolith-legacy:
+    type: api-service
+    zone: backend
+    config:
+      label: "Monolith Legacy"
+      serviceName: "monolith-legacy"
+      basePath: "/legacy"
+      authType: jwt
+      authFailureRate: 0
+      responseTime: 120
+
+  order-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Order Service (extracted)"
+      serviceName: "order-service"
+      basePath: "/api/orders"
+      authType: jwt
+      authFailureRate: 0
+      responseTime: 35
+
+  legacy-db:
+    type: database
+    zone: data
+    config:
+      label: "Legacy DB"
+
+  orders-db:
+    type: database
+    zone: data
+    config:
+      label: "Orders DB"
+
+connections:
+  - from: clients
+    to: api-gateway
+  - from: api-gateway
+    to: monolith-legacy
+  - from: api-gateway
+    to: order-service
+  - from: monolith-legacy
+    to: legacy-db
+  - from: order-service
+    to: orders-db
+`;
+
+// ============================================
+// Template 9 : Backend-for-Frontend (BFF)
+// Pattern BFF : un BFF dedie par canal (mobile, web) devant une couche de services
+// partagee. Permet d'optimiser les payloads et l'agregation par client.
+//
+// [Mobile Clients] → [Mobile BFF] ─┐
+// [Web Clients]    → [Web BFF]    ─┴→ [User Svc | Catalog Svc | Order Svc] → [DB | Cache]
+// ============================================
+const bffYaml = `
+version: 1
+name: "Backend for Frontend"
+
+zones:
+  dmz:
+    type: dmz
+    interZoneLatency: 2
+    position: { x: 250, y: 30 }
+    size: { width: 280, height: 320 }
+  backend:
+    type: backend
+    interZoneLatency: 1
+    position: { x: 580, y: 30 }
+    size: { width: 520, height: 320 }
+  data:
+    type: data
+    interZoneLatency: 1
+    position: { x: 580, y: 400 }
+    size: { width: 520, height: 200 }
+
+components:
+  mobile-clients:
+    type: client-group
+    position: { x: 30, y: 60 }
+    config:
+      label: "Mobile Clients"
+      virtualClients: 25
+      baseInterval: 400
+      paths:
+        - /mobile/feed
+        - /mobile/orders
+
+  web-clients:
+    type: client-group
+    position: { x: 30, y: 240 }
+    config:
+      label: "Web Clients"
+      virtualClients: 20
+      baseInterval: 500
+      paths:
+        - /web/feed
+        - /web/orders
+
+  mobile-bff:
+    type: api-service
+    zone: dmz
+    config:
+      label: "Mobile BFF"
+      serviceName: "mobile-bff"
+      basePath: "/mobile"
+      responseTime: 25
+
+  web-bff:
+    type: api-service
+    zone: dmz
+    config:
+      label: "Web BFF"
+      serviceName: "web-bff"
+      basePath: "/web"
+      responseTime: 25
+
+  user-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "User Service"
+      serviceName: "user-service"
+      basePath: "/api/users"
+      responseTime: 20
+
+  catalog-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Catalog Service"
+      serviceName: "catalog-service"
+      basePath: "/api/catalog"
+      responseTime: 25
+
+  order-service:
+    type: api-service
+    zone: backend
+    config:
+      label: "Order Service"
+      serviceName: "order-service"
+      basePath: "/api/orders"
+      responseTime: 30
+
+  shared-db:
+    type: database
+    zone: data
+    config:
+      label: "Shared DB"
+
+  shared-cache:
+    type: cache
+    zone: data
+    config:
+      label: "Shared Cache"
+
+connections:
+  - from: mobile-clients
+    to: mobile-bff
+  - from: web-clients
+    to: web-bff
+  - from: mobile-bff
+    to: user-service
+  - from: mobile-bff
+    to: catalog-service
+  - from: mobile-bff
+    to: order-service
+  - from: web-bff
+    to: user-service
+  - from: web-bff
+    to: catalog-service
+  - from: web-bff
+    to: order-service
+  - from: user-service
+    to: shared-db
+  - from: catalog-service
+    to: shared-cache
+  - from: shared-cache
+    to: shared-db
+  - from: order-service
+    to: shared-db
+`;
+
+// ============================================
 // Build template list
 // ============================================
 const basicTemplateConfigs = [
@@ -776,6 +1255,10 @@ const basicTemplateConfigs = [
   { id: 'microservices', nameKey: 'templates.microservices.name', descriptionKey: 'templates.microservices.description', yaml: microservicesYaml },
   { id: 'event-driven', nameKey: 'templates.eventDriven.name', descriptionKey: 'templates.eventDriven.description', yaml: eventDrivenYaml },
   { id: 'ecommerce', nameKey: 'templates.ecommerce.name', descriptionKey: 'templates.ecommerce.description', yaml: ecommerceYaml },
+  { id: 'cqrs', nameKey: 'templates.cqrs.name', descriptionKey: 'templates.cqrs.description', yaml: cqrsYaml },
+  { id: 'serverless-api', nameKey: 'templates.serverlessApi.name', descriptionKey: 'templates.serverlessApi.description', yaml: serverlessApiYaml },
+  { id: 'monolith-decomposition', nameKey: 'templates.monolithDecomposition.name', descriptionKey: 'templates.monolithDecomposition.description', yaml: monolithDecompositionYaml },
+  { id: 'bff', nameKey: 'templates.bff.name', descriptionKey: 'templates.bff.description', yaml: bffYaml },
 ] as const;
 
 const basicTemplates: ArchitectureTemplate[] = basicTemplateConfigs

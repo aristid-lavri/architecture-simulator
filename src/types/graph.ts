@@ -16,6 +16,32 @@ import type { ComponentType } from './index';
 export type NodeType = ComponentType | (string & {});
 
 /**
+ * Metadonnees documentaires d'un noeud (transverses, hors logique simulation).
+ *
+ * Why: les utilisateurs veulent annoter leur architecture (notes de design, propriétaires,
+ * dernière revue d'archi) sans polluer le `data` qui pilote la simulation. Regrouper ces
+ * champs sous `metadata` evite de melanger documentation et configuration runtime — un
+ * `notes` au top-level de `GraphNode` aurait dérivé en clé "magique" que les handlers
+ * devraient ignorer un par un.
+ *
+ * Tous les champs sont optionnels et stockes en `undefined` quand vides (clean serialization
+ * YAML/JSON, pas de strings vides qui polluent les diffs).
+ */
+export interface NodeMetadata {
+  /** Notes libres en markdown/texte plain. Affichage textarea dans le Properties Panel. */
+  notes?: string;
+  /** Tags libres (ex: 'critique', 'PCI', 'legacy'). Stockes normalises (trim, no empty). */
+  tags?: string[];
+  /** Date ISO (YYYY-MM-DD) de la derniere revue d'architecture. */
+  lastReviewed?: string;
+  /** Proprietaire du composant — equipe et/ou personne nominee. */
+  owner?: {
+    team?: string;
+    individual?: string;
+  };
+}
+
+/**
  * Noeud de graphe independant du renderer (React Flow, PixiJS, etc.).
  * Contient uniquement les champs utilises par l'engine, les handlers et la persistence.
  */
@@ -27,6 +53,12 @@ export interface GraphNode {
   parentId?: string;
   width?: number;
   height?: number;
+  /**
+   * Annotations transverses (notes, tags, propriétaire, dernière revue).
+   * Distinct de `data` (qui pilote la simulation) — `metadata` est purement documentaire
+   * et ignoré par tous les handlers / l'engine.
+   */
+  metadata?: NodeMetadata;
 }
 
 /**

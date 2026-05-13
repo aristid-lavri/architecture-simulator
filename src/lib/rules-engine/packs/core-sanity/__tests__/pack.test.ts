@@ -45,8 +45,8 @@ function draft(sourceType: ComponentType, targetType: ComponentType) {
 // ----- Pack-level checks -----
 
 describe('coreSanityPack', () => {
-  it('exports exactly 15 rules', () => {
-    expect(coreSanityPack.rules).toHaveLength(15);
+  it('exports exactly 30 rules', () => {
+    expect(coreSanityPack.rules).toHaveLength(30);
   });
 
   it('has unique rule IDs all starting with core-sanity/', () => {
@@ -63,11 +63,15 @@ describe('coreSanityPack', () => {
     }
   });
 
-  it('counts: 10 errors + 5 warnings', () => {
+  it('counts: 13 errors + 17 warnings', () => {
+    // Errors: 9 physical + 1 routing (queue→queue) + 1 topology (container-missing-parent)
+    //         + 2 exposure (db/cache exposed publicly) = 13
+    // Warnings: 4 routing + 6 topology (orphan-cb, orphan-node, cycle, single-lb-spof,
+    //           single-db-spof, mq-no-consumer) + 2 security + 2 performance + 3 hygiene = 17
     const errors = coreSanityPack.rules.filter((r) => r.severity === 'error');
     const warnings = coreSanityPack.rules.filter((r) => r.severity === 'warning');
-    expect(errors).toHaveLength(10);
-    expect(warnings).toHaveLength(5);
+    expect(errors).toHaveLength(13);
+    expect(warnings).toHaveLength(17);
   });
 });
 

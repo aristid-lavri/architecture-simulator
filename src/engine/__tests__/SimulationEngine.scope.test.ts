@@ -95,7 +95,7 @@ describe('SimulationEngine — scoped simulation (Phase 1E)', () => {
         syntheticEmitters: [],
         sinks: new Set(),
       });
-      engine.start();
+      engine.start({ skipValidation: true });
 
       // En sim normale (sans scope), le http-client émet une request immédiate au start.
       // Avec scope, son `sendRequest` est filtré → metrics restent à 0.
@@ -117,7 +117,7 @@ describe('SimulationEngine — scoped simulation (Phase 1E)', () => {
         syntheticEmitters: [],
         sinks: new Set(),
       });
-      engine.start();
+      engine.start({ skipValidation: true });
 
       const metrics = engine.getFinalMetrics().metrics;
       expect(metrics.requestsSent).toBeGreaterThanOrEqual(1);
@@ -139,7 +139,7 @@ describe('SimulationEngine — scoped simulation (Phase 1E)', () => {
         syntheticEmitters: [{ edgeId: 'boundary', requestsPerSecond: 10 }],
         sinks: new Set(),
       });
-      engine.start();
+      engine.start({ skipValidation: true });
 
       // Le http-client `external` est filtré (hors subtree). MAIS le synthetic emitter
       // émet depuis le target node sur l'edge boundary → 1 request comptabilisée.
@@ -158,7 +158,7 @@ describe('SimulationEngine — scoped simulation (Phase 1E)', () => {
         syntheticEmitters: [{ edgeId: 'boundary', requestsPerSecond: 10 }],
         sinks: new Set(),
       });
-      engine.start();
+      engine.start({ skipValidation: true });
 
       const initialCount = engine.getFinalMetrics().metrics.requestsSent;
       // RPS=10 → intervalMs=100. Avancer 250ms = 2 ticks supplémentaires.
@@ -178,7 +178,7 @@ describe('SimulationEngine — scoped simulation (Phase 1E)', () => {
         syntheticEmitters: [{ edgeId: 'boundary', requestsPerSecond: 100 }],
         sinks: new Set(),
       });
-      engine.start();
+      engine.start({ skipValidation: true });
       const beforeStop = engine.getFinalMetrics().metrics.requestsSent;
       engine.stop();
       vi.advanceTimersByTime(1000);
@@ -198,7 +198,7 @@ describe('SimulationEngine — scoped simulation (Phase 1E)', () => {
         sinks: new Set(),
       });
       // Should not throw.
-      expect(() => engine.start()).not.toThrow();
+      expect(() => engine.start({ skipValidation: true })).not.toThrow();
       expect(engine.getFinalMetrics().metrics.requestsSent).toBe(0);
     });
   });

@@ -35,6 +35,8 @@ import { pluginRegistry } from '@/plugins';
 import { UISlotHost, paletteVisibilityRegistry } from '@/plugins/extensions';
 import { useArchitectureStore } from '@/store/architecture-store';
 import { searchComponents, highlightMatch, getAliases } from '@/lib/component-search';
+import { setDraggedComponentType, clearDraggedComponentType } from '@/lib/drag-state';
+import type { NodeType } from '@/types/graph';
 
 interface ComponentItem {
   type: ComponentType;
@@ -265,6 +267,11 @@ function DraggableComponent({
     if (disabled) { event.preventDefault(); return; }
     event.dataTransfer.setData('application/reactflow', component.type);
     event.dataTransfer.effectAllowed = 'move';
+    setDraggedComponentType(component.type as NodeType);
+  };
+
+  const onDragEnd = () => {
+    clearDraggedComponentType();
   };
 
   const label = t(component.nameKey);
@@ -274,6 +281,7 @@ function DraggableComponent({
     <div
       draggable={!disabled}
       onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       className={cn(
         "group flex items-center gap-2.5 px-2.5 py-2 border border-transparent transition-colors",
         disabled

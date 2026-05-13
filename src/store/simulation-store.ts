@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ValidationIssue } from '@/lib/simulation-validator';
 import type {
   SimulationState,
   SimulationMetrics,
@@ -111,6 +112,21 @@ interface SimulationStore {
   /** Configuration des emitters synthétiques injectés au boundary du subtree. */
   injectedTraffic: Array<{ edgeId: string; requestsPerSecond: number }>;
 
+  // A6.4 — Blocking validation by severity
+  /**
+   * Set when an attempt to start the simulation was rejected because at least one
+   * `error`-severity rule violation fired. The UI surfaces a dialog with the rule
+   * IDs and suggestions; the user can dismiss it and fix the graph.
+   * `null` = no block in effect.
+   */
+  blockedReason: ValidationIssue[] | null;
+  /**
+   * Last batch of `warning`-severity issues fired at start time. The UI surfaces a
+   * non-blocking toast; bumping `warningToastShownAt` retriggers animation on repeats.
+   */
+  warningToast: ValidationIssue[] | null;
+  warningToastShownAt: number | null;
+
   // Report
   report: SimulationReport | null;
   showReport: boolean;
@@ -206,6 +222,16 @@ interface SimulationStore {
    */
   setScopedSimulation: (root: string, traffic: Array<{ edgeId: string; requestsPerSecond: number }>) => void;
   clearScope: () => void;
+
+  // A6.4 — Blocking validation actions
+  /** Set the list of error-severity issues that prevented the simulation from starting. */
+  setBlockedReason: (issues: ValidationIssue[] | null) => void;
+  /** Dismiss the blocking dialog. */
+  dismissBlocked: () => void;
+  /** Push a batch of warning-severity issues to surface as a non-blocking toast. */
+  pushWarningToast: (issues: ValidationIssue[]) => void;
+  /** Dismiss the warning toast (auto-called after the toast timeout in the UI). */
+  dismissWarningToast: () => void;
 }
 
 // localStorage key for persisting the last simulation report
@@ -305,6 +331,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   isolatedNodes: new Set(),
   scopedRoot: null,
   injectedTraffic: [],
+  blockedReason: null,
+  warningToast: null,
+  warningToastShownAt: null,
   report: loadPersistedReport(),
   showReport: false,
   analysisMode: false,
@@ -689,6 +718,13 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
   // Phase 1E — Scoped simulation
   setScopedSimulation: (root, traffic) => set({ scopedRoot: root, injectedTraffic: traffic }),
   clearScope: () => set({ scopedRoot: null, injectedTraffic: [] }),
+
+  // A6.4 — Blocking validation
+  setBlockedReason: (issues) => set({ blockedReason: issues }),
+  dismissBlocked: () => set({ blockedReason: null }),
+  pushWarningToast: (issues) =>
+    set({ warningToast: issues, warningToastShownAt: Date.now() }),
+  dismissWarningToast: () => set({ warningToast: null, warningToastShownAt: null }),
 }));
 
 /**
